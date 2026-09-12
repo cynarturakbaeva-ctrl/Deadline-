@@ -213,11 +213,16 @@ const COMPOSITION_RULES = `RULES:
 - composition.image: "full_background" "right_half" "left_half" "top_strip" "bottom_strip" "corner_accent" "none"
 - composition.overlay: "none" "dark_gradient_left" "dark_gradient_right" "dark_gradient_bottom" "dark_full" "light_full" "color_wash"
 - composition.textPosition: "center" "center_left" "center_right" "top_left" "top_center" "bottom_left" "bottom_center" "left_column" "right_column"
-- composition.layout: "single_column" "two_column_bullets" "stat_cards_row" "stat_cards_grid"
+- composition.layout: "single_column" "two_column_bullets" "stat_cards_row" "stat_cards_grid" "big_stat_hero" "quote_hero"
+- SPECIAL LAYOUTS (use SPARINGLY — at most 1-2 slides per presentation, only when content genuinely fits):
+  - "big_stat_hero": ONE single dramatic number filling most of the slide. ONLY use when the slide has EXACTLY 1 stat, NO bullets, and NO body text — this layout ignores everything except that one stat, title (used as a small eyebrow label above the number) and subtitle (shown small below). Great for a single powerful metric (e.g. "80%", "10x", "1M+").
+  - "quote_hero": a large centered quotation. ONLY use when the slide has NO bullets and NO stats, and the subtitle (or body) is a single short quotable sentence (under ~150 characters). Put the quote itself in "subtitle", and the speaker/source name in "title" (it will render as an attribution line, not a heading).
+  - For these two layouts, "image" should be "none" (they render their own background, ignoring image composition).
+  - Do NOT use these layouts if the slide has bullets, stats (more than 1), or multiple paragraphs — they will silently fall back to a standard layout if content doesn't match, wasting the creative choice.
 - composition.mood: "dark" "light" "warm" "cold" "vivid"
 - composition.elements: "eyebrow" "title" "subtitle" "divider" "body" "bullets" "stats" "quote_mark"
 - composition.decorative: "accent_line_left" "accent_line_right" "corner_circle" "bottom_rule" "grid_dots"
-- VARIETY IS MANDATORY: use a MIX of image types across slides in this batch — do NOT default to "full_background" for every slide. Split layouts ("right_half", "left_half") work great for slides with a title + subtitle + a few bullets (no stats). "top_strip"/"bottom_strip" work well for slides with more text below/above the image band. Use "full_background" mainly for cover slides, closing slides, or slides where the image itself is the visual focus.
+- VARIETY IS MANDATORY: use a MIX of image types across slides in this batch — do NOT default to "full_background" for every slide. Split layouts ("right_half", "left_half") work great for slides with a title + subtitle + a few bullets (no stats). "top_strip"/"bottom_strip" work well for slides with more text below/above the image band. Use "full_background" mainly for cover slides, closing slides, or slides where the image itself is the visual focus. If exactly one slide in this batch has a single standout stat or a short quotable sentence with no other content, consider "big_stat_hero" or "quote_hero" for that one slide — but most slides should use the standard image+text compositions above.
 - Sizing guide: "corner_accent" is a small decorative image (bottom-right ~38%x55%) — best for title + subtitle + 0-2 short bullets. If a slide has 2+ stat cards, prefer "full_background" or "none" for the image (stat cards need full width) — but do NOT let this push every other slide to full_background too.
 - imageQuery: English only, specific, photographic. CRITICAL: NEVER request images that themselves contain readable text, labels, numbers, charts, tables, screens, or signage (e.g. avoid "periodic table", "chart on whiteboard", "computer screen showing code", "book pages with text") — such images already have dense text baked in, and when our own slide text is placed on top, the two text layers visually clash and become unreadable. Instead, request abstract, atmospheric, or symbolic photos that evoke the topic: for a periodic-table slide, use queries like "chemistry lab glassware close-up, moody lighting" or "abstract molecular structure, dark background" — mood and subject matter, never the literal text-heavy object itself.`;
 
@@ -335,7 +340,7 @@ async function generateSlideBatch(presentationTitle, allTopics, batchTopics, sty
     : '';
 
   // Алдыңғы батчтарда full_background тым жиі қолданылса — келесі батчқа
-  // нақты, міндетті түрде split-layout қолдануды тапсырамыз.
+  // нақты, міндетті түрде split-layout қолдануды тапсырамыз.;
   const ALL_IMAGE_TYPES = ['full_background', 'right_half', 'left_half', 'top_strip', 'bottom_strip', 'corner_accent'];
   let varietyRule = '';
   if (usedImageTypes && usedImageTypes.length > 0) {
@@ -487,4 +492,5 @@ async function reviewAndImproveSlides(presentation) {
 }
 
 module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput };
-                                                                                                                                       
+  
+    
