@@ -5,7 +5,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fs          = require('fs');
 const { generatePresentation }                                                      = require('./index');
-const { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit } = require('./db');
+const { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, REFERRALS_PER_BONUS } = require('./db');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -28,7 +28,12 @@ const KASPI_PHONE = '+77713436592';
 const KASPI_NAME  = 'Мурзабек Н';
 const PRICE       = 250;
 const ADMIN_ID    = process.env.ADMIN_CHAT_ID;
-const BOT_USERNAME = process.env.BOT_USERNAME || 'DeadLine_prezbot'; // Railway-да BOT_USERNAME env қой
+// МАҢЫЗДЫ: BOT_USERNAME env-де кейде "@ai_presentation_ybot" түрінде (@-мен)
+// қойылып қалуы мүмкін. Telegram deep-link форматы (t.me/<username>?start=...)
+// username-нің алдында @ КҮТПЕЙДІ — @-мен жіберілген сілтемені Telegram
+// "пайдаланушы табылмады" деп қабылдамайды. Осыны env-ді өзгертпей-ақ,
+// кодтың өзінде әрқашан дұрыс шығатындай, басындағы @-ты алып тастаймыз.
+const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^@/, '');
 
 const processing      = new Set();
 const waitingForCount = new Set();
@@ -108,9 +113,9 @@ async function showReferral(chatId) {
     `Сенің жеке сілтемең:\n\`${link}\`\n\n` +
     `📌 *Қалай жұмыс жасайды:*\n` +
     `• Достарыңа осы сілтемені жіберіңіз\n` +
-    `• Әр *3 адам* тіркелсе — сізге *1 кредит* қосылады\n` +
+    `• Әр *${REFERRALS_PER_BONUS} адам* презентация жасатса — сізге *1 кредит* қосылады\n` +
     `• Шектеу жоқ — неше адам болса, сонша!\n\n` +
-    `👥 Тіркелген: *${user.refEarnings}* адам\nКелесі кредит үшін: *${3 - (user.refEarnings % 3)}* адам қажет`,
+    `👥 Презентация жасатқан: *${user.refEarnings}* адам\nКелесі кредит үшін: *${REFERRALS_PER_BONUS - (user.refEarnings % REFERRALS_PER_BONUS)}* адам қажет`,
     { parse_mode: 'Markdown', disable_web_page_preview: true, ...MAIN_KEYBOARD }
   );
 }
@@ -268,15 +273,17 @@ async function makePresentaton(chatId, topic) {
 
   await useCredit(chatId);
 
-  // Реферал иесіне есептей — кез келген (ақылы) презентация жасатқанда
+  // Реферал иесіне есептей — кез келген (ақылы) презентация жасатқанда.
+  // Референт әр 2 реферал (REFERRALS_PER_BONUS, db.js-те) презентация
+  // жасатқанда 1 кредит алады.
   const u = await getUser(chatId);
   if (u.referredBy) {
     const { newCount, bonusGiven } = await incrementRefCount(u.referredBy);
-    const remaining = 3 - (newCount % 3);
+    const remaining = REFERRALS_PER_BONUS - (newCount % REFERRALS_PER_BONUS);
     if (bonusGiven) {
       bot.sendMessage(
         u.referredBy,
-        `🎉 *+1 кредит!* Сенің реферал сілтемең арқылы ${newCount} адам презентация жасатты!\n\nКелесі кредит үшін тағы *3 адам* қажет.`,
+        `🎉 *+1 кредит!* Сенің реферал сілтемең арқылы ${newCount} адам презентация жасатты!\n\nКелесі кредит үшін тағы *${REFERRALS_PER_BONUS} адам* қажет.`,
         { parse_mode: 'Markdown' }
       ).catch(() => {});
     } else {
@@ -351,4 +358,3 @@ initDB()
     process.exit(1);
   });
 
-           
