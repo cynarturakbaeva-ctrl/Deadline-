@@ -85,6 +85,8 @@ async function addCredits(chatId, amount) {
 // Реферал арқылы тіркелген адам санын +1 арттыр
 // Егер 3-тің еселігіне жетсе — 1 кредит бер
 // Қайтарады: { newCount, bonusGiven }
+const REFERRALS_PER_BONUS = 2; // referrer 1 kredit alu ushin kansha referal prezentaciya jasatuy kerek
+
 async function incrementRefCount(referrerId) {
   try {
     const res = await pool.query(`
@@ -96,7 +98,7 @@ async function incrementRefCount(referrerId) {
 
     const newCount = res.rows[0]?.ref_earnings || 0;
 
-    if (newCount % 3 === 0) {
+    if (newCount % REFERRALS_PER_BONUS === 0) {
       await pool.query(
         'UPDATE users SET credits = credits + 1 WHERE chat_id = $1',
         [String(referrerId)]
@@ -129,5 +131,5 @@ async function useCredit(chatId) {
   }
 }
 
-module.exports = { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit };
-        
+module.exports = { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, REFERRALS_PER_BONUS };
+      
