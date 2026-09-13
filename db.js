@@ -131,5 +131,16 @@ async function useCredit(chatId) {
   }
 }
 
-module.exports = { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, REFERRALS_PER_BONUS };
-      
+// Broadcast ushin: barlyk paidalanushynyn chat_id-in alu
+async function getAllChatIds() {
+  try {
+    const res = await pool.query('SELECT chat_id FROM users');
+    return res.rows.map(r => r.chat_id);
+  } catch (err) {
+    console.error('[DB] getAllChatIds error:', err.message);
+    return [];
+  }
+}
+
+module.exports = { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, getAllChatIds, REFERRALS_PER_BONUS };
+    
