@@ -5,7 +5,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fs          = require('fs');
 const { generatePresentation }                                                      = require('./index');
-const { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, REFERRALS_PER_BONUS } = require('./db');
+const { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, getAllChatIds, REFERRALS_PER_BONUS } = require('./db');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -161,6 +161,49 @@ bot.onText(/\/confirm (\d+) (\d+)/, async (msg, match) => {
   );
 
   bot.sendMessage(msg.chat.id, `✅ ${targetId} → +${amount} кредит. Қалған: ${user.credits}. Жиыны: ${user.total}.`);
+});
+
+// ─── /broadcast <хабар> — тек admin, барлық пайдаланушыға жіберу ─────────
+bot.onText(/\/broadcast ([\s\S]+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+
+  const text = match[1].trim();
+  if (!text) {
+    return bot.sendMessage(msg.chat.id, '❌ Хабар мәтінін жазыңыз: /broadcast Мәтін...');
+  }
+
+  const chatIds = await getAllChatIds();
+  await bot.sendMessage(
+    msg.chat.id,
+    `📤 Broadcast басталды: *${chatIds.length}* пайдаланушыға жіберіледі...\n\n_Бұл біраз уақыт алуы мүмкін (~${Math.ceil(chatIds.length / 25)} секунд)._`,
+    { parse_mode: 'Markdown' }
+  );
+
+  let sent = 0;
+  let failed = 0;
+
+  // Telegram-нің rate limit-і секундына ~30 хабарлама шамасында —
+  // сол шектен аспау үшін әр хабардан кейін ~40мс кідіріс қоямыз
+  // (шамамен секундына 25 хабар). Бір адамға жіберу сәтсіз болса
+  // (мысалы, бот блокталған/чат жойылған), соны есептеп, циклді
+  // ТОҚТАТПАЙ, қалған пайдаланушыларға жалғастырамыз — бір адамның
+  // қатесі бүкіл broadcast-ты бұзбауы керек.
+  for (const chatId of chatIds) {
+    try {
+      await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+      sent++;
+    } catch (err) {
+      failed++;
+      console.warn(`[Broadcast] failed for ${chatId}: ${err.message}`);
+    }
+    await new Promise(r => setTimeout(r, 40));
+  }
+
+  bot.sendMessage(
+    msg.chat.id,
+    `✅ Broadcast аяқталды!\n\n📨 Жеткізілді: *${sent}*\n❌ Сәтсіз (блок/дилит): *${failed}*`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ─── Негізгі хабар обработчигі ────────────────────────────────────────────
@@ -358,3 +401,4 @@ initDB()
     process.exit(1);
   });
 
+      
