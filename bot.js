@@ -28,9 +28,6 @@ const KASPI_PHONE = '+77713436592';
 const KASPI_NAME  = 'Мурзабек Н';
 const PRICE       = 250;
 const ADMIN_ID    = process.env.ADMIN_CHAT_ID;
-// 3D презентация тапсырысы үшін админнің Telegram username-і (ADMIN_ID
-// сандық chat_id, ал сілтеме (t.me/...) үшін username керек — бөлек env).
-const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').replace(/^@/, '');
 // МАҢЫЗДЫ: BOT_USERNAME env-де кейде "@ai_presentation_ybot" түрінде (@-мен)
 // қойылып қалуы мүмкін. Telegram deep-link форматы (t.me/<username>?start=...)
 // username-нің алдында @ КҮТПЕЙДІ — @-мен жіберілген сілтемені Telegram
@@ -49,7 +46,6 @@ const MAIN_KEYBOARD = {
       [{ text: '📝 Тақырып жазу' }],
       [{ text: '💳 Менің есепшотым' }, { text: '🔗 Реферал сілтемем' }],
       [{ text: '💰 Кредит сатып алу' }, { text: '❓ Көмек' }],
-      [{ text: '🎨 3D презентацияға тапсырыс' }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -220,22 +216,6 @@ bot.on('message', async (msg) => {
   if (text === '💳 Менің есепшотым') return showBalance(chatId);
   if (text === '❓ Көмек')           return showHelp(chatId);
   if (text === '🔗 Реферал сілтемем') return showReferral(chatId);
-
-  if (text === '🎨 3D презентацияға тапсырыс') {
-    // Автоматты pipeline емес — тек жеке байланысқа бағыттау. ADMIN_USERNAME
-    // env-де көрсетілмесе (бос болса), ботты құлатпай, нейтралды хабар
-    // көрсетеміз ("тапсырыс уақытша қолжетімсіз") — сілтемесіз хабар жіберу
-    // пайдаланушыны шатастырар еді.
-    if (!ADMIN_USERNAME) {
-      return bot.sendMessage(chatId, '🎨 3D презентация тапсырысы уақытша қолжетімсіз. Кейінірек қайталап көріңіз.');
-    }
-    return bot.sendMessage(
-      chatId,
-      `🎨 *3D презентацияға тапсырыс беру*\n\n` +
-      `3D объектілер, модельдер немесе анимация қажет болса, тікелей жеке жазыңыз:\n\n👤 @${ADMIN_USERNAME}`,
-      { parse_mode: 'Markdown' }
-    );
-  }
 
   if (text === '📝 Тақырып жазу') {
     waitingForCount.delete(chatId); // eki rejim bir mezgilde bolmauy ushin
@@ -421,4 +401,4 @@ initDB()
     process.exit(1);
   });
 
-        
+      
