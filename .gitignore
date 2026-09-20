@@ -1,9 +1,0 @@
-node_modules/
-.env
-users.json
-*.backup
-*.backup.*
-*.sqlite*
-*.pptx
-*.png
-pipeline/*.before-*
