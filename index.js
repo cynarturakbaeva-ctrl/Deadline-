@@ -8,8 +8,7 @@ const os   = require('os');
 
 const { generateSlides, reviewAndImproveSlides, parseUserInput } = require('./pipeline/gemini');
 const { fetchImage }              = require('./pipeline/unsplash');
-const { buildSlideHTML }          = require('./pipeline/htmlBuilder');
-const { buildPresentationHTML }   = require('./pipeline/presentationHtml');
+const { build3DPresentationHTML } = require('./pipeline/html3DBuilder');
 const { renderHtmlToPngs }        = require('./pipeline/renderer');
 const { exportToPptx }            = require('./pipeline/pptxExporter');
 
@@ -54,7 +53,7 @@ async function fetchImageWithFallback(query, topic) {
 
 /**
  * Pipeline:
- *   тақырып → мазмұн (LLM) → QC → суреттер → HTML (шындық көзі)
+ *   тақырып → мазмұн (LLM) → QC → суреттер → HTML (DeadLine Motion, шындық көзі)
  *                                                │
  *                                                ├─► HTML файл  (пайдаланушыға)
  *                                                └─► Puppeteer → PNG → PPTX
@@ -85,21 +84,20 @@ async function generatePresentation(userInput) {
   const { slides, title } = reviewed;
   slides.forEach((slide, i) => { slide.index = i + 1; });
 
-  // 3. Суреттер + әр слайдтың HTML-і
-  console.log('[Pipeline] Fetching images and building slides...');
-  const slideHtmlList = [];
+  // 3. Суреттер
+  console.log('[Pipeline] Fetching images...');
   for (const slide of slides) {
     const query = typeof slide.imageQuery === 'string' ? slide.imageQuery : '';
     console.log(`[Image] query="${query}"`);
     const imageUrl = await fetchImageWithFallback(query, topic);
-    slideHtmlList.push(buildSlideHTML(slide, imageUrl));
+    slide.webImageUrl = imageUrl || '';
   }
 
   // 4. HTML презентация — БІРІНШІ жасалады және жалғыз шындық көзі
   console.log('[Pipeline] Building HTML presentation...');
   const stamp    = Date.now();
   const htmlPath = path.join(os.tmpdir(), `presentation-${stamp}.html`);
-  fs.writeFileSync(htmlPath, buildPresentationHTML(slideHtmlList, title), 'utf8');
+  fs.writeFileSync(htmlPath, build3DPresentationHTML(slides, title), 'utf8');
 
   // 5. PPTX — сол HTML файлдан рендерленеді
   console.log('[Pipeline] Rendering HTML → PNG → PPTX...');
@@ -126,4 +124,3 @@ async function generatePresentation(userInput) {
 }
 
 module.exports = { generatePresentation };
-
