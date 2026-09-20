@@ -198,20 +198,28 @@ function textPositionCSS(pos, imageType) {
 
 function renderTitle(slide, palette, big) {
   if (!slide.title) return '';
-  return '<h1 style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:' + (big || '42px') + ';font-weight:700;line-height:1.15;color:' + palette.text + ';letter-spacing:-0.5px;margin:0;">' + slide.title + '</h1>';
+  // МАҢЫЗДЫ ТҮЗЕТУ: бұрын бүкіл презентацияда title/body/eyebrow бәрі
+  // бірдей font-weight:700 не 400 болатын — "бір қалыпты, базовый" деген
+  // сын осыдан келді. Noto Sans CJK KR отбасында 7 бөлек салмақ бар
+  // (Thin/Light/DemiLight/Regular/Medium/Bold/Black) — соны пайдаланып,
+  // title-ды ЕҢ ҚАЛЫҢ (900/Black) етіп, body/subtitle-ды жеңіл (300/Light)
+  // етіп қарама-қарсы қойдық. Бұл контраст — типографиялық "иерархия"
+  // сезімін береді, қазірдің өзінде серверде бар шрифтпен, жаңа файл
+  // қажет емес.
+  return '<h1 style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:' + (big || '42px') + ';font-weight:900;line-height:1.1;color:' + palette.text + ';letter-spacing:-1px;margin:0;">' + slide.title + '</h1>';
 }
 function renderSubtitle(slide, palette) {
   if (!slide.subtitle) return '';
-  return '<p style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:17px;font-weight:400;line-height:1.55;color:' + palette.muted + ';margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">' + slide.subtitle + '</p>';
+  return '<p style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:17px;font-weight:300;line-height:1.6;color:' + palette.muted + ';margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">' + slide.subtitle + '</p>';
 }
 function renderBody(slide, palette) {
   if (!slide.body) return '';
-  return '<p style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:16px;font-weight:400;line-height:1.65;color:' + palette.muted + ';margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">' + slide.body + '</p>';
+  return '<p style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:16px;font-weight:300;line-height:1.7;color:' + palette.muted + ';margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">' + slide.body + '</p>';
 }
 function renderEyebrow(slide, accent) {
   const raw = slide.title || 'Overview';
   const label = raw.split(' ').slice(0, 4).join(' ');
-  return '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:' + accent + ';margin-bottom:18px;opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + label + '</div>';
+  return '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:11px;font-weight:800;letter-spacing:3.5px;text-transform:uppercase;color:' + accent + ';margin-bottom:18px;opacity:0.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + label + '</div>';
 }
 function renderDivider(accent) {
   return '<div style="width:52px;height:3px;background:' + accent + ';border-radius:2px;margin-bottom:24px;"></div>';
@@ -236,11 +244,11 @@ function renderBullets(slide, palette, accent, grid, align) {
   const justify    = isCenter ? 'justify-content:center;' : '';
 
   const items = slide.bullets.map(function(b) {
-    return '<li style="display:flex;flex-direction:' + flexDir + ';align-items:' + itemAlign + ';' + justify + 'gap:12px;margin-bottom:14px;"><span style="color:' + accent + ';margin-top:3px;flex-shrink:0;font-size:13px;">▸</span><span style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:18px;line-height:1.55;color:' + palette.text + ';font-weight:400;text-align:' + textAlign + ';">' + b + '</span></li>';
+    return '<li style="display:flex;flex-direction:' + flexDir + ';align-items:' + itemAlign + ';' + justify + 'gap:12px;margin-bottom:14px;"><span style="color:' + accent + ';margin-top:3px;flex-shrink:0;font-size:13px;">▸</span><span style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:18px;line-height:1.6;color:' + palette.text + ';font-weight:300;text-align:' + textAlign + ';">' + b + '</span></li>';
   }).join('');
   if (grid) {
     const gridItems = slide.bullets.map(function(b) {
-      return '<div style="display:flex;flex-direction:' + flexDir + ';align-items:' + itemAlign + ';' + justify + 'gap:10px;"><div style="width:7px;height:7px;border-radius:50%;background:' + accent + ';flex-shrink:0;margin-top:5px;"></div><span style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:17px;line-height:1.55;color:' + palette.text + ';font-weight:400;text-align:' + textAlign + ';">' + b + '</span></div>';
+      return '<div style="display:flex;flex-direction:' + flexDir + ';align-items:' + itemAlign + ';' + justify + 'gap:10px;"><div style="width:7px;height:7px;border-radius:50%;background:' + accent + ';flex-shrink:0;margin-top:5px;"></div><span style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:17px;line-height:1.6;color:' + palette.text + ';font-weight:300;text-align:' + textAlign + ';">' + b + '</span></div>';
     }).join('');
     return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 40px;">' + gridItems + '</div>';
   }
@@ -265,7 +273,7 @@ function renderStats(slide, palette, accent) {
     fontSize = Math.max(fontSize, 18);            // ешқашан 18px-тен кіші болмайды
 
     // backdrop-filter — фонда сурет тұрса да карточка оқылатындай ажыратады.
-    return '<div style="background:' + palette.surface + ';backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid ' + accent + '33;border-radius:14px;padding:' + padding + ';text-align:center;flex:1;min-width:0;overflow:hidden;"><div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:' + fontSize + 'px;font-weight:700;color:' + accent + ';line-height:1.1;margin-bottom:8px;overflow-wrap:break-word;word-break:break-word;">' + valueStr + '</div><div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:' + palette.muted + ';word-break:break-word;line-height:1.4;">' + s.label + '</div></div>';
+    return '<div style="background:' + palette.surface + ';backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid ' + accent + '33;border-radius:14px;padding:' + padding + ';text-align:center;flex:1;min-width:0;overflow:hidden;"><div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:' + fontSize + 'px;font-weight:900;color:' + accent + ';line-height:1.05;margin-bottom:8px;overflow-wrap:break-word;word-break:break-word;letter-spacing:-1px;">' + valueStr + '</div><div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:' + palette.muted + ';word-break:break-word;line-height:1.4;">' + s.label + '</div></div>';
   }).join('');
   if (useGrid) {
     return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;width:100%;">' + cards + '</div>';
@@ -355,6 +363,53 @@ function renderQuoteHero(slide, mood) {
     + '<div style="font-family:Georgia,serif;font-size:130px;line-height:0.6;color:' + accent + ';opacity:0.5;margin-bottom:12px;">"</div>'
     + '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:40px;font-weight:600;line-height:1.35;color:' + palette.text + ';letter-spacing:-0.5px;">' + quoteText + '</div>'
     + attrHTML
+    + '</div>';
+
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{width:1280px;height:720px;overflow:hidden;}.slide{position:relative;width:1280px;height:720px;background:' + palette.bg + ';font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;}</style></head><body><div class="slide">'
+    + bgLayer + content
+    + '<img src="' + LOGO_WHITE + '" style="position:absolute;bottom:24px;right:32px;height:36px;opacity:0.85;z-index:10;object-fit:contain;" />'
+    + '</div></body></html>';
+}
+
+function renderComparisonTable(slide, mood) {
+  const palette = MOOD[mood] || MOOD.dark;
+  const accent  = (slide.composition && slide.composition.accentColor) || '#d4a843';
+  const table   = slide.table;
+  const cols    = table.headers.length;
+
+  const eyebrowRaw  = slide.title ? slide.title.split(' ').slice(0, 4).join(' ') : '';
+  const eyebrowHTML = eyebrowRaw
+    ? '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:' + accent + ';margin-bottom:14px;opacity:0.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + eyebrowRaw + '</div>'
+    : '';
+  const subtitleHTML = slide.subtitle
+    ? '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:16px;font-weight:300;line-height:1.5;color:' + palette.muted + ';margin-bottom:32px;max-width:900px;">' + slide.subtitle + '</div>'
+    : '<div style="margin-bottom:20px;"></div>';
+
+  const headerCells = table.headers.map(function(h, i) {
+    // Бірінші баған — заттардың/критерийлердің атауы (сол жаққа туралайды),
+    // қалғаны — салыстырылатын мәндер (ортаға туралайды).
+    const align = i === 0 ? 'left' : 'center';
+    return '<th style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:' + accent + ';text-align:' + align + ';padding:16px 20px;border-bottom:2px solid ' + accent + '55;">' + h + '</th>';
+  }).join('');
+
+  const bodyRows = table.rows.map(function(row, rIdx) {
+    const cells = row.map(function(cell, cIdx) {
+      const align = cIdx === 0 ? 'left' : 'center';
+      const weight = cIdx === 0 ? '700' : '300';
+      return '<td style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:16px;font-weight:' + weight + ';color:' + palette.text + ';text-align:' + align + ';padding:16px 20px;">' + cell + '</td>';
+    }).join('');
+    const bg = rIdx % 2 === 1 ? 'background:' + palette.surface + ';' : '';
+    return '<tr style="' + bg + 'border-bottom:1px solid ' + palette.muted + '22;">' + cells + '</tr>';
+  }).join('');
+
+  const bgLayer = '<div style="position:absolute;inset:0;z-index:0;background:linear-gradient(135deg,' + palette.bg + ',#101820);"></div>';
+
+  const content =
+    '<div style="position:relative;z-index:2;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:72px 96px;">'
+    + eyebrowHTML
+    + (slide.title ? '<div style="font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;font-size:34px;font-weight:900;color:' + palette.text + ';letter-spacing:-0.5px;margin-bottom:16px;">' + slide.title + '</div>' : '')
+    + subtitleHTML
+    + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead><tr>' + headerCells + '</tr></thead><tbody>' + bodyRows + '</tbody></table>'
     + '</div>';
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{width:1280px;height:720px;overflow:hidden;}.slide{position:relative;width:1280px;height:720px;background:' + palette.bg + ';font-family:Noto Sans CJK KR,DejaVu Sans,sans-serif;}</style></head><body><div class="slide">'
@@ -561,6 +616,27 @@ function buildSlideHTML(slide, imageUrl) {
     console.warn('[HTML] slide', slide.index, '| quote_hero requested but content mismatch (stats:' + statCount0 + ', bullets:' + bulletCount0 + ', textLen:' + quoteSource.length + ') — falling back to standard layout');
   }
 
+  if (comp0.layout === 'comparison_table') {
+    const statCount0 = (slide.stats && slide.stats.length) || 0;
+    const bulletCount0 = (slide.bullets && slide.bullets.length) || 0;
+    const table0 = slide.table;
+    // Кесте нақты, дұрыс құрылымды JSON болғанда ғана: headers/rows массив,
+    // кемінде 2 баған, кемінде 1 жол, әр жолдың ұзындығы headers-пен сай.
+    // Модель кестені жарым-жарты немесе қате формада қайтаруы мүмкін —
+    // сол жағдайда стандартты layout-қа fallback болу керек, жарты кесте
+    // көрсету орнына.
+    const tableValid = table0
+      && Array.isArray(table0.headers) && table0.headers.length >= 2
+      && Array.isArray(table0.rows) && table0.rows.length >= 1
+      && table0.rows.every(function(r) { return Array.isArray(r) && r.length === table0.headers.length; });
+
+    if (tableValid && statCount0 === 0 && bulletCount0 === 0) {
+      console.log('[HTML] slide', slide.index, '| layout: comparison_table');
+      return renderComparisonTable(slide, comp0.mood || 'dark');
+    }
+    console.warn('[HTML] slide', slide.index, '| comparison_table requested but content mismatch (tableValid:' + tableValid + ', stats:' + statCount0 + ', bullets:' + bulletCount0 + ') — falling back to standard layout');
+  }
+
   const comp        = slide.composition || {};
   const rawImageType = comp.image       || 'none';
   const overlayType = comp.overlay      || 'none';
@@ -702,3 +778,4 @@ function buildSlideHTML(slide, imageUrl) {
 }
 
 module.exports = { buildSlideHTML };
+        
