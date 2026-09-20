@@ -1,4 +1,4 @@
-use strict';
+'use strict';
 /** DeadLine Motion — 16:9 + camera transitions + tables */
 function escapeHtml(v){if(v==null)return '';return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function safeColor(hex,fb){if(typeof hex!=='string')return fb;var c=hex.trim().replace(/^#/,'');if(!/^[0-9a-fA-F]{3,8}$/.test(c))return fb;return '#'+(c.length===3?c.split('').map(function(x){return x+x;}).join(''):c.slice(0,6));}
