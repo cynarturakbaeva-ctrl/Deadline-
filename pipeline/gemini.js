@@ -30,34 +30,60 @@ const DEEPSEEK_MODEL   = 'deepseek-v4-flash';
 const MAX_TOKENS_PER_CALL = 393216;
 const SLIDES_PER_BATCH    = 3;
 
+const REQUEST_TIMEOUT_MS = 90_000; // 90 sek — kalypty generaciya ~10-30 sek alady
+
 async function groqChat(systemPrompt, userPrompt, label) {
-  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      // DeepSeek V4 сериясында thinking (reasoning) режимі ӘДЕПКІ БОЙЫНША
-      // ҚОСУЛЫ тұрады — reasoning_content те max_tokens шегінің ішінде
-      // есептеліп, output token ретінде ақыланады. Бізге тек тікелей JSON
-      // керек (реасонинг презентация JSON-ы үшін пайдасыз), сондықтан
-      // өшіріп қоямыз — max_tokens толығымен нақты JSON-ға жұмсалады.
-      thinking: { type: 'disabled' },
-      // DeepSeek өз құжатында temperature/top_p үшін 1.0 ұсынады (GPT/Claude
-      // әдепкісінен өзгеше) — creative/generation тапсырмаларында дәйектірек
-      // нәтиже береді. 0.7 Groq/OpenAI дәстүрінен қалған мән еді.
-      temperature: 1.0,
-      top_p: 1.0,
-      max_tokens: MAX_TOKENS_PER_CALL,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userPrompt   },
-      ],
-    }),
-  });
+  // МАҢЫЗДЫ ТҮЗЕТУ: нақты байқалған жағдайда DeepSeek API 12 МИНУТ бойы
+  // ешбір жауап бермей "ілініп" қалды (network hang немесе серверлік
+  // баяулау), содан кейін бос/жарамсыз content қайтарды. fetch-тің
+  // ӨЗІНДЕ timeout болмағандықтан, ол шексіз күтіп тұрды — пайдаланушы
+  // 12 минут "Презентация жасалуда..." деп күтіп, содан кейін ғана қате
+  // алды. AbortController арқылы 90 секундтық қатаң timeout қоямыз —
+  // осы уақыттан асса, withRetry-дегі "isTruncated емес" қатесіз, дереу
+  // қайта әрекет ету немесе нақты "timeout" қатесімен тоқтау үшін.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let res;
+  try {
+    res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        // DeepSeek V4 сериясында thinking (reasoning) режимі ӘДЕПКІ БОЙЫНША
+        // ҚОСУЛЫ тұрады — reasoning_content те max_tokens шегінің ішінде
+        // есептеліп, output token ретінде ақыланады. Бізге тек тікелей JSON
+        // керек (реасонинг презентация JSON-ы үшін пайдасыз), сондықтан
+        // өшіріп қоямыз — max_tokens толығымен нақты JSON-ға жұмсалады.
+        thinking: { type: 'disabled' },
+        // DeepSeek өз құжатында temperature/top_p үшін 1.0 ұсынады (GPT/Claude
+        // әдепкісінен өзгеше) — creative/generation тапсырмаларында дәйектірек
+        // нәтиже береді. 0.7 Groq/OpenAI дәстүрінен қалған мән еді.
+        temperature: 1.0,
+        top_p: 1.0,
+        max_tokens: MAX_TOKENS_PER_CALL,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt   },
+        ],
+      }),
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error(`[timeout] ${label} — DeepSeek ${REQUEST_TIMEOUT_MS / 1000}с ішінде жауап бермеді`);
+      timeoutErr.isTimeout = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
     const err = await res.text();
@@ -84,6 +110,18 @@ async function groqChat(systemPrompt, userPrompt, label) {
     throw err;
   }
 
+  if (!text) {
+    // МАҢЫЗДЫ ТҮЗЕТУ: нақты байқалған жағдайда DeepSeek API res.ok=true
+    // қайтарды (қате статус жоқ), бірақ content бос болды — бұрын бұл
+    // тікелей parseJSON-ға жетіп, retry-сыз дереу сәтсіздікпен аяқталатын
+    // (пайдаланушы 12+ минут күтіп, содан кейін ғана қате көретін). Бос
+    // жауап та көбіне серверлік уақытша ақаудың белгісі болғандықтан,
+    // мұны да retry-ланатын қате етіп белгілейміз.
+    const err = new Error(`[empty] ${label} — DeepSeek бос жауап қайтарды (finish_reason: ${finishReason || 'жоқ'})`);
+    err.isTimeout = true; // isTimeout белгісін пайдаланамыз — withRetry-де birdei retry logikasy
+    throw err;
+  }
+
   return text;
 }
 
@@ -99,24 +137,27 @@ async function withRetry(fn, label) {
       const is503 = msg.includes('503') || msg.includes('fetch failed');
       const is429 = msg.includes('429') || msg.includes('quota') || msg.includes('rate_limit') || msg.includes('Rate limit');
       const isTruncated = err.isTruncated === true;
+      const isTimeout = err.isTimeout === true;
 
-      if (!is503 && !is429 && !isTruncated) throw err;
+      if (!is503 && !is429 && !isTruncated && !isTimeout) throw err;
 
-      // 3 реттен көп кесілсе, циклді тоқтатып, жоғарыға нақты қате беру —
-      // шексіз retry-мен пайдаланушыны күттірмеу үшін.
-      if (isTruncated && attempt >= 3) {
-        throw new Error(`${msg} — ${attempt} әрекеттен кейін де кесіліп тұр, max_tokens жеткіліксіз болуы мүмкін`);
+      // 3 реттен көп кесілсе/timeout болса, циклді тоқтатып, жоғарыға нақты
+      // қате беру — шексіз retry-мен пайдаланушыны күттірмеу үшін (нақты
+      // байқалған жағдайда timeout 12 минутқа созылды — қайталап 3 рет
+      // осылай тоқтап қалса, жиыны 36+ минут болар еді, бұл орынсыз).
+      if ((isTruncated || isTimeout) && attempt >= 3) {
+        throw new Error(`${msg} — ${attempt} әрекеттен кейін де сәтсіз`);
       }
 
       let delay = Math.min(5000 * attempt, 30000);
       if (is429) {
         const match = msg.match(/try again in (\d+\.?\d*)s/i) || msg.match(/retry[^0-9]*(\d+)[^0-9]*s/i);
         delay = match ? (parseFloat(match[1]) + 2) * 1000 : 30000;
-      } else if (isTruncated) {
+      } else if (isTruncated || isTimeout) {
         delay = 2000; // rate-limit емес, tez qaita surau jetkilikti
       }
 
-      const reason = is429 ? '429 Rate limit' : isTruncated ? 'length (кесілді)' : '503';
+      const reason = is429 ? '429 Rate limit' : isTruncated ? 'length (кесілді)' : isTimeout ? 'timeout' : '503';
       console.warn(`[DeepSeek] ${label} — attempt ${attempt} failed (${reason}). Retry in ${delay / 1000}s...`);
       await new Promise(r => setTimeout(r, delay));
     }
@@ -159,11 +200,26 @@ function parseJSON(text) {
 // алынған параметрлерсіз) толығымен topic болып сақталады — үтір саны
 // қанша болса да.
 function parseUserInput(input) {
-  const parts = input.split(',').map(s => s.trim()).filter(Boolean);
+  const raw = String(input || '');
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
 
   let slideCount = null;
   let language   = null;
   let style      = null;
+
+  // Full-text scan first (handles "12 слайдтан тұратын" inside a paragraph)
+  const countInText = raw.match(/(\d+)\s*-?\s*(слайд|slide|бет|страниц)/i);
+  if (countInText) {
+    slideCount = Math.min(Math.max(parseInt(countInText[1], 10), 5), 15);
+  }
+  if (/минимал|minimal/i.test(raw)) style = style || 'minimal';
+  if (/бизнес|корпор|business/i.test(raw)) style = style || 'business';
+  if (/креатив|creative/i.test(raw)) style = style || 'creative';
+  if (/академ|ғылым|научн|academic/i.test(raw)) style = style || 'academic';
+  if (/питч|pitch/i.test(raw)) style = style || 'pitch';
+  if (/қазақ|каз|kazakh/i.test(raw)) language = language || 'Kazakh';
+  else if (/орыс|рус|russian/i.test(raw)) language = language || 'Russian';
+  else if (/ағыл|англ|english/i.test(raw)) language = language || 'English';
 
   let cut = parts.length; // topic-qa kiretin bolikterdin sany (sonynan kesiledi)
 
@@ -194,7 +250,27 @@ function parseUserInput(input) {
 
   const topic = parts.slice(0, cut).join(', ');
 
-  return { topic, slideCount, language, style };
+  return { topic, slideCount, language, style, coverMeta: parseCoverMeta(input) };
+}
+
+/** Extract title-page credits from client brief (KK/RU patterns). */
+function parseCoverMeta(input) {
+  const text = String(input || '');
+  const meta = { checkedBy: null, performedBy: null, group: null };
+  const checked = text.match(/Тексерген\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Проверил[аи]?\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Checked\s*by\s*[:：]\s*([^\n\r]+)/i);
+  const performed = text.match(/Орындаған\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Выполнил[аи]?\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Prepared\s*by\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Автор\s*[:：]\s*([^\n\r]+)/i);
+  const group = text.match(/Топ\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Группа\s*[:：]\s*([^\n\r]+)/i)
+    || text.match(/Group\s*[:：]\s*([^\n\r]+)/i);
+  if (checked) meta.checkedBy = checked[1].trim().slice(0, 80);
+  if (performed) meta.performedBy = performed[1].trim().slice(0, 80);
+  if (group) meta.group = group[1].trim().slice(0, 40);
+  return meta;
 }
 
 // ─── Стиль нұсқаулары ────────────────────────────────────────────────────
@@ -213,26 +289,41 @@ const COMPOSITION_RULES = `RULES:
 - composition.image: "full_background" "right_half" "left_half" "top_strip" "bottom_strip" "corner_accent" "none"
 - composition.overlay: "none" "dark_gradient_left" "dark_gradient_right" "dark_gradient_bottom" "dark_full" "light_full" "color_wash"
 - composition.textPosition: "center" "center_left" "center_right" "top_left" "top_center" "bottom_left" "bottom_center" "left_column" "right_column"
-- composition.layout: "single_column" "two_column_bullets" "stat_cards_row" "stat_cards_grid" "big_stat_hero" "quote_hero"
+- composition.layout: "single_column" "two_column_bullets" "stat_cards_row" "stat_cards_grid" "big_stat_hero" "quote_hero" "comparison_table"
 - SPECIAL LAYOUTS (use SPARINGLY — at most 1-2 slides per presentation, only when content genuinely fits):
   - "big_stat_hero": ONE single dramatic number filling most of the slide. ONLY use when the slide has EXACTLY 1 stat, NO bullets, and NO body text — this layout ignores everything except that one stat, title (used as a small eyebrow label above the number) and subtitle (shown small below). Great for a single powerful metric (e.g. "80%", "10x", "1M+").
   - "quote_hero": a large centered quotation. ONLY use when the slide has NO bullets and NO stats, and the subtitle (or body) is a single short quotable sentence (under ~150 characters). Put the quote itself in "subtitle", and the speaker/source name in "title" (it will render as an attribution line, not a heading).
-  - For these two layouts, "image" should be "none" (they render their own background, ignoring image composition).
-  - Do NOT use these layouts if the slide has bullets, stats (more than 1), or multiple paragraphs — they will silently fall back to a standard layout if content doesn't match, wasting the creative choice.
+  - "comparison_table": ONLY use when the "table" field is filled (see CONTENT rules above) and bullets/stats are null. Best for comparisons, before/after, feature matrices, or structured breakdowns that naturally form rows and columns.
+  - For these three layouts, "image" should be "none" (they render their own background, ignoring image composition).
+  - Do NOT use these layouts if the slide's content doesn't match their specific requirements above — they will silently fall back to a standard layout if content doesn't match, wasting the creative choice.
 - composition.mood: "dark" "light" "warm" "cold" "vivid"
 - composition.elements: "eyebrow" "title" "subtitle" "divider" "body" "bullets" "stats" "quote_mark"
 - composition.decorative: "accent_line_left" "accent_line_right" "corner_circle" "bottom_rule" "grid_dots"
-- VARIETY IS MANDATORY: use a MIX of image types across slides in this batch — do NOT default to "full_background" for every slide. Split layouts ("right_half", "left_half") work great for slides with a title + subtitle + a few bullets (no stats). "top_strip"/"bottom_strip" work well for slides with more text below/above the image band. Use "full_background" mainly for cover slides, closing slides, or slides where the image itself is the visual focus. If exactly one slide in this batch has a single standout stat or a short quotable sentence with no other content, consider "big_stat_hero" or "quote_hero" for that one slide — but most slides should use the standard image+text compositions above.
+- visualIntent: optional short English/Kazakh semantic description of the PRIMARY visual concept for the 3D web renderer (e.g. "human heart", "galaxy", "DNA molecule", "historical monument", "factory", "network"). It must describe the slide meaning, not a generic shape.
+- 3D creative freedom: choose the visual concept freely when it materially improves the slide. Do NOT force a 3D object when it would distract from dense text; use visualIntent only when a meaningful physical/semantic visual exists.
+- VARIETY IS MANDATORY: use a MIX of image types across slides in this batch — do NOT default to "full_background" for every slide. Split layouts ("right_half", "left_half") work great for slides with a title + subtitle + a few bullets (no stats). "top_strip"/"bottom_strip" work well for slides with more text below/above the image band. Use "full_background" mainly for cover slides, closing slides, or slides where the image itself is the visual focus. If exactly one slide in this batch has a single standout stat or a short quotable sentence with no other content, consider "big_stat_hero" or "quote_hero" for that one slide. If a slide's content is naturally a comparison or structured breakdown, consider filling "table" and using "comparison_table" for that slide — but most slides should use the standard image+text compositions above.
 - Sizing guide: "corner_accent" is a small decorative image (bottom-right ~38%x55%) — best for title + subtitle + 0-2 short bullets. If a slide has 2+ stat cards, prefer "full_background" or "none" for the image (stat cards need full width) — but do NOT let this push every other slide to full_background too.
 - imageQuery: English only, specific, photographic. CRITICAL: NEVER request images that themselves contain readable text, labels, numbers, charts, tables, screens, or signage (e.g. avoid "periodic table", "chart on whiteboard", "computer screen showing code", "book pages with text") — such images already have dense text baked in, and when our own slide text is placed on top, the two text layers visually clash and become unreadable. Instead, request abstract, atmospheric, or symbolic photos that evoke the topic: for a periodic-table slide, use queries like "chemistry lab glassware close-up, moody lighting" or "abstract molecular structure, dark background" — mood and subject matter, never the literal text-heavy object itself.`;
 
-const CONTENT_RULES = `MANDATORY CONTENT RULES:
-- subtitle: ALWAYS present, 1-2 sentences (15-25 words) briefly describing the slide
-- body: when present, 2-3 sentences (30-50 words) with clear explanatory content
-- bullets: when present, 3-5 items, each bullet 6-10 words (a clear short phrase, not a single word)
-- stats: 3 stat cards with real numbers and a short 3-5 word label
-- Write concise, clear content — not too long, not too short
+const CONTENT_RULES = `MANDATORY CONTENT RULES (balanced — readable, not empty, not essays):
+- title: 4-8 words, clear; can be a short phrase
+- subtitle: ALWAYS present, 1 sentence (12-22 words)
+- body: optional. When useful, 1-2 short sentences (15-35 words total). Prefer bullets for lists.
+- bullets: when present, 2-4 items. Each bullet 5-12 words — a clear thesis, not one word.
+- stats: 2-3 cards; labels 2-5 words
+- table: when the client asks for a table/comparison — 2-4 columns, 2-4 rows, cells 2-6 words.
+- Keep slides scannable. Do not pad with filler. Do not strip content the client asked for.
 - Set unused fields to null`;
+
+const CLIENT_FIRST_RULES = `CLIENT INTENT IS LAW (highest priority — overrides defaults when they conflict):
+- The client's message is a BRIEF you must obey: topic, structure, slide count, language, tone, what to include/exclude, syllabus points, names, numbers, dates.
+- If the client lists sections/chapters/points — use THEM as the outline. Do not invent a different structure.
+- If the client gives facts, quotes, numbers — use those exact facts. Do not replace with generic filler.
+- If the client asks for a style (business, minimal, academic, pitch, creative) or mood — follow it.
+- If the client asks for short/simple/few bullets — stay even shorter than the limits above.
+- If the client asks for detailed/deep content — still keep cinematic brevity, but prioritize their points over decoration.
+- Never ignore the client's topic to make a "prettier" generic presentation.
+- When unsure, prefer the client's words over your own invention.`;
 
 const SLIDE_JSON_SHAPE = `{
   "index": 1,
@@ -241,7 +332,9 @@ const SLIDE_JSON_SHAPE = `{
   "body": "...",
   "bullets": ["...", "..."],
   "stats": [{ "value": "...", "label": "..." }],
+  "table": { "headers": ["...", "..."], "rows": [["...", "..."], ["...", "..."]] },
   "imageQuery": "English photographic query with scene, mood, lighting",
+  "visualIntent": "semantic visual concept for the optional 3D web scene",
   "composition": {
     "image": "full_background",
     "overlay": "dark_gradient_left",
@@ -276,10 +369,12 @@ async function generateOutline(topic, slideCount, language) {
   // нақты ажыратамыз: егер ол құрылымды болса (нөмірленген апта/тарау/
   // бөлім тізімі бар), сол құрылымды дәлме-дәл сақтап, slideTopics-ті
   // содан алу керек — жаңа тақырып ойлап табу емес.
-  const user = `Here is the source material for a presentation:
+  const user = `CLIENT BRIEF (obey this — it is the customer's request, not a suggestion):
 """
 ${topic}
 """
+
+PRIORITY: follow the client's structure, facts, language, and intent exactly. Do not replace their plan with a generic template.
 
 STEP 1 — Determine the material type:
 - SHORT TOPIC (a few words/sentences, no internal structure) → you must invent a logical structure for it.
@@ -333,14 +428,14 @@ async function generateSlideBatch(presentationTitle, allTopics, batchTopics, sty
   const isLastBatch = batchTopics[batchTopics.length - 1].index === allTopics.length;
 
   const coverRule = isFirstBatch
-    ? `Slide 1 is the COVER slide: full_background, strong overlay, large title + subtitle (2-3 sentences introducing "${presentationTitle}").`
+    ? `Slide 1 is the COVER slide: full_background, strong overlay, large title + short subtitle (one sentence).`
     : '';
   const closingRule = isLastBatch
-    ? `The LAST slide in this batch (slide ${allTopics.length}) is the CLOSING slide: summary with 3-5 conclusion bullets.`
+    ? `The LAST slide in this batch (slide ${allTopics.length}) is the CLOSING slide: 2-4 conclusion bullets.`
     : '';
 
   // Алдыңғы батчтарда full_background тым жиі қолданылса — келесі батчқа
-  // нақты, міндетті түрде split-layout қолдануды тапсырамыз.;
+  // нақты, міндетті түрде split-layout қолдануды тапсырамыз.
   const ALL_IMAGE_TYPES = ['full_background', 'right_half', 'left_half', 'top_strip', 'bottom_strip', 'corner_accent'];
   let varietyRule = '';
   if (usedImageTypes && usedImageTypes.length > 0) {
@@ -353,13 +448,15 @@ async function generateSlideBatch(presentationTitle, allTopics, batchTopics, sty
 
   const user = `You are writing slides for the presentation "${presentationTitle}".
 
+CLIENT BRIEF (follow their intent): respect language, tone, and any constraints they stated. Outline topics below already come from their brief — do not reinvent the structure.
+
 Full presentation outline (for context only — you are generating just the slides listed below):
 ${contextList}
 
 Generate DETAILED, FULLY-FORMED content for ONLY these slides:
 ${batchList}
 
-IMPORTANT: if a slide's topic above already contains specific details (section names, numbers, key terms, sub-points — e.g. from a syllabus or course outline), you MUST use those exact details as the factual basis for the slide's body/bullets/stats. Do NOT replace them with a generic summary of your own. Expand and elaborate on what's given — do not invent unrelated content or drop the specifics in favor of a vaguer restatement.
+IMPORTANT — CLIENT FIRST: if a slide's topic above already contains specific details (section names, numbers, key terms, sub-points from the client's brief/syllabus), you MUST use those exact details. Do NOT replace with a generic summary. Prefer the client's wording. Keep text short (see content rules), but never drop their key facts.
 
 ${coverRule}
 ${closingRule}
@@ -375,6 +472,8 @@ Return this JSON structure:
 }
 
 The "slides" array must contain EXACTLY ${batchTopics.length} entries, with "index" matching: ${batchTopics.map(b => b.index).join(', ')}.
+
+${CLIENT_FIRST_RULES}
 
 ${COMPOSITION_RULES}
 - Each slide must have different composition from the others in this batch.
@@ -396,9 +495,11 @@ async function generateSlides(topic, options = {}) {
   const slideCount = options.slideCount || 8; // default 7-10 орнына нақты сан, batch есептеу үшін
   const language   = options.language   || null;
   const style      = options.style      || null;
+  // Full raw client message (may include structure notes beyond parsed topic)
+  const clientBrief = options.clientBrief || topic;
 
   console.log(`[Pipeline] Generating outline for ${slideCount} slides...`);
-  const outline = await generateOutline(topic, slideCount, language);
+  const outline = await generateOutline(clientBrief, slideCount, language);
   const presentationTitle = outline.title;
   const slideTopics = outline.slideTopics;
 
@@ -425,7 +526,32 @@ async function generateSlides(topic, options = {}) {
   // index бойынша сұрыптау (модель ретсіз қайтарса да дұрыс ретте болу үшін)
   allSlides.sort((a, b) => (a.index || 0) - (b.index || 0));
 
+  // Force cover credits from client brief (never rely on model memory alone)
+  if (options.coverMeta && allSlides.length) {
+    const m = options.coverMeta;
+    const cover = allSlides[0];
+    const lines = [];
+    if (m.checkedBy) lines.push('Тексерген: ' + m.checkedBy);
+    if (m.performedBy) lines.push('Орындаған: ' + m.performedBy);
+    if (m.group) lines.push('Топ: ' + m.group);
+    if (lines.length) {
+      cover.bullets = lines;
+      cover.body = null;
+      if (!cover.subtitle || cover.subtitle.length > 80) {
+        cover.subtitle = lines.join(' · ');
+      }
+      // Keep academic minimal look on cover
+      cover.composition = Object.assign({}, cover.composition || {}, {
+        image: (cover.composition && cover.composition.image) || 'full_background',
+        overlay: (cover.composition && cover.composition.overlay) || 'dark_gradient_bottom',
+        layout: 'single_column',
+        elements: ['title', 'subtitle', 'bullets'],
+      });
+    }
+  }
+
   return { title: presentationTitle, slides: allSlides };
+
 }
 
 // ─── 2. Review & Improve — де батчпен, бір слайдтар тобын бір-бірден ──────
@@ -443,12 +569,16 @@ ${batchJSON}
 
 Fix only:
 - Text readability over images (fix overlay or textPosition)
-- Title too long (>8 words) → shorten
+- Title too long (>10 words) → shorten
+- Subtitle longer than 25 words → cut to one sentence
+- Body longer than 40 words → trim
 - full_background + dark_gradient_left → textPosition must be center_left
 - full_background + dark_gradient_right → textPosition must be center_right
-- Too many bullets (>6) or body sentences (>3) → trim
+- Too many bullets (>5) → keep the strongest 3-4
+- Each bullet >14 words → shorten slightly
 - full_background + overlay=none → add dark_gradient_bottom
 - Vague imageQuery → rewrite in English with scene+mood+lighting
+- If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"
 - If 2+ stats with right_half/left_half image → change image to full_background
 
 Return the full corrected JSON with the same shape: { "slides": [...] }`;
@@ -491,6 +621,5 @@ async function reviewAndImproveSlides(presentation) {
   return { ...presentation, slides: allReviewed };
 }
 
-module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput };
-  
-    
+module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta};
+                                                                                                                                       
