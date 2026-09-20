@@ -40,10 +40,23 @@ async function fetchImage(query) {
     return url;
   } catch (error) {
     const status = error.response?.status;
+    const body   = error.response?.data;
 
     console.warn(
       `[Unsplash] failed (${status || error.code || 'unknown'}) for "${cleanQuery}" — using fallback`
     );
+
+    // 403/401 — көбіне rate limit (Demo деңгейде сағатына 50 сұраныс) немесе
+    // кілттің жарамсыздығы. body-ды логқа шығарып, нақты себепті анықтау
+    // үшін (Unsplash қатесінде errors[] массивінде түсінік болады).
+    if (status === 403 || status === 401) {
+      console.warn(`[Unsplash] ${status} details:`, JSON.stringify(body));
+      const remaining = error.response?.headers?.['x-ratelimit-remaining'];
+      const limit     = error.response?.headers?.['x-ratelimit-limit'];
+      if (remaining !== undefined) {
+        console.warn(`[Unsplash] rate limit: ${remaining}/${limit} remaining this hour`);
+      }
+    }
 
     return null;
   }
