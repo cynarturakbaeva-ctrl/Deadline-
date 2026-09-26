@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <title>DeadLine — AI Презентация</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <div>
+          <div class="title">DeadLine</div>
+          <div class="subtitle">AI Presentation Studio</div>
+        </div>
+      </div>
+      <div class="credits-pill" id="creditsPill" title="Кредиттер">
+        <span class="coin">◆</span>
+        <span id="creditsVal">—</span>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="create">Жасау</button>
+      <button class="tab" data-tab="history">Тарих</button>
+      <button class="tab" data-tab="account">Аккаунт</button>
+    </nav>
+
+    <!-- CREATE -->
+    <section id="tab-create" class="panel active">
+      <div class="card">
+        <label class="label">Тақырып</label>
+        <textarea id="topic" rows="3" placeholder="Мысалы: Жасанды интеллекттің білім берудегі рөлі" maxlength="8000"></textarea>
+        <div class="char-count"><span id="charCount">0</span>/8000</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card compact">
+          <label class="label">Слайд саны</label>
+          <div class="chips" id="slideChips">
+            <button class="chip" data-v="6">6</button>
+            <button class="chip active" data-v="8">8</button>
+            <button class="chip" data-v="10">10</button>
+            <button class="chip" data-v="12">12</button>
+            <button class="chip" data-v="15">15</button>
+          </div>
+        </div>
+        <div class="card compact">
+          <label class="label">Тіл</label>
+          <div class="chips" id="langChips">
+            <button class="chip active" data-v="kk">Қазақ</button>
+            <button class="chip" data-v="ru">Рус</button>
+            <button class="chip" data-v="en">EN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card compact">
+        <label class="label">Стиль</label>
+        <div class="chips wrap" id="styleChips">
+          <button class="chip active" data-v="">Авто</button>
+          <button class="chip" data-v="минимал">Минимал</button>
+          <button class="chip" data-v="корпоратив">Корпоратив</button>
+          <button class="chip" data-v="академиялық">Академиялық</button>
+          <button class="chip" data-v="стартап">Стартап</button>
+          <button class="chip" data-v="инфографика">Инфографика</button>
+        </div>
+      </div>
+
+      <div class="card compact">
+        <label class="label">Аудитория (опционал)</label>
+        <input id="audience" type="text" placeholder="Студенттер, инвесторлар, команда..." maxlength="120" />
+      </div>
+
+      <button id="btnGenerate" class="btn primary block">
+        <span class="btn-icon">✨</span>
+        <span>Презентация жасау</span>
+      </button>
+      <p class="hint">1 кредит = 1 презентация · Сапа қақпасымен</p>
+    </section>
+
+    <!-- PROGRESS (overlay) -->
+    <div id="progressOverlay" class="overlay hidden">
+      <div class="progress-card">
+        <div class="spinner"></div>
+        <div class="progress-title" id="progressTitle">Генерация...</div>
+        <div class="progress-detail" id="progressDetail">Кезекте</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-pct" id="progressPct">0%</div>
+        <button id="btnCancelView" class="btn ghost small">Фонда күту</button>
+      </div>
+    </div>
+
+    <!-- RESULT -->
+    <div id="resultCard" class="overlay hidden">
+      <div class="result-card">
+        <div class="result-icon">✅</div>
+        <h2 id="resultTitle">Дайын!</h2>
+        <p id="resultScore" class="muted"></p>
+        <div class="result-actions">
+          <button id="btnDlPptx" class="btn primary">📥 PPTX жүктеу</button>
+          <button id="btnDlHtml" class="btn secondary">🌐 HTML жүктеу</button>
+          <button id="btnNew" class="btn ghost">Жаңа презентация</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <section id="tab-history" class="panel">
+      <div id="historyList" class="list"></div>
+      <p id="historyEmpty" class="empty hidden">Әзірге презентация жоқ</p>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section id="tab-account" class="panel">
+      <div class="card">
+        <div class="user-row">
+          <div class="avatar" id="avatar">D</div>
+          <div>
+            <div class="user-name" id="userName">—</div>
+            <div class="muted" id="userId">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="card stats">
+        <div class="stat"><div class="stat-val" id="statCredits">0</div><div class="stat-label">Кредит</div></div>
+        <div class="stat"><div class="stat-val" id="statTotal">0</div><div class="stat-label">Жасалды</div></div>
+        <div class="stat"><div class="stat-val" id="statRefs">0</div><div class="stat-label">Реферал</div></div>
+      </div>
+      <div class="card">
+        <label class="label">Реферал сілтеме</label>
+        <div class="copy-row">
+          <input id="refLink" readonly />
+          <button id="btnCopyRef" class="btn secondary small">Көшіру</button>
+        </div>
+        <p class="hint">Әр 2 сәтті презентация = +1 кредит</p>
+      </div>
+      <div class="card">
+        <label class="label">Кредит сатып алу</label>
+        <p class="pay-info">Баға: <strong id="priceVal">250</strong>₸ / 1 презентация</p>
+        <p class="pay-info">Kaspi: <strong id="kaspiPhone"></strong> · <span id="kaspiName"></span></p>
+        <p class="hint">Чекті PDF түрінде ботқа жіберіңіз — 5–10 мин ішінде расталады.</p>
+        <button id="btnOpenBot" class="btn secondary block">Ботқа өту</button>
+      </div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
