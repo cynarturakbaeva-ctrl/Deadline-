@@ -216,11 +216,11 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     }
 
     const rate = await checkRateLimits(chatId);
-    if (!rate.ok) {
+    if (!rate.allowed) {
       return res.status(429).json({
         error: 'rate_limited',
         message: rate.message || 'Тым жиі сұраныс',
-        retryAfter: rate.retryAfter,
+        retryAfter: rate.retryAfterSec,
       });
     }
 
