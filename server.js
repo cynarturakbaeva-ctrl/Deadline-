@@ -408,7 +408,7 @@ async function executeJob(jobId) {
       createdAt: Date.now(),
     });
 
-    // Optional: notify via bot if available
+    // Notify via bot and send files directly to chat
     try {
       if (global.__deadlineBot) {
         const scoreNote = result.qualityScore != null
@@ -416,19 +416,26 @@ async function executeJob(jobId) {
           : '';
         await global.__deadlineBot.sendMessage(
           chatId,
-          `✅ *Презентация дайын!*\n\n📌 ${escapeMd(result.title || job.payload.topic)}${scoreNote}\n\n📱 Mini App ішінен жүктеп алыңыз.`,
-          {
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [[
-                { text: '📱 Mini App ашу', web_app: { url: `${WEBAPP_URL}/webapp/` } },
-              ]],
-            },
-          }
+          `✅ *Презентация дайын!*\n\n📌 ${escapeMd(result.title || job.payload.topic)}${scoreNote}\n\nФайлдар төменде жіберілді 👇`,
+          { parse_mode: 'Markdown' }
         );
+        if (pptxPath && fs.existsSync(pptxPath)) {
+          const pptxName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.pptx`;
+          await global.__deadlineBot.sendDocument(chatId, pptxPath, {}, {
+            filename: pptxName,
+            contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          });
+        }
+        if (htmlPath && fs.existsSync(htmlPath)) {
+          const htmlName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.html`;
+          await global.__deadlineBot.sendDocument(chatId, htmlPath, {}, {
+            filename: htmlName,
+            contentType: 'text/html',
+          });
+        }
       }
     } catch (e) {
-      console.warn('[Job] notify failed', e.message);
+      console.warn('[Job] file send failed', e.message);
     }
 
     console.log(`[Job] ${jobId} done — ${result.title}`);
@@ -487,4 +494,4 @@ main().catch(err => {
   process.exit(1);
 });
 
-module.exports = { app };
+module.exports = { app }; 
