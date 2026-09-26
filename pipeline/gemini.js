@@ -1,5 +1,7 @@
 'use strict';
 
+const { recordApiUsage } = require('./cost');
+
 // ─── DeepSeek клиенті (fetch арқылы, SDK орнатпай) ───────────────────────
 // Groq-тан DeepSeek V4-Pro-ға көшірілді — Groq-тың тегін деңгейінің 6000
 // TPM шегі рейт-лимит қателерін тудырып тұрғандықтан, ал Developer (ақылы)
@@ -96,6 +98,9 @@ async function groqChat(systemPrompt, userPrompt, label) {
 
   if (data.usage) {
     console.log(`[Tokens] ${label} — input: ${data.usage.prompt_tokens}, output: ${data.usage.completion_tokens}, total: ${data.usage.total_tokens}`);
+    recordApiUsage(data.usage, { label, model: DEEPSEEK_MODEL });
+  } else {
+    recordApiUsage(null, { label, model: DEEPSEEK_MODEL });
   }
 
   if (finishReason === 'length') {
@@ -256,20 +261,46 @@ function parseUserInput(input) {
 /** Extract title-page credits from client brief (KK/RU patterns). */
 function parseCoverMeta(input) {
   const text = String(input || '');
-  const meta = { checkedBy: null, performedBy: null, group: null };
-  const checked = text.match(/Тексерген\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Проверил[аи]?\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Checked\s*by\s*[:：]\s*([^\n\r]+)/i);
-  const performed = text.match(/Орындаған\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Выполнил[аи]?\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Prepared\s*by\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Автор\s*[:：]\s*([^\n\r]+)/i);
-  const group = text.match(/Топ\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Группа\s*[:：]\s*([^\n\r]+)/i)
-    || text.match(/Group\s*[:：]\s*([^\n\r]+)/i);
-  if (checked) meta.checkedBy = checked[1].trim().slice(0, 80);
-  if (performed) meta.performedBy = performed[1].trim().slice(0, 80);
-  if (group) meta.group = group[1].trim().slice(0, 40);
+  const meta = { checkedBy: null, performedBy: null, group: null, faculty: null, department: null };
+
+  // A field value stops at the next known label (on the same or a later
+  // line), a comma, or end of line — whichever comes first. This lets
+  // single-line, comma-separated briefs ("Факультет: X, Кафедра: Y, ...")
+  // parse each field correctly instead of one field swallowing the rest.
+  const STOP = '(?:Тексерген|Проверил[аи]?|Checked\\s*by|Орындаған|Выполнил[аи]?|Prepared\\s*by|Автор|Топ|Группа|Group|Факультет|Faculty|Кафедра|Department)\\s*[:：]';
+  const VAL = `([^\\n\\r,]+?)(?=\\s*,\\s*${STOP}|[\\n\\r]|$)`;
+
+  const checked = text.match(new RegExp(`Тексерген\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Проверил[аи]?\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Checked\\s*by\\s*[:：]\\s*${VAL}`, 'i'));
+  const performed = text.match(new RegExp(`Орындаған\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Выполнил[аи]?\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Prepared\\s*by\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Автор\\s*[:：]\\s*${VAL}`, 'i'));
+  const group = text.match(new RegExp(`Топ\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Группа\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Group\\s*[:：]\\s*${VAL}`, 'i'));
+  // Yessenov University title-slide convention: faculty + department (kafedra)
+  // alongside author/supervisor/group — see presentation-requirements brief.
+  const faculty = text.match(new RegExp(`Факультет\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Faculty\\s*[:：]\\s*${VAL}`, 'i'));
+  const department = text.match(new RegExp(`Кафедра\\s*[:：]\\s*${VAL}`, 'i'))
+    || text.match(new RegExp(`Department\\s*[:：]\\s*${VAL}`, 'i'));
+
+  function cleanMeta(v, max) {
+    if (!v) return null;
+    let s = String(v).trim();
+    // Strip placeholder brackets users often type: [Name], 【Name】
+    s = s.replace(/^[\[\(【「]+/, '').replace(/[\]\)】」]+$/, '').trim();
+    s = s.replace(/^["']+|["']+$/g, '').trim();
+    if (!s || /^[\[\]_\-—–.]+$/.test(s)) return null;
+    return s.slice(0, max);
+  }
+  if (checked) meta.checkedBy = cleanMeta(checked[1], 80);
+  if (performed) meta.performedBy = cleanMeta(performed[1], 80);
+  if (group) meta.group = cleanMeta(group[1], 40);
+  if (faculty) meta.faculty = cleanMeta(faculty[1], 80);
+  if (department) meta.department = cleanMeta(department[1], 80);
   return meta;
 }
 
@@ -285,35 +316,55 @@ function styleGuide(style) {
   }
 }
 
-const COMPOSITION_RULES = `RULES:
+const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear visual purpose):
 - composition.image: "full_background" "right_half" "left_half" "top_strip" "bottom_strip" "corner_accent" "none"
 - composition.overlay: "none" "dark_gradient_left" "dark_gradient_right" "dark_gradient_bottom" "dark_full" "light_full" "color_wash"
 - composition.textPosition: "center" "center_left" "center_right" "top_left" "top_center" "bottom_left" "bottom_center" "left_column" "right_column"
 - composition.layout: "single_column" "two_column_bullets" "stat_cards_row" "stat_cards_grid" "big_stat_hero" "quote_hero" "comparison_table"
-- SPECIAL LAYOUTS (use SPARINGLY — at most 1-2 slides per presentation, only when content genuinely fits):
-  - "big_stat_hero": ONE single dramatic number filling most of the slide. ONLY use when the slide has EXACTLY 1 stat, NO bullets, and NO body text — this layout ignores everything except that one stat, title (used as a small eyebrow label above the number) and subtitle (shown small below). Great for a single powerful metric (e.g. "80%", "10x", "1M+").
-  - "quote_hero": a large centered quotation. ONLY use when the slide has NO bullets and NO stats, and the subtitle (or body) is a single short quotable sentence (under ~150 characters). Put the quote itself in "subtitle", and the speaker/source name in "title" (it will render as an attribution line, not a heading).
-  - "comparison_table": ONLY use when the "table" field is filled (see CONTENT rules above) and bullets/stats are null. Best for comparisons, before/after, feature matrices, or structured breakdowns that naturally form rows and columns.
-  - For these three layouts, "image" should be "none" (they render their own background, ignoring image composition).
-  - Do NOT use these layouts if the slide's content doesn't match their specific requirements above — they will silently fall back to a standard layout if content doesn't match, wasting the creative choice.
-- composition.mood: "dark" "light" "warm" "cold" "vivid"
-- composition.elements: "eyebrow" "title" "subtitle" "divider" "body" "bullets" "stats" "quote_mark"
-- composition.decorative: "accent_line_left" "accent_line_right" "corner_circle" "bottom_rule" "grid_dots"
-- visualIntent: optional short English/Kazakh semantic description of the PRIMARY visual concept for the 3D web renderer (e.g. "human heart", "galaxy", "DNA molecule", "historical monument", "factory", "network"). It must describe the slide meaning, not a generic shape.
-- 3D creative freedom: choose the visual concept freely when it materially improves the slide. Do NOT force a 3D object when it would distract from dense text; use visualIntent only when a meaningful physical/semantic visual exists.
-- VARIETY IS MANDATORY: use a MIX of image types across slides in this batch — do NOT default to "full_background" for every slide. Split layouts ("right_half", "left_half") work great for slides with a title + subtitle + a few bullets (no stats). "top_strip"/"bottom_strip" work well for slides with more text below/above the image band. Use "full_background" mainly for cover slides, closing slides, or slides where the image itself is the visual focus. If exactly one slide in this batch has a single standout stat or a short quotable sentence with no other content, consider "big_stat_hero" or "quote_hero" for that one slide. If a slide's content is naturally a comparison or structured breakdown, consider filling "table" and using "comparison_table" for that slide — but most slides should use the standard image+text compositions above.
-- Sizing guide: "corner_accent" is a small decorative image (bottom-right ~38%x55%) — best for title + subtitle + 0-2 short bullets. If a slide has 2+ stat cards, prefer "full_background" or "none" for the image (stat cards need full width) — but do NOT let this push every other slide to full_background too.
-- imageQuery: English only, specific, photographic. CRITICAL: NEVER request images that themselves contain readable text, labels, numbers, charts, tables, screens, or signage (e.g. avoid "periodic table", "chart on whiteboard", "computer screen showing code", "book pages with text") — such images already have dense text baked in, and when our own slide text is placed on top, the two text layers visually clash and become unreadable. Instead, request abstract, atmospheric, or symbolic photos that evoke the topic: for a periodic-table slide, use queries like "chemistry lab glassware close-up, moody lighting" or "abstract molecular structure, dark background" — mood and subject matter, never the literal text-heavy object itself.`;
+- composition.visualPurpose (REQUIRED short tag): one of "cover" "section" "definition" "process" "comparison" "timeline" "stats" "hierarchy" "evidence" "example" "synthesis" "conclusion" "quote" "table"
+- SEMANTIC MATCH (layout follows meaning, not a template habit):
+  • comparison / before-after → table or two clear columns; image "none" or subtle full_background
+  • process / steps / pipeline → prefer visual diagram; keep 3-5 short step bullets as fallback
+  • hierarchy / system / architecture → diagram visual when possible
+  • statistics with REAL numbers only → stats cards or big_stat_hero (one number); never invent figures
+  • definition / concept → simple center or left column, generous whitespace, NO card clutter
+  • timeline → ordered bullets or diagram; avoid random card grids
+  • conclusion → clean takeaways, full_background + strong overlay, no decorative noise
+- SPECIAL LAYOUTS (at most 1-2 per deck, only when content truly fits):
+  - big_stat_hero: EXACTLY 1 stat, no bullets, no body
+  - quote_hero: no bullets/stats; quote in subtitle; attribution in title
+  - comparison_table: table filled; bullets/stats null; image "none"
+- VARIETY WITH RHYTHM: do NOT repeat the same image type for 3+ consecutive slides. Alternate full_background, split (left/right_half), strip, and none. Cover and closing may use full_background.
+- Avoid: identical card grids every slide, pointless corner decorations, random gradients, walls of text, tiny text, generic stock clichés ("handshake business").
+- Simple content → simple powerful composition (center, large title, one idea). Dense content → full width, stronger overlay, fewer competing elements.
+- imageQuery: English, photographic, topic-true, no baked-in text/charts/screens. Prefer specific scene+mood+lighting over generic "abstract background".
+- composition.mood: keep coherent across the deck (max 2 moods). accentColor: one accent family for the whole presentation.
+- decorative: use SPARINGLY — at most one of accent_line_left|bottom_rule when it aids hierarchy; otherwise [].`;
 
-const CONTENT_RULES = `MANDATORY CONTENT RULES (balanced — readable, not empty, not essays):
-- title: 4-8 words, clear; can be a short phrase
-- subtitle: ALWAYS present, 1 sentence (12-22 words)
-- body: optional. When useful, 1-2 short sentences (15-35 words total). Prefer bullets for lists.
-- bullets: when present, 2-4 items. Each bullet 5-12 words — a clear thesis, not one word.
-- stats: 2-3 cards; labels 2-5 words
-- table: when the client asks for a table/comparison — 2-4 columns, 2-4 rows, cells 2-6 words.
-- Keep slides scannable. Do not pad with filler. Do not strip content the client asked for.
+const CONTENT_RULES = `CONTENT & LANGUAGE (teach, do not encyclopedia-dump):
+- title: 4-8 words, concrete, no vague "Introduction/Overview/Basics" alone
+- subtitle: always present, 1 sentence (10-22 words) that advances the idea
+- body: optional; 1-2 short sentences max when bullets cannot carry the point
+- bullets: 2-4 items, each 5-12 words, one idea each — thesis not filler
+- stats: ONLY real numbers from the client brief or universally known facts; labels 2-5 words. If unsure, set stats null
+- table: for true comparisons only; 2-4 columns, 2-4 rows, short cells
+- NO generic AI openers ("In today's world", "It is important to note", "В современном мире", "Қазіргі заманда")
+- NO repeated explanations across adjacent slides
+- Prefer bullets over paragraphs; prefer a diagram (visual field) over a long list when the idea is a process/hierarchy/comparison
+- Educational flow: explain prerequisites before advanced terms; examples after definitions; conclusion derived from prior slides
+- Keep terminology consistent; natural language for the target audience; preserve technical precision
 - Set unused fields to null`;
+
+const VISUAL_RULES = `SEMANTIC VISUAL FIELD (diagram only when it teaches faster than text):
+- visual is null on MOST slides. Set it when meaning is relational:
+  • diagram — process, flow, cycle, hierarchy, architecture, cause→effect (3-6 named parts, clear direction)
+  • infographic — 3-6 REAL numbers/facts from THIS slide only
+  • map — places/routes as SCHEMATIC only (never fake borders)
+- At most ONE visual per batch; never on cover. If in doubt, null.
+- Shape: {"type":"diagram|infographic|map","brief":"English: what to draw and the relationship","data":["3-8 short items in presentation language from THIS slide only"]}
+- NEVER invent statistics. Prefer qualitative structure over fake numbers.
+- Brief must state the relationship (e.g. "left-to-right pipeline: data → model → deploy"), not "nice infographic".
+- Slide with visual still needs title, subtitle, 2-4 short bullets as text fallback.`;
 
 const CLIENT_FIRST_RULES = `CLIENT INTENT IS LAW (highest priority — overrides defaults when they conflict):
 - The client's message is a BRIEF you must obey: topic, structure, slide count, language, tone, what to include/exclude, syllabus points, names, numbers, dates.
@@ -333,6 +384,7 @@ const SLIDE_JSON_SHAPE = `{
   "bullets": ["...", "..."],
   "stats": [{ "value": "...", "label": "..." }],
   "table": { "headers": ["...", "..."], "rows": [["...", "..."], ["...", "..."]] },
+  "visual": null,
   "imageQuery": "English photographic query with scene, mood, lighting",
   "visualIntent": "semantic visual concept for the optional 3D web scene",
   "composition": {
@@ -353,12 +405,29 @@ const SLIDE_JSON_SHAPE = `{
 // batch-тарға дәйекті, бір-бірімен байланысты жоспар беру, әйтпесе әр
 // батч тақырыпты басынан бастап "ойлап табады" да, слайдтар арасында
 // логикалық сабақтастық болмайды.
-async function generateOutline(topic, slideCount, language) {
+async function generateOutline(topic, slideCount, language, style) {
   const languageRule = language
     ? `Write in ${language}.`
     : `Write in the same language as the topic/material.`;
 
   const system = `You are a presentation structure planner. You ALWAYS respond with valid JSON only. No markdown, no explanation.`;
+
+  // Academic-style presentations (student coursework/thesis defense, e.g.
+  // Yessenov University convention) follow a fixed scholarly section order.
+  // Only applied for style === 'academic' — a pitch/business deck should not
+  // be forced into "Methodology"/"Literature review" sections.
+  const academicStructureRule = style === 'academic'
+    ? `
+ACADEMIC STRUCTURE (mandatory section order for this style, adapt slide count to fit within ${slideCount} slides — merge adjacent sections if too few slides are available, never drop Methodology, Results, or Conclusion):
+1. Cover (title, author/supervisor/faculty — handled separately, do not duplicate credits here)
+2. Goal & objectives ("Мақсат және міндеттер")
+3. Literature review, if the material has cited sources ("Әдебиеттер шолуы") — optional, include only if source material supports it
+4. Methodology ("Әдіснама") — methods, materials, data sources used
+5. Results ("Нәтижелер") — one or more slides with findings, data, charts
+6. Conclusion ("Қорытынды") — key takeaways and practical recommendations
+7. References ("Әдебиеттер тізімі") — final slide, numbered source list
+Keep the client's own facts/structure from STEP 1 layered onto this scaffold — do not discard their content, just map it onto these sections.`
+    : '';
 
   // МАҢЫЗДЫ: пайдаланушы кейде тек қысқа тақырып емес, толық материал
   // (силлабус, курс жоспары, дәріс мәтіні) жібереді. Бұрын промпт мұны
@@ -381,9 +450,11 @@ STEP 1 — Determine the material type:
 - STRUCTURED MATERIAL (syllabus, course outline, lecture notes, numbered weeks/chapters/sections, or any text with its own internal breakdown) → you must PRESERVE that existing structure. Do NOT collapse it into a generic summary. Do NOT invent your own structure when the material already has one.
 
 STEP 2 — Generate exactly ${slideCount} slides. ${languageRule}
-Slide 1 must be a cover/intro slide. The last slide must be a closing/summary slide.
+Slide 1 must be a cover/intro slide. The last slide must be a closing/summary slide${style === 'academic' ? ' (or references list — see STEP 3)' : ''}.
 - If STRUCTURED MATERIAL: map the existing weeks/chapters/sections onto the middle slides in their original order. If there are more sections than available slides, group adjacent sections together rather than dropping content. Keep original section names/numbers (e.g. "Апта 3: ...", "Тарау 2: ...") where present.
 - If SHORT TOPIC: design a sensible flow (intro → concepts → details → applications → conclusion, or similar).
+${academicStructureRule ? `
+STEP 3 — Academic structure applies (style=academic):${academicStructureRule}` : ''}
 
 Return ONLY this JSON:
 {
@@ -430,8 +501,19 @@ async function generateSlideBatch(presentationTitle, allTopics, batchTopics, sty
   const coverRule = isFirstBatch
     ? `Slide 1 is the COVER slide: full_background, strong overlay, large title + short subtitle (one sentence).`
     : '';
+
+  const lastTopic = allTopics[allTopics.length - 1] || '';
+  const isReferencesSlide = isLastBatch && /әдебиеттер тізімі|список литератур|references|bibliography/i.test(lastTopic);
   const closingRule = isLastBatch
-    ? `The LAST slide in this batch (slide ${allTopics.length}) is the CLOSING slide: 2-4 conclusion bullets.`
+    ? (isReferencesSlide
+        ? `The LAST slide in this batch (slide ${allTopics.length}) is the REFERENCES / Әдебиеттер slide ONLY.
+STRICT RULES for this slide:
+- bullets = real bibliographic entries only: Author. Title. — City: Publisher, Year. (or URL from the client brief)
+- FORBIDDEN on this slide: presentation outline, slide plan, "Title — opening visual", "Executive overview", "line chart", "timeline", design instructions, structure of the deck, English meta prompts
+- If the client brief does NOT list real sources, put 2–4 well-known public sources relevant to the TOPIC (e.g. official reports, classic works) OR leave bullets as short topic-relevant source titles without fake years — NEVER dump the outline
+- title must be "Әдебиеттер тізімі" / "References" — not a conclusion
+- No body essay; no stats; no table`
+        : `The LAST slide in this batch (slide ${allTopics.length}) is the CLOSING slide: 2-4 conclusion bullets.`)
     : '';
 
   // Алдыңғы батчтарда full_background тым жиі қолданылса — келесі батчқа
@@ -478,7 +560,9 @@ ${CLIENT_FIRST_RULES}
 ${COMPOSITION_RULES}
 - Each slide must have different composition from the others in this batch.
 
-${CONTENT_RULES}`;
+${CONTENT_RULES}
+
+${VISUAL_RULES}`;
 
   const text = await withRetry(() => groqChat(system, user, `generateBatch[${batchTopics.map(b=>b.index).join(',')}]`), 'generateBatch');
   const parsed = parseJSON(text);
@@ -492,14 +576,17 @@ ${CONTENT_RULES}`;
 
 // ─── Generate full presentation — outline, then batches, stitched together ─
 async function generateSlides(topic, options = {}) {
-  const slideCount = options.slideCount || 8; // default 7-10 орнына нақты сан, batch есептеу үшін
+  // Default 8 slides in general; academic style defaults to 10 (Kawasaki's
+  // "10/20/30" rule — ~10 slides, 20 min, 30pt+ font — cited in the Yessenov
+  // University presentation-requirements brief as the common convention).
+  const slideCount = options.slideCount || (options.style === 'academic' ? 10 : 8);
   const language   = options.language   || null;
   const style      = options.style      || null;
   // Full raw client message (may include structure notes beyond parsed topic)
   const clientBrief = options.clientBrief || topic;
 
   console.log(`[Pipeline] Generating outline for ${slideCount} slides...`);
-  const outline = await generateOutline(clientBrief, slideCount, language);
+  const outline = await generateOutline(clientBrief, slideCount, language, style);
   const presentationTitle = outline.title;
   const slideTopics = outline.slideTopics;
 
@@ -531,6 +618,8 @@ async function generateSlides(topic, options = {}) {
     const m = options.coverMeta;
     const cover = allSlides[0];
     const lines = [];
+    if (m.faculty) lines.push('Факультет: ' + m.faculty);
+    if (m.department) lines.push('Кафедра: ' + m.department);
     if (m.checkedBy) lines.push('Тексерген: ' + m.checkedBy);
     if (m.performedBy) lines.push('Орындаған: ' + m.performedBy);
     if (m.group) lines.push('Топ: ' + m.group);
@@ -580,6 +669,7 @@ Fix only:
 - Vague imageQuery → rewrite in English with scene+mood+lighting
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"
 - If 2+ stats with right_half/left_half image → change image to full_background
+- Do NOT touch the "visual" field (leave it exactly as given)
 
 Return the full corrected JSON with the same shape: { "slides": [...] }`;
 
@@ -598,7 +688,12 @@ Return the full corrected JSON with the same shape: { "slides": [...] }`;
     return slidesBatch;
   }
 
-  return reviewed.slides;
+  // "visual" өрісін модельге сенбей, кодпен қайтарамыз (review оны түсіріп кетуі мүмкін)
+  return reviewed.slides.map((s, i) => {
+    const orig = slidesBatch.find((o) => o && o.index === s.index) || slidesBatch[i];
+    if (orig && orig.visual !== undefined) s.visual = orig.visual;
+    return s;
+  });
 }
 
 async function reviewAndImproveSlides(presentation) {
