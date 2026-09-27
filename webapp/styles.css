@@ -66,13 +66,14 @@ body { padding-bottom: env(safe-area-inset-bottom, 12px); }
   display: block; font-size: 12px; font-weight: 600;
   color: var(--hint); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em;
 }
-textarea, input[type="text"] {
+textarea, input[type="text"], input[type="number"] {
   width: 100%; background: var(--bg); border: 1px solid transparent;
   border-radius: 12px; color: var(--text); padding: 12px 14px;
   font-size: 15px; font-family: inherit; resize: vertical; outline: none;
 }
 textarea:focus, input:focus { border-color: var(--btn); }
 .char-count { text-align: right; font-size: 11px; color: var(--hint); margin-top: 4px; }
+.input-number { text-align: center; font-weight: 600; font-size: 18px; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 380px) { .grid-2 { grid-template-columns: 1fr; } }

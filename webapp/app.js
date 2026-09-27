@@ -70,7 +70,20 @@
       state[key] = chip.dataset.v === '' ? '' : (isNaN(+chip.dataset.v) ? chip.dataset.v : +chip.dataset.v);
     });
   }
-  bindChips('#slideChips', 'slideCount');
+  function clampSlideCount(v) {
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return 8;
+    return Math.min(Math.max(n, 5), 15);
+  }
+  const slideInput = $('#slideCountInput');
+  slideInput.addEventListener('input', () => {
+    state.slideCount = clampSlideCount(slideInput.value);
+  });
+  slideInput.addEventListener('blur', () => {
+    const clamped = clampSlideCount(slideInput.value);
+    slideInput.value = clamped;
+    state.slideCount = clamped;
+  });
   bindChips('#langChips', 'language');
   bindChips('#styleChips', 'style');
 
@@ -238,22 +251,16 @@
       haptic('light');
       const headers = initDataHeader();
       const res = await fetch(`/api/job/${jobId}/download/${type}`, { headers });
-      if (!res.ok) throw new Error('Жүктеу сәтсіз');
-      const blob = await res.blob();
-      const cd = res.headers.get('Content-Disposition') || '';
-      let name = type === 'pptx' ? 'presentation.pptx' : 'presentation.html';
-      const m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(cd);
-      if (m) name = decodeURIComponent(m[1] || m[2]);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      if (tg?.showPopup) {
-        // optional
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sent) throw new Error(data.error === 'bot_unavailable' ? 'Бот қолжетімсіз' : 'Жіберу сәтсіз');
+      showToast('Чатқа жіберілді ✅');
+      haptic('success');
+      if (tg?.close) {
+        // let user switch to chat manually; do not auto-close
       }
     } catch (e) {
-      showToast(e.message || 'Жүктеу қатесі');
+      showToast(e.message || 'Жіберу қатесі');
+      haptic('error');
     }
   }
 
