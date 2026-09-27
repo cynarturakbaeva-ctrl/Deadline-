@@ -277,7 +277,7 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
   }
 });
 
-// Secure file download
+// Resend file to the user's Telegram chat (blob-download doesn't work in Telegram WebView)
 app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
   try {
     const job = await getJob(req.params.id);
@@ -303,9 +303,14 @@ app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'file_missing' });
     }
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-    fs.createReadStream(filePath).pipe(res);
+    if (!global.__deadlineBot) {
+      return res.status(503).json({ error: 'bot_unavailable' });
+    }
+    await global.__deadlineBot.sendDocument(job.chatId, filePath, {}, {
+      filename: name,
+      contentType: mime,
+    });
+    res.json({ sent: true });
   } catch (err) {
     console.error('[API] download', err);
     res.status(500).json({ error: 'server_error' });
@@ -494,4 +499,4 @@ main().catch(err => {
   process.exit(1);
 });
 
-module.exports = { app }; 
+module.exports = { app };
