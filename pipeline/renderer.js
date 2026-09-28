@@ -41,7 +41,7 @@ async function renderHtmlToPngs(htmlPath) {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: SLIDE_W, height: SLIDE_H, deviceScaleFactor: 1 });
-    await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load', timeout: 60000 });
+    await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load', timeout: 120000 });
 
     const count = await page.evaluate(() => document.querySelectorAll('.slide').length);
     if (!count) throw new Error('HTML-де слайд табылмады');
