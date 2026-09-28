@@ -4,8 +4,9 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const fs          = require('fs');
+const { extractPdfText, parseReceiptText, validateReceipt } = require('./pipeline/receipt');
 const { generatePresentation }                                                      = require('./index');
-const { initDB, getUser, registerUser, addCredits, incrementRefCount, useCredit, refundCredit, getAllChatIds, checkRateLimits, markGenerationAttempt, markGenerationSuccess, REFERRALS_PER_BONUS } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, incrementRefCount, useCredit, refundCredit, getAllChatIds, checkRateLimits, markGenerationAttempt, markGenerationSuccess, REFERRALS_PER_BONUS } = require('./db');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -27,7 +28,10 @@ function escapeMarkdown(text) {
 const KASPI_PHONE = '+77713436592';
 const KASPI_NAME  = 'Мурзабек Н';
 const PRICE       = 250;
+const FIRST_PRICE = 100; // бірінші презентация арзан баға (churn-ды азайту үшін)
 const ADMIN_ID    = process.env.ADMIN_CHAT_ID;
+const AUTO_CONFIRM   = process.env.AUTO_CONFIRM !== '0';          // '0' қойса — толық қолмен режим
+const RECEIPT_MAX_AGE_MIN = parseInt(process.env.RECEIPT_MAX_AGE_MIN || '60', 10);
 // МАҢЫЗДЫ: BOT_USERNAME env-де кейде "@ai_presentation_ybot" түрінде (@-мен)
 // қойылып қалуы мүмкін. Telegram deep-link форматы (t.me/<username>?start=...)
 // username-нің алдында @ КҮТПЕЙДІ — @-мен жіберілген сілтемені Telegram
@@ -159,6 +163,84 @@ function showHelp(chatId) {
   );
 }
 
+// ─── Чекті автоматты оқу және растау ─────────────────────────────────────
+// Қайтарады: { handled: true } — пайдаланушыға жауап берілді (сәтті/бас тарту),
+//            { handled: false, reason } — админге қолмен жіберу керек.
+async function tryAutoConfirm(chatId, msg) {
+  // 1) PDF жүктеу (Telegram Bot API лимиті 20 МБ; чек кішкентай)
+  const size = msg.document.file_size || 0;
+  if (size > 5 * 1024 * 1024) return { handled: false, reason: 'too_big' };
+
+  const link = await bot.getFileLink(msg.document.file_id);
+  const resp = await require('axios').get(link, { responseType: 'arraybuffer', timeout: 20000 });
+  const buffer = Buffer.from(resp.data);
+
+  // 2) Мәтін + парсинг
+  const text = await extractPdfText(buffer);
+  if (!text || text.trim().length < 20) return { handled: false, reason: 'no_text_layer' };
+
+  const parsed = parseReceiptText(text);
+  if (!parsed.ok) return { handled: false, reason: 'unreadable' };
+
+  // 3) Қайталанған чек — бірден бас тарту (оқылған, бірақ қолданылған)
+  const { receiptExists } = require('./db');
+  if (await receiptExists(parsed.receiptNo)) {
+    await bot.sendMessage(chatId, '⚠️ Бұл чек бұрын қолданылған. Жаңа төлем жасап, жаңа чек жіберіңіз.');
+    return { handled: true };
+  }
+
+  // 4) Тексеру
+  const user = await getUser(chatId);
+  const verdict = validateReceipt(parsed, {
+    expectedName: KASPI_NAME,
+    pricePerCredit: PRICE,
+    firstPrice: FIRST_PRICE,
+    isFirstPurchase: user.total === 0,
+    maxAgeMin: RECEIPT_MAX_AGE_MIN,
+  });
+
+  if (!verdict.ok) {
+    // Анық жалған/қате себептер — пайдаланушыға айтамыз, админді мазаламаймыз
+    const clear = {
+      wrong_recipient: '❌ Төлем біздің Kaspi нөміріне жасалмаған. Дұрыс алушыға төлеп, жаңа чек жіберіңіз.',
+      too_old:         '❌ Бұл чек тым ескі (60 минуттан асқан). Жаңа төлем жасап жіберіңіз.',
+      future_date:     '❌ Чектің уақыты дұрыс емес.',
+      not_successful:  '❌ Чекте төлем «сәтті» деп көрінбейді.',
+    };
+    if (clear[verdict.reason]) {
+      await bot.sendMessage(chatId, clear[verdict.reason]);
+      return { handled: true };
+    }
+    // bad_amount, no_recipient және т.б. — адам қарасын
+    return { handled: false, reason: verdict.reason };
+  }
+
+  // 5) Атомарлы қолдану (қайталанудан қорғалған)
+  const applied = await applyReceipt(chatId, parsed.receiptNo, parsed.amount, verdict.credits);
+  if (!applied.applied) {
+    await bot.sendMessage(chatId, '⚠️ Бұл чек бұрын қолданылған.');
+    return { handled: true };
+  }
+
+  await bot.sendMessage(
+    chatId,
+    `✅ Төлем расталды!\n\n` +
+    `💳 *${verdict.credits}* презентация кредиті қосылды.\n` +
+    `📦 Жалпы кредитіңіз: *${applied.user.credits}*\n\n` +
+    `«📝 Тақырып жазу» батырмасын басып бастаңыз! 🚀`,
+    { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
+  );
+
+  // Админге ақпарат (әрекет қажет емес)
+  if (ADMIN_ID) {
+    bot.sendMessage(
+      ADMIN_ID,
+      `🤖 Авто-растау: ${chatId} → +${verdict.credits} кредит (${parsed.amount}₸, чек №${parsed.receiptNo})`
+    ).catch(() => {});
+  }
+  return { handled: true };
+}
+
 // ─── /confirm <chatId> <amount> — тек admin ───────────────────────────────
 bot.onText(/\/confirm (\d+) (\d+)/, async (msg, match) => {
   if (String(msg.chat.id) !== String(ADMIN_ID)) return;
@@ -263,6 +345,16 @@ bot.on('message', async (msg) => {
 
   if (text === '💰 Кредит сатып алу') {
     waitingForTopic.delete(chatId); // eki rejim bir mezgilde bolmauy ushin
+    const user = await getUser(chatId);
+    if (user.total === 0) {
+      return bot.sendMessage(
+        chatId,
+        `🎁 Бірінші презентация — *${FIRST_PRICE}₸* (әдепкі баға ${PRICE}₸)!\n\n` +
+        `💳 Kaspi арқылы төлеңіз:\n📱 *${KASPI_PHONE}*\n👤 ${KASPI_NAME}\n\n` +
+        `Сомасы: *${FIRST_PRICE}₸*\n\nТөлегеннен кейін *чекті (PDF)* осы ботқа жіберіңіз ✅`,
+        { parse_mode: 'Markdown' }
+      );
+    }
     waitingForCount.add(chatId);
     return bot.sendMessage(
       chatId,
@@ -282,10 +374,23 @@ bot.on('message', async (msg) => {
 
     const userName = escapeMarkdown([msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || 'Белгісіз');
 
+    // ── Автоматты растау ──────────────────────────────────────────────────
+    if (AUTO_CONFIRM) {
+      try {
+        const result = await tryAutoConfirm(chatId, msg);
+        if (result.handled) return;
+        // handled=false → қолмен растауға түседі (төменде)
+        console.log(`[Receipt] ${chatId}: авто өтпеді (${result.reason}) → админге`);
+      } catch (err) {
+        console.error('[Receipt] auto-confirm қатесі:', err.message);
+      }
+    }
+
+    // ── Fallback: админге қолмен растауға жіберу ─────────────────────────
     await bot.forwardMessage(ADMIN_ID, chatId, msg.message_id);
     await bot.sendMessage(
       ADMIN_ID,
-      `📥 *Жаңа чек!*\n\n👤 ${userName}\n🆔 \`${chatId}\`\n\n` +
+      `📥 *Жаңа чек!* (авто оқылмады)\n\n👤 ${userName}\n🆔 \`${chatId}\`\n\n` +
       `Растау үшін:\n\`/confirm ${chatId} <сан>\`\n\nМысалы 2 през үшін:\n\`/confirm ${chatId} 2\``,
       { parse_mode: 'Markdown' }
     );
@@ -323,6 +428,15 @@ bot.on('message', async (msg) => {
     if (user.credits > 0) return makePresentaton(chatId, text);
 
     waitingForCount.add(chatId);
+    if (user.total === 0) {
+      return bot.sendMessage(
+        chatId,
+        `🎁 Бірінші презентация — *${FIRST_PRICE}₸* (әдепкі баға ${PRICE}₸)!\n\n` +
+        `💳 Kaspi арқылы төлеңіз:\n📱 *${KASPI_PHONE}*\n👤 ${KASPI_NAME}\n\n` +
+        `Сомасы: *${FIRST_PRICE}₸*\n\nТөлегеннен кейін *чекті (PDF)* осы ботқа жіберіңіз ✅`,
+        { parse_mode: 'Markdown' }
+      );
+    }
     return bot.sendMessage(
       chatId,
       `💳 Сізде презентация кредиті жоқ.\n\n💰 Баға: *${PRICE}₸* — 1 презентация\n\nНеше презентация керек? Санын жазыңыз:`,

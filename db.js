@@ -98,6 +98,32 @@ async function initDB() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_history_chat_id ON history (chat_id, created_at DESC)`);
 
+  // v3: пікірлер (презентацияға баға)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id         TEXT PRIMARY KEY,
+      job_id     TEXT NOT NULL,
+      chat_id    TEXT NOT NULL,
+      rating     INTEGER NOT NULL,
+      comment    TEXT DEFAULT '',
+      created_at BIGINT NOT NULL
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_job_id ON feedback (job_id)`);
+
+  // v3.1: Kaspi чектері (қайталанған чекті болдырмау үшін № квитанции бірегей)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      receipt_no  TEXT PRIMARY KEY,
+      chat_id     TEXT NOT NULL,
+      amount      INTEGER NOT NULL,
+      credits     INTEGER NOT NULL DEFAULT 0,
+      status      TEXT NOT NULL DEFAULT 'confirmed',
+      created_at  BIGINT NOT NULL
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_receipts_chat_id ON receipts (chat_id)`);
+
   console.log('[DB] Postgres tables ready');
 }
 
@@ -150,6 +176,56 @@ async function addCredits(chatId, amount) {
   } catch (err) {
     console.error('[DB] addCredits error:', err.message);
     throw err;
+  }
+}
+
+/**
+ * Чекті атомарлы түрде қолдану: № квитанции бұрын қолданылмаған болса ғана
+ * кредит қосады. Бір транзакцияда — екі рет басып та қайталап жіберсе де
+ * кредит бір-ақ рет қосылады.
+ * @returns {{ applied: boolean, duplicate?: boolean, user?: object }}
+ */
+async function applyReceipt(chatId, receiptNo, amount, credits) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ins = await client.query(
+      `INSERT INTO receipts (receipt_no, chat_id, amount, credits, status, created_at)
+       VALUES ($1, $2, $3, $4, 'confirmed', $5)
+       ON CONFLICT (receipt_no) DO NOTHING
+       RETURNING receipt_no`,
+      [String(receiptNo), String(chatId), amount, credits, Date.now()]
+    );
+    if (ins.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return { applied: false, duplicate: true };
+    }
+    await client.query(`
+      INSERT INTO users (chat_id, credits, total, ref_earnings)
+      VALUES ($1, $2, $2, 0)
+      ON CONFLICT (chat_id) DO UPDATE
+      SET credits = users.credits + $2,
+          total   = users.total   + $2
+    `, [String(chatId), credits]);
+    await client.query('COMMIT');
+    console.log(`[DB] applyReceipt: ${chatId} receipt=${receiptNo} +${credits}`);
+    return { applied: true, user: await getUser(chatId) };
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[DB] applyReceipt error:', err.message);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function receiptExists(receiptNo) {
+  try {
+    const r = await pool.query('SELECT 1 FROM receipts WHERE receipt_no = $1', [String(receiptNo)]);
+    return r.rowCount > 0;
+  } catch (err) {
+    console.error('[DB] receiptExists error:', err.message);
+    return false;
   }
 }
 
@@ -468,6 +544,33 @@ async function getHistory(chatId, limit = 20) {
   }
 }
 
+// ─── Feedback (v3) ────────────────────────────────────────────────────────
+async function addFeedback(jobId, chatId, rating, comment) {
+  try {
+    const id = makeJobId();
+    const createdAt = Date.now();
+    const clampedRating = Math.min(Math.max(parseInt(rating, 10) || 0, 1), 5);
+    await pool.query(
+      'INSERT INTO feedback (id, job_id, chat_id, rating, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, String(jobId), String(chatId), clampedRating, String(comment || '').slice(0, 1000), createdAt]
+    );
+    return { id, jobId: String(jobId), chatId: String(chatId), rating: clampedRating, comment: comment || '', createdAt };
+  } catch (err) {
+    console.error('[DB] addFeedback error:', err.message);
+    return null;
+  }
+}
+
+async function getFeedbackForJob(jobId) {
+  try {
+    const res = await pool.query('SELECT * FROM feedback WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1', [String(jobId)]);
+    return res.rows[0] || null;
+  } catch (err) {
+    console.error('[DB] getFeedbackForJob error:', err.message);
+    return null;
+  }
+}
+
 async function cleanupOldJobs(maxAgeMs = 7 * 24 * 3600 * 1000) {
   try {
     const cutoff = Date.now() - maxAgeMs;
@@ -484,6 +587,8 @@ module.exports = {
   getUser,
   registerUser,
   addCredits,
+  applyReceipt,
+  receiptExists,
   incrementRefCount,
   useCredit,
   refundCredit,
@@ -501,5 +606,7 @@ module.exports = {
   getUserJobs,
   addHistory,
   getHistory,
+  addFeedback,
+  getFeedbackForJob,
   cleanupOldJobs,
 };
