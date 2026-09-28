@@ -32,6 +32,8 @@ const FIRST_PRICE = 100; // бірінші презентация арзан б�
 const ADMIN_ID    = process.env.ADMIN_CHAT_ID;
 const AUTO_CONFIRM   = process.env.AUTO_CONFIRM !== '0';          // '0' қойса — толық қолмен режим
 const RECEIPT_MAX_AGE_MIN = parseInt(process.env.RECEIPT_MAX_AGE_MIN || '60', 10);
+// Админ батырма баспаса — осы секундтан кейін автоматты растау (әдепкі 3 мин)
+const AUTO_CONFIRM_TIMEOUT_SEC = parseInt(process.env.AUTO_CONFIRM_TIMEOUT_SEC || '180', 10);
 // МАҢЫЗДЫ: BOT_USERNAME env-де кейде "@ai_presentation_ybot" түрінде (@-мен)
 // қойылып қалуы мүмкін. Telegram deep-link форматы (t.me/<username>?start=...)
 // username-нің алдында @ КҮТПЕЙДІ — @-мен жіберілген сілтемені Telegram
@@ -42,6 +44,8 @@ const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^
 const processing      = new Set();
 const waitingForCount = new Set();
 const waitingForTopic = new Set();
+// Күтудегі чектер: pendingId → { chatId, timer, adminMsgId }
+const pendingReceipts = new Map();
 
 // ─── Негізгі менюдің батырмалары ───────────────────────────────────────────
 let WEBAPP_URL = process.env.WEBAPP_URL || '';
@@ -241,6 +245,52 @@ async function tryAutoConfirm(chatId, msg) {
   return { handled: true };
 }
 
+// ─── Чекті растау (админ батырмасы / таймер / /confirm) ─────────────────
+async function confirmPendingReceipt(chatId, credits, source) {
+  // Сол пайдаланушының күтудегі таймерлерін өшіру
+  for (const [pid, p] of pendingReceipts) {
+    if (String(p.chatId) === String(chatId)) {
+      clearTimeout(p.timer);
+      pendingReceipts.delete(pid);
+    }
+  }
+
+  const user = await addCredits(chatId, credits);
+
+  await bot.sendMessage(
+    chatId,
+    `✅ Төлем расталды!\n\n` +
+    `💳 *${credits}* презентация кредиті қосылды.\n` +
+    `📦 Жалпы кредитіңіз: *${user.credits}*\n\n` +
+    `«📝 Тақырып жазу» батырмасын басып бастаңыз! 🚀`,
+    { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
+  ).catch(() => {});
+
+  if (ADMIN_ID) {
+    bot.sendMessage(
+      ADMIN_ID,
+      `✅ ${source}: ${chatId} → +${credits} кредит. Қалған: ${user.credits}.`
+    ).catch(() => {});
+  }
+  return user;
+}
+
+async function rejectPendingReceipt(chatId, source) {
+  for (const [pid, p] of pendingReceipts) {
+    if (String(p.chatId) === String(chatId)) {
+      clearTimeout(p.timer);
+      pendingReceipts.delete(pid);
+    }
+  }
+  await bot.sendMessage(
+    chatId,
+    '❌ Төлем расталмады.\n\nҚайта төлеп, жаңа чек жіберіңіз немесе қолдауға жазыңыз.'
+  ).catch(() => {});
+  if (ADMIN_ID) {
+    bot.sendMessage(ADMIN_ID, `❌ ${source}: ${chatId} — бас тартылды.`).catch(() => {});
+  }
+}
+
 // ─── /confirm <chatId> <amount> — тек admin ───────────────────────────────
 bot.onText(/\/confirm (\d+) (\d+)/, async (msg, match) => {
   if (String(msg.chat.id) !== String(ADMIN_ID)) return;
@@ -252,20 +302,64 @@ bot.onText(/\/confirm (\d+) (\d+)/, async (msg, match) => {
     return bot.sendMessage(msg.chat.id, '❌ Дұрыс сан жазыңыз.');
   }
 
-  const user = await addCredits(targetId, amount);
+  await confirmPendingReceipt(targetId, amount, '/confirm');
+});
 
-  // Реферал бонусы тіркелу кезінде беріледі — төлемде емес
+// ─── Админ батырмалары (растау / бас тарту) ───────────────────────────────
+bot.on('callback_query', async (cq) => {
+  const data = cq.data || '';
+  if (!data.startsWith('rc:') && !data.startsWith('rj:')) {
+    return; // басқа callback-тар (бар болса) өзгермейді
+  }
+  if (String(cq.from.id) !== String(ADMIN_ID)) {
+    return bot.answerCallbackQuery(cq.id, { text: 'Тек админ', show_alert: true });
+  }
 
-  await bot.sendMessage(
-    targetId,
-    `✅ Төлем расталды!\n\n` +
-    `💳 *${amount}* презентация кредиті қосылды.\n` +
-    `📦 Жалпы кредитіңіз: *${user.credits}*\n\n` +
-    `«📝 Тақырып жазу» батырмасын басып бастаңыз! 🚀`,
-    { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
-  );
-
-  bot.sendMessage(msg.chat.id, `✅ ${targetId} → +${amount} кредит. Қалған: ${user.credits}. Жиыны: ${user.total}.`);
+  try {
+    if (data.startsWith('rc:')) {
+      // rc:<chatId>:<credits>:<pendingId>
+      const parts = data.split(':');
+      const targetId = parts[1];
+      const credits  = parseInt(parts[2], 10) || 1;
+      const pendingId = parts[3];
+      if (pendingId && pendingReceipts.has(pendingId)) {
+        clearTimeout(pendingReceipts.get(pendingId).timer);
+        pendingReceipts.delete(pendingId);
+      }
+      await confirmPendingReceipt(targetId, credits, 'батырма');
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: cq.message.chat.id,
+        message_id: cq.message.message_id,
+      }).catch(() => {});
+      await bot.answerCallbackQuery(cq.id, { text: `+${credits} кредит` });
+      await bot.editMessageText(
+        (cq.message.text || '') + `\n\n✅ Расталды: +${credits} кредит`,
+        { chat_id: cq.message.chat.id, message_id: cq.message.message_id }
+      ).catch(() => {});
+    } else if (data.startsWith('rj:')) {
+      // rj:<chatId>:<pendingId>
+      const parts = data.split(':');
+      const targetId = parts[1];
+      const pendingId = parts[2];
+      if (pendingId && pendingReceipts.has(pendingId)) {
+        clearTimeout(pendingReceipts.get(pendingId).timer);
+        pendingReceipts.delete(pendingId);
+      }
+      await rejectPendingReceipt(targetId, 'батырма');
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: cq.message.chat.id,
+        message_id: cq.message.message_id,
+      }).catch(() => {});
+      await bot.answerCallbackQuery(cq.id, { text: 'Бас тартылды' });
+      await bot.editMessageText(
+        (cq.message.text || '') + '\n\n❌ Бас тартылды',
+        { chat_id: cq.message.chat.id, message_id: cq.message.message_id }
+      ).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[Receipt] callback error:', err.message);
+    bot.answerCallbackQuery(cq.id, { text: 'Қате', show_alert: true }).catch(() => {});
+  }
 });
 
 // ─── /broadcast <хабар> — тек admin, барлық пайдаланушыға жіберу ─────────
@@ -374,30 +468,75 @@ bot.on('message', async (msg) => {
 
     const userName = escapeMarkdown([msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || 'Белгісіз');
 
-    // ── Автоматты растау ──────────────────────────────────────────────────
+    // ── PDF парсинг (мүмкін болса) — сәтті болса бірден растайды ─────────
     if (AUTO_CONFIRM) {
       try {
         const result = await tryAutoConfirm(chatId, msg);
         if (result.handled) return;
-        // handled=false → қолмен растауға түседі (төменде)
-        console.log(`[Receipt] ${chatId}: авто өтпеді (${result.reason}) → админге`);
+        console.log(`[Receipt] ${chatId}: парсинг өтпеді (${result.reason}) → админ + таймер`);
       } catch (err) {
-        console.error('[Receipt] auto-confirm қатесі:', err.message);
+        console.error('[Receipt] parse error:', err.message);
       }
     }
 
-    // ── Fallback: админге қолмен растауға жіберу ─────────────────────────
+    // ── Админге батырма + таймер (парсингсіз сенім) ──────────────────────
+    if (!ADMIN_ID) {
+      return bot.sendMessage(chatId, '❌ Админ бапталмаған. Кейінірек қайта көріңіз.');
+    }
+
+    const pendingId = `${chatId}_${Date.now()}`;
+    const timeoutSec = AUTO_CONFIRM_TIMEOUT_SEC;
+    const timeoutMin = Math.max(1, Math.round(timeoutSec / 60));
+
     await bot.forwardMessage(ADMIN_ID, chatId, msg.message_id);
-    await bot.sendMessage(
+
+    const adminMsg = await bot.sendMessage(
       ADMIN_ID,
-      `📥 *Жаңа чек!* (авто оқылмады)\n\n👤 ${userName}\n🆔 \`${chatId}\`\n\n` +
-      `Растау үшін:\n\`/confirm ${chatId} <сан>\`\n\nМысалы 2 през үшін:\n\`/confirm ${chatId} 2\``,
-      { parse_mode: 'Markdown' }
+      `📥 *Жаңа чек!*\n\n👤 ${userName}\n🆔 \`${chatId}\`\n\n` +
+      `⏱ ${timeoutMin} мин ішінде жауап бермесеңіз — *автоматты +1 кредит*.\n` +
+      `Немесе: \`/confirm ${chatId} <сан>\``,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ 1 кредит', callback_data: `rc:${chatId}:1:${pendingId}` },
+              { text: '✅ 2', callback_data: `rc:${chatId}:2:${pendingId}` },
+              { text: '✅ 3', callback_data: `rc:${chatId}:3:${pendingId}` },
+            ],
+            [
+              { text: '❌ Растамау', callback_data: `rj:${chatId}:${pendingId}` },
+            ],
+          ],
+        },
+      }
     );
+
+    // Таймер: админ баспаса — автоматты +1 кредит
+    const timer = setTimeout(async () => {
+      if (!pendingReceipts.has(pendingId)) return;
+      pendingReceipts.delete(pendingId);
+      try {
+        await confirmPendingReceipt(chatId, 1, `таймер ${timeoutMin}мин`);
+        if (adminMsg && adminMsg.message_id) {
+          bot.editMessageText(
+            (adminMsg.text || '') + `\n\n🤖 Автоматты расталды (+1) — ${timeoutMin} мин өтті`,
+            { chat_id: ADMIN_ID, message_id: adminMsg.message_id }
+          ).catch(() => {});
+          bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+            chat_id: ADMIN_ID, message_id: adminMsg.message_id,
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[Receipt] auto-timeout confirm error:', err.message);
+      }
+    }, timeoutSec * 1000);
+
+    pendingReceipts.set(pendingId, { chatId, timer, adminMsgId: adminMsg.message_id });
 
     return bot.sendMessage(
       chatId,
-      '📨 Чегіңіз қабылданды!\n\n⏳ Растау *5-10 минут* ішінде болады.\nРасталған соң хабарлама аласыз.',
+      '📨 Чегіңіз қабылданды!\n\n⏳ Растау бірнеше минут ішінде болады.\nРасталған соң хабарлама аласыз.',
       { parse_mode: 'Markdown' }
     );
   }
