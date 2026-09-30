@@ -276,6 +276,7 @@ async function confirmPendingReceipt(chatId, credits, source) {
 }
 
 async function rejectPendingReceipt(chatId, source) {
+  console.log(`[Receipt] reject: ${chatId} (${source})`);
   for (const [pid, p] of pendingReceipts) {
     if (String(p.chatId) === String(chatId)) {
       clearTimeout(p.timer);
@@ -308,6 +309,7 @@ bot.onText(/\/confirm (\d+) (\d+)/, async (msg, match) => {
 // ─── Админ батырмалары (растау / бас тарту) ───────────────────────────────
 bot.on('callback_query', async (cq) => {
   const data = cq.data || '';
+  console.log('[Callback] келді:', data, 'from', cq.from && cq.from.id);
   if (!data.startsWith('rc:') && !data.startsWith('rj:')) {
     return; // басқа callback-тар (бар болса) өзгермейді
   }
