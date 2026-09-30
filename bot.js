@@ -774,8 +774,17 @@ async function startBot(opts = {}) {
   if (opts.webappUrl) WEBAPP_URL = opts.webappUrl;
   global.__deadlineBot = bot;
   await initDB();
+  // Telegram allowed_updates баптауын есте сақтайды: бұрын біреу (ескі нұсқа,
+  // басқа сервер) тек ['message'] деп қойса, inline батырма басқанда
+  // callback_query боттың өзіне келмейді (Telegram-да тек жалтырап тұрады).
+  // Сондықтан нақты көрсетіп, бір рет қолмен қайта орнатамыз.
+  const ALLOWED = JSON.stringify(['message', 'callback_query']);
+  await bot.deleteWebHook().catch(() => {});
+  await bot.getUpdates({ timeout: 0, limit: 1, allowed_updates: ALLOWED })
+    .catch(err => console.error('[Bot] allowed_updates reset error:', err.message));
+  bot.options.polling = { params: { allowed_updates: ALLOWED } };
   bot.startPolling({ restart: true });
-  console.log('[Bot] Іске қосылды. Хабарлар күтілуде...');
+  console.log('[Bot] Іске қосылды (allowed_updates: message, callback_query)');
   return bot;
 }
 
