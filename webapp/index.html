@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <title>DeadLine — AI Презентация</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <div>
+          <div class="title">DeadLine</div>
+          <div class="subtitle">AI Presentation Studio</div>
+        </div>
+      </div>
+      <div class="credits-pill" id="creditsPill" title="Кредиттер">
+        <span class="coin">◆</span>
+        <span id="creditsVal">—</span>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="create">Жасау</button>
+      <button class="tab" data-tab="history">Тарих</button>
+      <button class="tab" data-tab="account">Аккаунт</button>
+    </nav>
+
+    <!-- CREATE -->
+    <section id="tab-create" class="panel active">
+      <div class="card compact">
+        <div class="chips" id="modeChips">
+          <button class="chip active" data-v="presentation">✨ AI Presentation</button>
+          <button class="chip" data-v="template">🎨 Template → Content</button>
+          <button class="chip" data-v="referat">📄 Реферат</button>
+        </div>
+        <p class="hint" id="modeHint" style="text-align:left">Тақырыптан толық презентация жасайды: құрылым, мәтін, визуал, layout — бәрін AI өзі шешеді.</p>
+      </div>
+
+      <div class="card">
+        <label class="label" id="topicLabel">Тақырып</label>
+        <textarea id="topic" rows="3" placeholder="Мысалы: Жасанды интеллекттің білім берудегі рөлі" maxlength="8000"></textarea>
+        <div class="char-count"><span id="charCount">0</span>/8000</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card compact">
+          <label class="label">Орындағандар</label>
+          <input type="text" id="performedBy" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="120" placeholder="Аты-жөні (бірнешеу болса үтірмен)" />
+        </div>
+        <div class="card compact">
+          <label class="label">Тексерген</label>
+          <input type="text" id="checkedBy" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="120" placeholder="Оқытушы аты-жөні" />
+        </div>
+      </div>
+
+      <div class="card compact">
+        <label class="label">Титул деректері (опционал)</label>
+        <input type="text" id="university" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="100" placeholder="Университет" />
+        <input type="text" id="faculty" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="80" placeholder="Факультет" />
+        <input type="text" id="department" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="80" placeholder="Кафедра" />
+        <input type="text" id="groupName" class="input-number" style="text-align:left;font-weight:500;font-size:16px" maxlength="40" placeholder="Топ" />
+        <input type="text" id="city" class="input-number referat-only hidden" style="text-align:left;font-weight:500;font-size:16px" maxlength="40" placeholder="Қала (титулдың төменгі жағы)" />
+      </div>
+
+      <div class="grid-2">
+        <div class="card compact">
+          <label class="label" id="countLabel">Слайд саны</label>
+          <input type="number" id="slideCountInput" class="input-number" min="5" max="15" step="1" value="8" inputmode="numeric" />
+          <div class="hint" id="countHint">5–15 аралығында</div>
+        </div>
+        <div class="card compact lang-card">
+          <label class="label">Тіл</label>
+          <div class="chips" id="langChips">
+            <button class="chip active" data-v="kk">Қазақ</button>
+            <button class="chip" data-v="ru">Рус</button>
+            <button class="chip" data-v="en">EN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card compact ai-req">
+        <label class="label">Стиль</label>
+        <div class="chips wrap" id="styleChips">
+          <button class="chip active" data-v="">Авто</button>
+          <button class="chip" data-v="минимал">Минимал</button>
+          <button class="chip" data-v="корпоратив">Корпоратив</button>
+          <button class="chip" data-v="академиялық">Академиялық</button>
+          <button class="chip" data-v="стартап">Стартап</button>
+          <button class="chip" data-v="инфографика">Инфографика</button>
+        </div>
+      </div>
+
+      <div class="card compact referat-only hidden">
+        <label class="label">Үлгі реферат (міндетті емес)</label>
+        <ol class="tpl-steps">
+          <li>Мұғалім қабылдайтын немесе бұрын қабылдаған рефератты жүктеңіз (Word, PDF немесе TXT).</li>
+          <li>Бот оны терең талдайды: құрылымы, бөлім атаулары, кіріспедегі элементтер, жазу стилі, әдебиеттер тізімінің форматы.</li>
+          <li>Жаңа реферат сол үлгідей жазылады, бірақ мәтіні көшірілмейді.</li>
+        </ol>
+        <label for="sampleFile" class="tpl-upload" id="sampleBtn">📎 Үлгі рефератты таңдау</label>
+        <input id="sampleFile" type="file" hidden accept=".docx,.doc,.pdf,.txt,.rtf" />
+        <div class="hint" id="sampleInfo">Жүктемесеңіз де болады — реферат стандарт талаптармен жасалады.</div>
+      </div>
+
+      <div class="card compact tpl-only">
+        <label class="label">Шаблон жүктеу (міндетті)</label>
+        <ol class="tpl-steps">
+          <li>Canva, PowerPoint немесе Google Slides-тан ұнаған шаблонды <b>.pptx</b> форматында жүктеп алыңыз.</li>
+          <li>Төмендегі батырманы басып, сол файлды таңдаңыз.</li>
+          <li>Бот дизайнды (түс, шрифт, суреттер) сақтап, ішіндегі мәтінді сіздің тақырыбыңызға ауыстырады.</li>
+        </ol>
+        <label for="refFile" class="tpl-upload">📎 .pptx шаблонды таңдау</label>
+        <input id="refFile" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+        <div class="hint" id="refInfo">Тек .pptx файл қабылданады (PDF, Word емес).</div>
+      </div>
+
+      <div class="card compact ai-req">
+        <label class="label" for="requirements" id="reqLabel">Мұғалімнің талабы (опционал)</label>
+        <textarea id="requirements" rows="3" maxlength="4000" placeholder="Мысалы: кемінде 10 слайд, әр слайдта 40 сөзден аспасын, соңында әдебиеттер тізімі"></textarea>
+        <div class="hint">Талаптар тексеріліп, орындалмағаны болса автоматты түзетіліп қайта тексеріледі</div>
+      </div>
+
+      <div class="card compact">
+        <label class="label" id="audienceLabel">Аудитория (опционал)</label>
+        <input id="audience" type="text" placeholder="Студенттер, инвесторлар, команда..." maxlength="120" />
+      </div>
+
+      <button id="btnGenerate" class="btn primary block">
+        <span class="btn-icon">✨</span>
+        <span id="btnGenText">Презентация жасау</span>
+      </button>
+      <p class="hint" id="genHint">1 кредит = 1 презентация · Сапа қақпасымен</p>
+    </section>
+
+    <!-- PROGRESS (overlay) -->
+    <div id="progressOverlay" class="overlay hidden">
+      <div class="progress-card">
+        <div class="spinner"></div>
+        <div class="progress-title" id="progressTitle">Генерация...</div>
+        <div class="progress-detail" id="progressDetail">Кезекте</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-pct" id="progressPct">0%</div>
+        <button id="btnCancelView" class="btn ghost small">Фонда күту</button>
+      </div>
+    </div>
+
+    <!-- RESULT -->
+    <div id="resultCard" class="overlay hidden">
+      <div class="result-card">
+        <div class="result-icon">✅</div>
+        <h2 id="resultTitle">Дайын!</h2>
+        <p id="resultScore" class="muted"></p>
+        <div id="reqReport" class="req-report hidden"></div>
+        <div class="result-actions">
+          <button id="btnDlPptx" class="btn primary">📤 PPTX-ты чатқа жіберу</button>
+          <button id="btnDlHtml" class="btn secondary">📤 HTML-ды чатқа жіберу</button>
+          <button id="btnDlDocx" class="btn primary hidden">📤 Word (.docx) чатқа жіберу</button>
+          <button id="btnNew" class="btn ghost">Жаңа презентация</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <section id="tab-history" class="panel">
+      <div id="historyList" class="list"></div>
+      <p id="historyEmpty" class="empty hidden">Әзірге презентация жоқ</p>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section id="tab-account" class="panel">
+      <div class="card">
+        <div class="user-row">
+          <div class="avatar" id="avatar">D</div>
+          <div>
+            <div class="user-name" id="userName">—</div>
+            <div class="muted" id="userId">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="card stats">
+        <div class="stat"><div class="stat-val" id="statCredits">0</div><div class="stat-label">Кредит</div></div>
+        <div class="stat"><div class="stat-val" id="statTotal">0</div><div class="stat-label">Жасалды</div></div>
+        <div class="stat"><div class="stat-val" id="statRefs">0</div><div class="stat-label">Реферал</div></div>
+      </div>
+      <div class="card">
+        <label class="label">Реферал сілтеме</label>
+        <div class="copy-row">
+          <input id="refLink" readonly />
+          <button id="btnCopyRef" class="btn secondary small">Көшіру</button>
+        </div>
+        <p class="hint">Әр 2 сәтті презентация = +1 кредит</p>
+      </div>
+      <div class="card">
+        <label class="label">Кредит сатып алу</label>
+        <p class="pay-info">Баға: <strong id="priceVal">250</strong>₸ / 1 презентация</p>
+        <p class="pay-info">⭐ <strong>Plus</strong>: <strong id="plusCredits">50</strong> презентация — <strong id="plusPrice">1990</strong>₸ <span class="muted" id="plusEach"></span></p>
+        <p class="pay-info">Kaspi: <strong id="kaspiPhone"></strong> · <span id="kaspiName"></span></p>
+        <p class="hint">Plus алу үшін ботқа «plus» деп жазыңыз. Төлемнен кейін чекті PDF түрінде жіберіңіз — 5–10 мин ішінде расталады.</p>
+        <button id="btnOpenBot" class="btn secondary block">Ботқа өту</button>
+      </div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
