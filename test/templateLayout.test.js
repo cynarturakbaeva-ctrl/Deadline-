@@ -53,7 +53,7 @@ test('әріп аралығы (spc) өлшеуге кіреді: кең арал
   const w0 = T.textWidthPt('БИЗНЕС', 100, false, false);
   const w1 = T.textWidthPt('БИЗНЕС', 100, false, false, 16);
   assert.ok(Math.abs(w1 - w0 - 6 * 16) < 0.01);
-  assert.ok(T.countLines('Бизнес негіздері', 60, 700, true, false, 15) > T.countLines('Бизнес негіздері', 60, 700, true, false, 0));
+  assert.ok(T.countLines('Бизнес негіздері', 60, 600, true, false, 15) > T.countLines('Бизнес негіздері', 60, 600, true, false, 0));
 });
 
 test('fillSlide: оң жақтан қорапқа кіретін сурет — мәтін суретке тимейді', () => {

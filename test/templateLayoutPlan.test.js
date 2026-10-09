@@ -9,7 +9,7 @@ const { orderedSlides, tagBlocks } = require('../design-dna/structure');
 const sp = (id, x, y, w, h, sz, txt) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="s${id}"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr sz="${sz}"/><a:t>${txt}</a:t></a:r></a:p></p:txBody></p:sp>`;
 const pic = (id, x, y, w, h) => `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="p${id}"/></p:nvPicPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm></p:spPr></p:pic>`;
 // «Electrical Properties» жағдайы: дене мәтіні тақырыптан ЖОҒАРЫ тұр
-const XML = `<p:sld><p:cSld><p:spTree>${sp(1, 2000000, 3000000, 6000000, 2000000, 2300, 'Lorem ipsum body')}${sp(2, 8000000, 3500000, 4000000, 1500000, 6800, 'Electrical Properties')}${pic(3, 2000000, 5600000, 1500000, 1000000)}</p:spTree></p:cSld></p:sld>`;
+const XML = `<p:sld><p:cSld><p:spTree>${sp(1, 2000000, 3000000, 6000000, 2000000, 2300, 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam vitae tellus risus. Sed fringilla commodo tellus, rutrum lacinia dui scelerisque in. Vestibulum velit velit, condimentum quis ante pretium.')}${sp(2, 8000000, 3500000, 4000000, 1500000, 6800, 'Electrical Properties')}${pic(3, 2000000, 5600000, 1500000, 1000000)}</p:spTree></p:cSld></p:sld>`;
 const W = 12192000, H = 6858000;
 const SLIDE = { title: 'Электрлік қасиеттер', subtitle: 'Өткізгіштік, кедергі, сыйымдылық және басқа шамалар материалдың табиғатына байланысты' };
 
@@ -29,6 +29,12 @@ test('validatePlan: мәтін толық болса қабылдайды; жо�
   assert.strictEqual(P.validatePlan({ assign: [{ id: 0, lines: [SLIDE.title] }, { id: 1, lines: ['Өткізгіштік'] }] }, SLIDE, d), null, 'мәтін жоғалды');
   assert.strictEqual(P.validatePlan({ assign: [{ id: 0, lines: [SLIDE.title + ' мүлде басқа ойдан шығарылған ұзын сөйлем қосылды'] }, { id: 1, lines: [SLIDE.subtitle] }] }, SLIDE, d), null, 'ойдан қосылды');
   assert.strictEqual(P.validatePlan({ assign: [{ id: 5, lines: ['x'] }] }, SLIDE, d), null, 'жарамсыз id');
+});
+
+test('validatePlan: ұзын мәтін қысқа (белгі) қорабына салынса — жоспар қабылданбайды', () => {
+  const d = P.describeSlide(XML, W, H);
+  const longT = 'Электрлік қасиеттер — материалдың электр тогын өткізу, кедергі көрсету және заряд жинау қабілеттерін сипаттайтын шамалар жиынтығы';
+  assert.strictEqual(P.validatePlan({ assign: [{ id: 0, lines: [longT] }, { id: 1, lines: [SLIDE.title, SLIDE.subtitle] }] }, { title: longT, subtitle: SLIDE.title + ' ' + SLIDE.subtitle }, d), null);
 });
 
 test('validatePlan: fontPt және move шектеледі', () => {

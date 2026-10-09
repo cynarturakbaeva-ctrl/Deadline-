@@ -14,7 +14,11 @@ const { planTemplateSlots, slotRuleLine, auditSlides, linesForSlide } = require(
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const countIssues = (audit) => audit.reduce((n, a) => n + a.issues.length, 0);
-const byIndex = (audit) => Object.fromEntries(audit.map((a) => [a.index, a.issues.length]));
+// Ақаудың салмағы: бос/артық қорап пен «…» — ауыр (көзге бірден түседі), сәл ұзын/жұқа жол — жеңіл.
+// Түзету слайдтың салмақты ақау сомасын азайтса қабылданады (мыс. 3 бос қорап → 1 сәл ұзын жол).
+const WEIGHT = { items_few: 3, items_many: 3, ellipsis: 3, logo_words: 2, logo_word_long: 2, title_long: 2, item_long: 1, item_thin: 1 };
+const weightOf = (issues) => issues.reduce((n, i) => n + (WEIGHT[i.code] || 1), 0);
+const byIndex = (audit) => Object.fromEntries(audit.map((a) => [a.index, weightOf(a.issues)]));
 const clean = (t) => String(t == null ? '' : t).replace(/\s*(…|\.{3})\s*$/, '').replace(/\s+/g, ' ').trim();
 
 function buildPrompt({ topic, language, targets, plan }) {

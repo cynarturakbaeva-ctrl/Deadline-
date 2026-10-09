@@ -95,3 +95,16 @@ test('РЕГРЕССИЯ: index.js толтырудан бұрын template layo
   assert.match(idx, /repairTemplateSlides\(\{ templateBuf: referencePptxBuf/);
   assert.ok(idx.indexOf('repairTemplateSlides({') < idx.indexOf('fillTemplatePptx(referencePptxBuf'), 'repair толтырудан бұрын болуы керек');
 });
+
+test('repair: бос қораптар (items_few) жойылып, бір жол сәл ұзын қалса да — түзету қабылданады', async () => {
+  const plan = [{ split: false, title: { max: 40 }, items: [60, 60, 60, 60] }];
+  const slides = [{ index: 1, title: 'Ғылым мен өнер тоғысуы', bullets: [] }];
+  const llm = async () => ({ slides: [{ index: 1, title: 'Ғылым мен өнер тоғысуы', items: [
+    'Леонардо анатомиялық сызбалары өнерге дәлдік әкелді',
+    'Перспектива заңдары математикаға негізделді',
+    'Сәулетшілер инженерлік есептеулерді қолданды',
+    'Ғылыми бақылау суреткерлердің табиғатты бейнелеу тәсілін түбегейлі өзгертті, жарық пен көлеңке зерттелді',
+  ] }] });
+  const r = await repairTemplateSlides({ plan, slides, llm, maxRounds: 1 });
+  assert.strictEqual(r.slides[0].bullets.length + (r.slides[0].subtitle ? 1 : 0), 4, '4 қорап толтырылды');
+});

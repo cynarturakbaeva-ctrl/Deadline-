@@ -44,6 +44,8 @@ function describeSlide(xml, W, H) {
       box: { x: inch(b.x), y: inch(b.y), w: inch(b.w), h: inch(b.h) },
       freeBelow: inch(sur.room),
       freeRight: inch(sur.right),
+      // осы қорапқа жайлы сыятын таңба саны (бос орын мен кедергіні жылжытуды ескеріп)
+      maxChars: Math.max(8, T.capacityChars(s.block, id === 0 ? 0.7 : 0.8, undefined, T.roomFor(xml, s.block, W, H)) || 0),
     };
   });
   const others = othersOf(xml, W, H).slice(0, 12).map((o) => ({ id: o.id, kind: o.item.tag === 'p:pic' ? 'picture' : 'shape', box: { x: inch(o.item.box.x), y: inch(o.item.box.y), w: inch(o.item.box.w), h: inch(o.item.box.h) } }));
@@ -77,6 +79,7 @@ You are the layout editor for a client's PPTX template. For each slide the new t
 
 For every slide decide:
 1. "assign": which text goes into which box. Use the box geometry, the original text and the font size to understand each box's ROLE (a heading box has the largest font; a short label box takes a short item; a wide box takes a paragraph). The "title-candidate" is only a hint — decide yourself. Copy the text VERBATIM from CONTENT TO PLACE (you may split/regroup items between boxes, you may NOT rewrite, translate, add or drop words). Boxes that have no suitable text get "lines": [].
+Each box has "maxChars" — the text you put into a box must fit it (a short label box gets a short item, never a long sentence).
 2. "fontPt": the font size you want in that box (points). Keep within 60%-130% of the box's original fontPt, never below 12 for body text; shrink a bit rather than cut text. Omit it to keep the original size.
 3. "move": only if a picture/shape would collide with text, shift it by dx/dy inches (|value| ≤ ${MAX_MOVE_IN}). Otherwise leave it out.
 
@@ -104,6 +107,10 @@ function validatePlan(plan, slide, d) {
     const orig = d.shapes[id].fontPt;
     if (!Number.isFinite(fontPt) || fontPt <= 0 || !orig) fontPt = null;
     else fontPt = Math.min(Math.max(fontPt, orig * 0.6), orig * 1.3);
+    // мәтін қораптың сыйымдылығынан едәуір асса (мыс. ұзын сөйлем қысқа белгі қорабына) — жоспар қабылданбайды
+    const cap = d.shapes[id].maxChars;
+    const len = lines.join(' ').length;
+    if (cap && len > cap * 1.3 + 15) return null;
     assign.push({ id, lines, fontPt });
   }
   const { title, body } = itemsOfSlide(slide);

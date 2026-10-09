@@ -322,8 +322,10 @@ async function generatePresentation(userInput, options = {}) {
     if (converted) console.log(`[Pipeline] Tables → bullets on ${converted} slide(s) (variety)`);
   }
 
-  // 2c. Deterministic composition pass (geometry/layout — no LLM)
-  {
+  // 2c. Deterministic composition pass (geometry/layout — no LLM).
+  //     Template режимінде ӨТКІЗІЛЕДІ: ол HTML-макет үшін буллеттерді 2–4-ке, мәтінді 30 сөзге дейін қияды,
+  //     ал шаблонда қорап саны мен ұзындығы тұрақты (slotRules) — мәтін жоғалып, қораптар бос қалатын.
+  if (mode !== 'template') {
     const comp = repairDeckComposition(slides);
     if (comp.repairs.length) {
       console.log(`[Pipeline] Composition pre-repair: ${comp.repairs.length} slide(s)`);
@@ -332,8 +334,8 @@ async function generatePresentation(userInput, options = {}) {
     }
   }
 
-  // 2d. Optional references slide from real brief sources only
-  {
+  // 2d. Optional references slide from real brief sources only (template: слайд саны шаблонмен тең болуы керек — қоспаймыз)
+  if (mode !== 'template') {
     const ref = maybeAttachReferencesSlide(slides, userInput, { style, language });
     if (ref.attached) {
       console.log(`[Pipeline] Attached references slide (${ref.sources.length} sources from brief)`);
@@ -348,8 +350,10 @@ async function generatePresentation(userInput, options = {}) {
     console.log(`[Pipeline] Theme: ${mood}`);
   }
 
-  // 2f. Референс құрылымын слайдтарға қолдану (макет түрі + мазмұнды сәйкестендіру)
-  if (refAnalysis && refAnalysis.outline) {
+  // 2f. Референс құрылымын слайдтарға қолдану (макет түрі + мазмұнды сәйкестендіру).
+  //     Template режимінде ӨТКІЗІЛЕДІ: бұл HTML-рендерге арналған (буллеттерді кестеге/санға айналдырады),
+  //     шаблонды толтыру тек мәтінді қорап ретімен қолданады — кестеге кеткен мәтін қораптарды бос қалдыратын.
+  if (refAnalysis && refAnalysis.outline && mode !== 'template') {
     const rp = applyReferencePlan(slides, refAnalysis.outline);
     console.log(`[Pipeline] Reference plan applied to ${rp.assigned} slide(s)${rp.adapted.length ? '; adapted: ' + rp.adapted.map((x) => `${x.n}:${x.what}`).join(', ') : ''}`);
   }
@@ -377,7 +381,7 @@ async function generatePresentation(userInput, options = {}) {
         // Слайдтар өзгерген соң тема мен композицияны қайта қолданамыз (жаңа слайдтар да безендірілсін)
         try {
           applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme });
-          if (refAnalysis && refAnalysis.outline) applyReferencePlan(slides, refAnalysis.outline);
+          if (refAnalysis && refAnalysis.outline && mode !== 'template') applyReferencePlan(slides, refAnalysis.outline);
         } catch (e) { console.warn('[Pipeline] re-theme after QA failed:', e.message); }
       }
     } catch (err) {

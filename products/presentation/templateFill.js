@@ -172,18 +172,26 @@ const isSerifFace = (f) => /serif|times|georgia|cambria|garamond|didot|bodoni|pl
 /** Кирилл қамтымайтын қаріптің орнына: кескінді (≥30pt) және serif қаріптер → Times; қалған мәтін (sans) → Arial (түпнұсқадағыдай sans көрінісі). */
 const fallbackFace = (face, szPt) => (isSerifFace(face) || (szPt || 0) >= 30 ? SAFE_FALLBACK : SAFE_SANS);
 
+const FM = require('./fontMetrics');
+const BOLD_NAME = /bold|black|heavy|extrabold|semibold|demi/i;
+
+/**
+ * Мәтін ені (pt): Times New Roman / Arial-дың НАҚТЫ таңба ендері бойынша (fontMetrics.js).
+ * Бұрын барлық кіші әріп бірдей ен деп алынатын — қазақша «жаңашылдық» сияқты кең әріпті сөздер
+ * 15–19% жіңішке есептеліп, сөз ортасынан бөлінетін.
+ */
 function textWidthPt(str, szPt, serif, bold, spcPt) {
-  const W = serif ? W_SERIF : W_SANS;
+  const t = serif ? (bold ? FM.serifBold : FM.serif) : (bold ? FM.sansBold : FM.sans);
+  const avgLow = serif ? (bold ? 540 : 500) : (bold ? 600 : 560);
   let w = 0;
+  let n = 0;
   for (const ch of String(str)) {
-    if (ch === ' ') w += W.sp;
-    else if (/\d/.test(ch)) w += W.dig;
-    else if (/\p{Lu}/u.test(ch)) w += W.up;
-    else if (/\p{L}/u.test(ch)) w += W.low;
-    else w += W.pun;
+    n++;
+    const v = t[ch];
+    w += v != null ? v : (/\p{Lu}/u.test(ch) ? 740 : /\p{L}/u.test(ch) ? avgLow : 400);
   }
   // spcPt — әріп аралығы (a:rPr spc): әр таңбаға қосылады, әйтпесе кең аралықты тақырып өлшемнен кең шығады
-  return w * szPt * (bold ? 1.07 : 1) * 1.04 + (spcPt || 0) * [...String(str)].length;   // 4% қор
+  return (w / 1000) * szPt * 1.04 + (spcPt || 0) * n;   // 4% қор
 }
 
 /** Жолды енге қарай бөліп, қатар санын қайтарады (ұзын сөз бірнеше қатарға бөлінеді). */
@@ -218,7 +226,8 @@ function fitLines(lines, o) {
   if (!origSz100 || !box || !box.w || !box.h) return { lines, sz: null, lnPts: null, ok: true };
   const orig = +origSz100 / 100;
   const insets = o.insets || { l: 0, r: 0, t: 0, b: 0 };
-  const wPt = Math.max(10, box.w / 12700 - insets.l - insets.r) / (single ? DISPLAY_SAFETY : 1);
+  // Arial/Times емес қаріп (метрикасы белгісіз) — 6% қор
+  const wPt = Math.max(10, box.w / 12700 - insets.l - insets.r) / (single ? DISPLAY_SAFETY : 1) / (o.unknownFace ? 1.06 : 1);
   // box.h — шаблон қорабының биіктігі; o.grow — оның ТӨМЕНІНДЕГІ бос орын (келесі пішінге/слайд шетіне дейін)
   // 6% рұқсат тек қорап өз орнында қалғанда; қорап төмен өссе (grow) — рұқсат жоқ, әйтпесе мәтін көршіге/жылжытылған элементке түседі
   const hPt = Math.max(8, (box.h + (o.grow || 0)) / 12700 - insets.t - insets.b) * (o.grow ? 1 : 1.06);
@@ -331,7 +340,14 @@ function adaptRPr(rPr, lines, ctx) {
   if (hasCyr(lines.join(' '))) {
     const bad = (ctx && ctx.badFonts) || new Set();
     const szPt = (+((r.match(/ sz="(\d+)"/) || [])[1] || 0)) / 100;
-    r = r.replace(/(<a:(?:latin|ea|cs|sym) [^>]*?typeface=")([^"]+)(")/g, (m, a, face, c) => (bad.has(face) ? a + fallbackFace(face, szPt) + c : m));
+    let boldName = false;
+    r = r.replace(/(<a:(?:latin|ea|cs|sym) [^>]*?typeface=")([^"]+)(")/g, (m, a, face, c) => {
+      if (!bad.has(face)) return m;
+      if (BOLD_NAME.test(face)) boldName = true;
+      return a + fallbackFace(face, szPt) + c;
+    });
+    // «Agrandir Bold» сияқты атаудағы жуандық ауыстырғанда жоғалмасын (Times/Arial-да b="1" керек)
+    if (boldName && !/ b="1"/.test(r)) r = / b="0"/.test(r) ? r.replace(/ b="0"/, ' b="1"') : r.replace(/^<a:rPr/, '<a:rPr b="1"');
     if (/ lang="[^"]*"/.test(r)) r = r.replace(/ lang="[^"]*"/, ' lang="kk-KZ"');
     else r = r.replace(/^<a:rPr/, '<a:rPr lang="kk-KZ"');
   }
@@ -370,7 +386,8 @@ function replaceShapeText(block, lines, ctx) {
     const face = (rPr.match(/<a:latin [^>]*typeface="([^"]+)"/) || [])[1] || '';
     const inset = (n, d) => { const m = bodyPr.match(new RegExp(' ' + n + '="(\\d+)"')); return (m ? +m[1] : d) / 12700; };
     const fit = fitLines(list, {
-      box: ctx.box, grow: ctx.grow || 0, pPr, rPr, bold: / b="1"/.test(rPr), serif: isSerifFace(face), single: !!ctx.single,
+      box: ctx.box, grow: ctx.grow || 0, pPr, rPr, bold: / b="1"/.test(rPr) || BOLD_NAME.test(face), serif: isSerifFace(face), single: !!ctx.single,
+      unknownFace: !!face && !/^(arial|times new roman|liberation (sans|serif))$/i.test(face),
       minScale: ctx.minScale, relax: !!ctx.relax, noShorten: !!ctx.noShorten, fontPt: ctx.fontPt,
       origTexts: paras.map((pp) => [...pp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join('')).filter((t) => t.trim()),
       insets: { l: inset('lIns', 91440), r: inset('rIns', 91440), t: inset('tIns', 45720), b: inset('bIns', 45720) },
@@ -468,6 +485,14 @@ function linesForSlide(slide) {
     if (t) body.push(t);
   }
   if (!body.length && String((slide && slide.body) || '').trim()) body.push(String(slide.body).trim());
+  // қорғаныш: мәтін кестеге көшіп кетсе де жоғалмасын («Жол: баған, баған»)
+  const rows = slide && slide.table && Array.isArray(slide.table.rows) ? slide.table.rows : [];
+  if (body.length < 2) {
+    for (const r of rows) {
+      const c = (Array.isArray(r) ? r : [r]).map((v) => String(v == null ? '' : v).trim()).filter(Boolean);
+      if (c.length) body.push(c.length > 1 ? `${c[0]}: ${c.slice(1).join(', ')}` : c[0]);
+    }
+  }
   for (const st of Array.isArray(slide && slide.stats) ? slide.stats : []) {
     if (!st) continue;
     body.push(`${st.label ? st.label + ': ' : ''}${st.value}`);
@@ -734,15 +759,16 @@ function fillSlide(xml, slide, ctx) {
       if (typeof f === 'string' || !f || f.ok) { tier = t; break; }
     }
     let r = replaceShapeText(s.block, lines, ctxOf(tier));
-    const nb = xfrmOf(r);
-    const textGrow = nb ? Math.max(0, nb.h - bx.h) : 0;
-    const extraNeed = Math.max(0, textGrow - sur.room);
-    if (tier.widen && nb) {
+    if (tier.widen && xfrmOf(r)) {
       // енді кеңейту тек мәтін шынымен кеңдік сұраса ғана қалады: бұрынғы ені жеткілікті болса, қайтарамыз
       const narrow = replaceShapeText(s.block, lines, { ...ctxOf({ ...tier, widen: 0 }), probe: true });
       if (typeof narrow !== 'string' && narrow && narrow.ok && !narrow.shortened) { tier = { ...tier, widen: 0 }; r = replaceShapeText(s.block, lines, ctxOf(tier)); }
       else r = L.growBlock(r, { cx: bx.w + tier.widen });
     }
+    // биіктік СОҢҒЫ нұсқа бойынша (кеңейтуден бас тартылса мәтін биігірек болады)
+    const nb = xfrmOf(r);
+    const textGrow = nb ? Math.max(0, nb.h - bx.h) : 0;
+    const extraNeed = Math.max(0, textGrow - sur.room);
     if (extraNeed > 0) {
       // жоспарлау кезіндегі шартпен бірдей: cap-тен аспаймыз (әйтпесе «сыяды» деп есептеп, жылжыту сәтсіз болып қалатын)
       const plan = L.planNudge(sur, extraNeed, W, H);
@@ -996,4 +1022,4 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
   return writeZipAll(files);
 }
 
-module.exports = { countLines, textWidthPt, fitLines, fallbackFace, auditSlides, auditTemplateFill, minItemChars, shortenLine, logoScale, scaleBlock, roomBelow, fillTemplatePptx, planTemplateSlots, slotRuleLine, classify, capacityChars, uncoveredFonts, cmapOf, readZipAll, writeZipAll, fillSlide, linesForSlide, replaceShapeText, textShapes };
+module.exports = { roomFor, countLines, textWidthPt, fitLines, fallbackFace, auditSlides, auditTemplateFill, minItemChars, shortenLine, logoScale, scaleBlock, roomBelow, fillTemplatePptx, planTemplateSlots, slotRuleLine, classify, capacityChars, uncoveredFonts, cmapOf, readZipAll, writeZipAll, fillSlide, linesForSlide, replaceShapeText, textShapes };
