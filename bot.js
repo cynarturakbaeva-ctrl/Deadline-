@@ -6,7 +6,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs          = require('fs');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
 const { generatePresentation }                                                      = require('./products/presentation/index');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, incrementRefCount, useCredit, refundCredit, getAllChatIds, checkRateLimits, markGenerationAttempt, markGenerationSuccess, REFERRALS_PER_BONUS } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, incrementRefCount, useCredit, refundCredit, getAllChatIds, checkRateLimits, markGenerationAttempt, markGenerationSuccess, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE } = require('./db');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -56,6 +56,7 @@ const MAIN_KEYBOARD = {
       [{ text: '📱 Mini App ашу' }, { text: '📝 Тақырып жазу' }],
       [{ text: '💳 Менің есепшотым' }, { text: '🔗 Реферал сілтемем' }],
       [{ text: '💰 Кредит сатып алу' }, { text: '❓ Көмек' }],
+      [{ text: '🤝 Серіктес болу' }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -148,6 +149,113 @@ async function showReferral(chatId) {
   );
 }
 
+// ─── Серіктес бағдарламасы: әкелген клиенттің әр төлемінен PARTNER_RATE ──────────
+const pct = Math.round(PARTNER_RATE * 100);
+
+async function payPartnerCommission(buyerId, amount, ref) {
+  try {
+    const res = await creditPartnerCommission(buyerId, amount, ref);
+    if (!res) return;
+    const p = await getPartner(res.partnerId);
+    bot.sendMessage(
+      res.partnerId,
+      `💸 *+${res.commission}₸* — сілтемеңмен келген клиент төлем жасады!\n💰 Баланс: *${p.balance}₸*`,
+      { parse_mode: 'Markdown' }
+    ).catch(() => {});
+  } catch (e) {
+    console.error('[Partner] commission error:', e.message);
+  }
+}
+
+async function showPartner(chatId, from) {
+  const p = await getPartner(chatId);
+  const link = `https://t.me/${BOT_USERNAME}?start=ref_${chatId}`;
+  if (p.status === 'active') {
+    return bot.sendMessage(
+      chatId,
+      `🤝 *Серіктес кабинеті*\n\n` +
+      `Сілтемең:\n\`${link}\`\n\n` +
+      `Сілтемеңмен келген әр клиенттің *әр төлемінен ${pct}%* сенікі — мәңгі.\n\n` +
+      `💰 Төленуге дайын: *${p.balance}₸*\n` +
+      `📈 Жалпы тапқаның: *${p.earned}₸*\n` +
+      `✅ Аударылған: *${p.paid}₸*\n` +
+      `👥 Төлем жасаған клиент: *${p.buyers}*\n\n` +
+      `Ақшаны алу үшін админге жазыңыз — Kaspi-мен аударады.`,
+      { parse_mode: 'Markdown', disable_web_page_preview: true, ...MAIN_KEYBOARD }
+    );
+  }
+  if (p.status === 'pending') {
+    return bot.sendMessage(chatId, '⏳ Сұранысың админге жіберілген. Шешім болғанда хабарлаймын.', MAIN_KEYBOARD);
+  }
+  await requestPartner(chatId);
+  const name = escapeMarkdown([from && from.first_name, from && from.last_name].filter(Boolean).join(' ') || 'Белгісіз');
+  const uname = from && from.username ? ` @${escapeMarkdown(from.username)}` : '';
+  if (ADMIN_ID) {
+    bot.sendMessage(
+      ADMIN_ID,
+      `🤝 *Серіктес болуға сұраныс*\n\n👤 ${name}${uname}\n🆔 \`${chatId}\``,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[
+        { text: '✅ Рұқсат', callback_data: `pa:${chatId}` },
+        { text: '❌ Бас тарту', callback_data: `pr:${chatId}` },
+      ]] } }
+    ).catch(() => {});
+  }
+  return bot.sendMessage(
+    chatId,
+    `🤝 *Серіктес бағдарламасы*\n\nКлиент әкелсең — оның *әр төлемінен ${pct}%* аласың, мәңгі.\n\n` +
+    `Сұранысың админге жіберілді. Рұқсат берілгенде жеке сілтемең мен кабинетің ашылады.`,
+    { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
+  );
+}
+
+bot.onText(/^\/partner\b/, (msg) => showPartner(msg.chat.id, msg.from));
+
+// Админ: сұранысты қабылдау / бас тарту
+bot.on('callback_query', async (cq) => {
+  const data = cq.data || '';
+  if (!data.startsWith('pa:') && !data.startsWith('pr:')) return;
+  if (String(cq.from.id) !== String(ADMIN_ID)) {
+    return bot.answerCallbackQuery(cq.id, { text: 'Тек админ', show_alert: true });
+  }
+  const targetId = data.slice(3);
+  const ok = data.startsWith('pa:');
+  try {
+    await setPartnerStatus(targetId, ok ? 'active' : 'rejected');
+    await bot.answerCallbackQuery(cq.id, { text: ok ? 'Серіктес болды' : 'Бас тартылды' });
+    await bot.editMessageText(
+      (cq.message.text || '') + (ok ? '\n\n✅ Рұқсат берілді' : '\n\n❌ Бас тартылды'),
+      { chat_id: cq.message.chat.id, message_id: cq.message.message_id }
+    ).catch(() => {});
+    await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: cq.message.chat.id, message_id: cq.message.message_id }).catch(() => {});
+    bot.sendMessage(
+      targetId,
+      ok ? `🎉 Серіктес болдың! Енді сілтемеңмен келген клиенттің әр төлемінен *${pct}%* аласың.\n\n«🤝 Серіктес болу» батырмасынан кабинетіңді көр.`
+         : 'Кешір, қазір серіктес бағдарламасына қабылдай алмадық.',
+      { parse_mode: 'Markdown' }
+    ).catch(() => {});
+  } catch (e) {
+    console.error('[Partner] callback error:', e.message);
+    bot.answerCallbackQuery(cq.id, { text: 'Қате', show_alert: true }).catch(() => {});
+  }
+});
+
+// Админ: /payout <chatId> <сома> — серіктеске аударылған ақшаны баланстан алу; /partners — тізім
+bot.onText(/^\/payout (\d+) (\d+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+  const left = await payoutPartner(match[1], parseInt(match[2], 10));
+  if (left === null) return bot.sendMessage(msg.chat.id, '❌ Баланс жеткіліксіз немесе серіктес табылмады.');
+  bot.sendMessage(msg.chat.id, `✅ ${match[1]}: −${match[2]}₸. Қалған баланс: ${left}₸`);
+  bot.sendMessage(match[1], `✅ Саған *${match[2]}₸* аударылды. Қалған баланс: *${left}₸*`, { parse_mode: 'Markdown' }).catch(() => {});
+});
+
+bot.onText(/^\/partners$/, async (msg) => {
+  if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+  const list = await listPartners();
+  if (!list.length) return bot.sendMessage(msg.chat.id, 'Серіктес жоқ.');
+  bot.sendMessage(msg.chat.id, list.map((p) =>
+    `${p.chatId}: баланс ${p.balance}₸, тапқаны ${p.earned}₸, аударылған ${p.paid}₸, клиент ${p.buyers}`).join('\n'));
+});
+
 // ─── /help ─────────────────────────────────────────────────────────────────
 bot.onText(/\/help/, (msg) => showHelp(msg.chat.id));
 
@@ -236,6 +344,8 @@ async function tryAutoConfirm(chatId, msg) {
     { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
   );
 
+  await payPartnerCommission(chatId, parsed.amount, `r:${parsed.receiptNo}`);
+
   // Админге ақпарат (әрекет қажет емес)
   if (ADMIN_ID) {
     bot.sendMessage(
@@ -256,7 +366,12 @@ async function confirmPendingReceipt(chatId, credits, source) {
     }
   }
 
+  const before = await getUser(chatId);
   const user = await addCredits(chatId, credits);
+  // Қолмен растауда сома белгісіз — кредит санынан бағамен есептейміз (Plus / бірінші баға / әдепкі)
+  const paid = credits === PLUS.credits ? PLUS.amount
+    : (before.total === 0 && credits === 1 ? FIRST_PRICE : credits * PRICE);
+  await payPartnerCommission(chatId, paid, `m:${chatId}:${Date.now()}`);
 
   await bot.sendMessage(
     chatId,
@@ -418,6 +533,7 @@ bot.on('message', async (msg) => {
   if (text === '💳 Менің есепшотым') return showBalance(chatId);
   if (text === '❓ Көмек')           return showHelp(chatId);
   if (text === '🔗 Реферал сілтемем') return showReferral(chatId);
+  if (text === '🤝 Серіктес болу') return showPartner(chatId, msg.from);
 
   if (text === '📱 Mini App ашу') {
     const kb = webAppKeyboard();

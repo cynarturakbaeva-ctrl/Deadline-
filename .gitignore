@@ -1,14 +1,8 @@
 node_modules/
-.env
-jobs/
-data/
-*.bak
-.cache/
-
-node_modules/
 jobs/
 .env
 .env.*
 !.env.example
 *.log
-npm-debug.log*
+.DS_Store
+storage/

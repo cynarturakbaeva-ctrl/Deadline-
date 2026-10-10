@@ -31,7 +31,8 @@ function emptyDB() {
     jobs: {},
     history: {},
     feedback: {},
-    receipts: {}
+    receipts: {},
+    partner_log: {}
   };
 }
 
@@ -49,7 +50,8 @@ function loadDB() {
       jobs: db.jobs || {},
       history: db.history || {},
       feedback: db.feedback || {},
-      receipts: db.receipts || {}
+      receipts: db.receipts || {},
+      partner_log: db.partner_log || {}
     };
   } catch (err) {
     console.error('[DB] Local read error:', err.message);
@@ -168,6 +170,84 @@ async function incrementRefCount(referrerId) {
 
   saveDB(db);
   return { newCount: u.ref_earnings, bonusGiven };
+}
+
+
+// ─── Серіктестер (партнёрлер): әкелген клиенттің әр төлемінен пайыз ─────────────
+const PARTNER_RATE = Math.min(0.9, Math.max(0, Number(process.env.PARTNER_RATE) || 0.3));
+
+function partnerView(u) {
+  const buyers = new Set(Object.values(db.partner_log).filter((l) => l.partner_id === u.chat_id).map((l) => l.buyer_id));
+  return {
+    status: u.partner_status || 'none',
+    balance: Number(u.partner_balance) || 0,
+    earned: Number(u.partner_earned) || 0,
+    paid: Number(u.partner_paid) || 0,
+    buyers: buyers.size,
+    rate: PARTNER_RATE,
+  };
+}
+
+async function getPartner(chatId) {
+  const u = db.users[String(chatId)];
+  if (!u) return { status: 'none', balance: 0, earned: 0, paid: 0, buyers: 0, rate: PARTNER_RATE };
+  return partnerView(u);
+}
+
+/** Серіктес болуға сұраныс. 'none'/'rejected' → 'pending'. Қайтарады: жаңа статус */
+async function requestPartner(chatId) {
+  const u = ensureUser(chatId);
+  if (u.partner_status === 'active' || u.partner_status === 'pending') return u.partner_status;
+  u.partner_status = 'pending';
+  saveDB(db);
+  return 'pending';
+}
+
+async function setPartnerStatus(chatId, status) {
+  if (!['active', 'rejected', 'none'].includes(status)) return false;
+  const u = db.users[String(chatId)];
+  if (!u) return false;
+  u.partner_status = status;
+  saveDB(db);
+  return true;
+}
+
+/**
+ * Төлем расталғанда шақырған серіктеске пайыз есептейді. ref — бірегей (чек №), қайталанбайды.
+ * @returns {{partnerId, commission}|null}
+ */
+async function creditPartnerCommission(buyerId, amount, ref) {
+  const buyer = db.users[String(buyerId)];
+  const pid = buyer && buyer.referred_by;
+  const key = String(ref || '');
+  const a = Math.floor(Number(amount) || 0);
+  if (!pid || !key || a <= 0 || String(pid) === String(buyerId)) return null;
+  const partner = db.users[String(pid)];
+  if (!partner || partner.partner_status !== 'active') return null;
+  if (db.partner_log[key]) return null;
+  const commission = Math.floor(a * PARTNER_RATE);
+  if (commission <= 0) return null;
+  db.partner_log[key] = { ref: key, partner_id: String(pid), buyer_id: String(buyerId), amount: a, commission, created_at: Date.now() };
+  partner.partner_balance = (Number(partner.partner_balance) || 0) + commission;
+  partner.partner_earned = (Number(partner.partner_earned) || 0) + commission;
+  saveDB(db);
+  console.log(`[DB] partner commission: ${pid} +${commission}₸ (buyer ${buyerId}, ${key})`);
+  return { partnerId: String(pid), commission };
+}
+
+/** Админ серіктеске ақша аударды: баланстан алып тастайды. Қайтарады: жаңа баланс немесе null */
+async function payoutPartner(chatId, amount) {
+  const u = db.users[String(chatId)];
+  const a = Math.floor(Number(amount) || 0);
+  if (!u || a <= 0 || (Number(u.partner_balance) || 0) < a) return null;
+  u.partner_balance -= a;
+  u.partner_paid = (Number(u.partner_paid) || 0) + a;
+  saveDB(db);
+  return u.partner_balance;
+}
+
+async function listPartners() {
+  return Object.values(db.users).filter((u) => u.partner_status === 'active').map((u) => ({ chatId: u.chat_id, ...partnerView(u) }));
 }
 
 async function useCredit(chatId) {
@@ -453,6 +533,13 @@ module.exports = {
   applyReceipt,
   receiptExists,
   incrementRefCount,
+  PARTNER_RATE,
+  getPartner,
+  requestPartner,
+  setPartnerStatus,
+  creditPartnerCommission,
+  payoutPartner,
+  listPartners,
   useCredit,
   refundCredit,
   getAllChatIds,

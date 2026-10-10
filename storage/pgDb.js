@@ -65,9 +65,14 @@ const SCHEMA = {
       daily_date TEXT,
       daily_gens INTEGER DEFAULT 0,
       daily_expensive INTEGER DEFAULT 0,
-      created_at BIGINT
+      created_at BIGINT,
+      partner_status TEXT,
+      partner_balance INTEGER NOT NULL DEFAULT 0,
+      partner_earned INTEGER NOT NULL DEFAULT 0,
+      partner_paid INTEGER NOT NULL DEFAULT 0
     )`,
     cols: {
+      partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
       credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE',
       referred_by: 'TEXT', ref_earnings: 'INTEGER DEFAULT 0', last_attempt_at: 'BIGINT DEFAULT 0',
       last_success_at: 'BIGINT DEFAULT 0', daily_date: 'TEXT', daily_gens: 'INTEGER DEFAULT 0',
@@ -126,6 +131,18 @@ const SCHEMA = {
       created_at BIGINT
     )`,
     cols: { job_id: 'TEXT', chat_id: 'TEXT', rating: 'INTEGER', comment: 'TEXT', created_at: 'BIGINT' },
+  },
+  partner_log: {
+    create: `CREATE TABLE IF NOT EXISTS partner_log (
+      ref TEXT PRIMARY KEY,
+      partner_id TEXT,
+      buyer_id TEXT,
+      amount INTEGER,
+      commission INTEGER,
+      created_at BIGINT
+    )`,
+    cols: { partner_id: 'TEXT', buyer_id: 'TEXT', amount: 'INTEGER', commission: 'INTEGER', created_at: 'BIGINT' },
+    unique: 'ref',
   },
   receipts: {
     create: `CREATE TABLE IF NOT EXISTS receipts (
@@ -285,6 +302,83 @@ async function incrementRefCount(referrerId) {
   }
   const newCount = num(r.rows[0].ref_earnings);
   return { newCount, bonusGiven: newCount % REFERRALS_PER_BONUS === 0 };
+}
+
+
+// ─── Серіктестер (партнёрлер): әкелген клиенттің әр төлемінен пайыз ─────────────
+const PARTNER_RATE = Math.min(0.9, Math.max(0, Number(process.env.PARTNER_RATE) || 0.3));
+const noPartner = () => ({ status: 'none', balance: 0, earned: 0, paid: 0, buyers: 0, rate: PARTNER_RATE });
+
+async function getPartner(chatId) {
+  const r = await q(
+    `SELECT partner_status, partner_balance, partner_earned, partner_paid,
+            (SELECT COUNT(DISTINCT buyer_id) FROM partner_log WHERE partner_id = $1) AS buyers
+     FROM users WHERE chat_id = $1`, [String(chatId)]);
+  const u = r.rows[0];
+  if (!u) return noPartner();
+  return {
+    status: u.partner_status || 'none', balance: num(u.partner_balance), earned: num(u.partner_earned),
+    paid: num(u.partner_paid), buyers: num(u.buyers), rate: PARTNER_RATE,
+  };
+}
+
+async function requestPartner(chatId) {
+  await ensureUser(chatId);
+  const r = await q(
+    `UPDATE users SET partner_status = 'pending'
+     WHERE chat_id = $1 AND COALESCE(partner_status, 'none') NOT IN ('active', 'pending')
+     RETURNING partner_status`, [String(chatId)]);
+  if (r.rows.length) return 'pending';
+  return (await getPartner(chatId)).status;
+}
+
+async function setPartnerStatus(chatId, status) {
+  if (!['active', 'rejected', 'none'].includes(status)) return false;
+  const r = await q('UPDATE users SET partner_status = $2 WHERE chat_id = $1 RETURNING chat_id', [String(chatId), status]);
+  return r.rows.length > 0;
+}
+
+async function creditPartnerCommission(buyerId, amount, ref) {
+  const key = String(ref || '');
+  const a = Math.floor(Number(amount) || 0);
+  const commission = Math.floor(a * PARTNER_RATE);
+  if (!key || a <= 0 || commission <= 0) return null;
+  // Бір сұраныс: лог жазылса ҒАНА баланс өседі (қайталанған ref — ештеңе өзгермейді)
+  const r = await q(
+    `WITH p AS (
+       SELECT b.referred_by AS pid FROM users b
+       JOIN users pu ON pu.chat_id = b.referred_by AND pu.partner_status = 'active'
+       WHERE b.chat_id = $1::text AND b.referred_by <> $1::text
+     ), ins AS (
+       INSERT INTO partner_log (ref, partner_id, buyer_id, amount, commission, created_at)
+       SELECT $2::text, pid, $1::text, $3::int, $4::int, ${tw('partner_log', 'created_at', '$5::bigint')} FROM p
+       ON CONFLICT (ref) DO NOTHING
+       RETURNING partner_id
+     )
+     UPDATE users SET partner_balance = COALESCE(partner_balance, 0) + $4::int,
+                       partner_earned = COALESCE(partner_earned, 0) + $4::int
+     WHERE chat_id IN (SELECT partner_id FROM ins)
+     RETURNING chat_id`,
+    [String(buyerId), key, a, commission, Date.now()]
+  );
+  if (!r.rows.length) return null;
+  console.log(`[DB] partner commission: ${r.rows[0].chat_id} +${commission}₸ (buyer ${buyerId}, ${key})`);
+  return { partnerId: String(r.rows[0].chat_id), commission };
+}
+
+async function payoutPartner(chatId, amount) {
+  const a = Math.floor(Number(amount) || 0);
+  if (a <= 0) return null;
+  const r = await q(
+    `UPDATE users SET partner_balance = partner_balance - $2::int, partner_paid = COALESCE(partner_paid, 0) + $2::int
+     WHERE chat_id = $1 AND COALESCE(partner_balance, 0) >= $2::int RETURNING partner_balance`,
+    [String(chatId), a]);
+  return r.rows.length ? num(r.rows[0].partner_balance) : null;
+}
+
+async function listPartners() {
+  const r = await q("SELECT chat_id FROM users WHERE partner_status = 'active'");
+  return Promise.all(r.rows.map(async (x) => ({ chatId: String(x.chat_id), ...(await getPartner(x.chat_id)) })));
 }
 
 async function useCredit(chatId) {
@@ -573,6 +667,13 @@ module.exports = {
   applyReceipt,
   receiptExists,
   incrementRefCount,
+  PARTNER_RATE,
+  getPartner,
+  requestPartner,
+  setPartnerStatus,
+  creditPartnerCommission,
+  payoutPartner,
+  listPartners,
   useCredit,
   refundCredit,
   getAllChatIds,
