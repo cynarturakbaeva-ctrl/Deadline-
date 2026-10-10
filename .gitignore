@@ -5,4 +5,5 @@ jobs/
 !.env.example
 *.log
 .DS_Store
-storage/
+storage/*
+!storage/*.js
