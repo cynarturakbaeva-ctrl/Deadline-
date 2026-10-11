@@ -33,7 +33,7 @@ function statShares(items) {
 
 // ── shared building blocks ────────────────────────────────────────────────
 function makeCtx(a, plan, palette, ts, deckTitle) {
-  const serif = /DisplayFace|serif/i.test(ts.display) && !/sans/i.test(ts.display.split(',')[0]);
+  const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
   let i = 0;
   return {
     a, plan, palette, ts, deckTitle, serif,

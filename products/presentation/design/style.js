@@ -16,12 +16,24 @@ function fontData(file, mime, fmt) {
   return cache[file];
 }
 
+/**
+ * The deck is delivered as an EDITABLE PPTX, so its text must use fonts every PowerPoint / Google Slides has:
+ * Calibri (text) and Times New Roman (display serif). The HTML measures and draws with their metric-compatible
+ * open clones (Carlito, Liberation Serif — full Kazakh Cyrillic), registered under the Office names, so line
+ * breaks in the HTML are exactly the line breaks PowerPoint will produce. Only 400/700 (+ serif italic) faces exist;
+ * `font-synthesis:none` makes 600–800 resolve to the real bold face, which is what PPTX "bold" renders.
+ */
+const FACES = [
+  ['Calibri', 'Text-Regular.ttf', 400, 'normal'], ['Calibri', 'Text-Bold.ttf', 700, 'normal'],
+  ['Times New Roman', 'Serif-Regular.ttf', 400, 'normal'], ['Times New Roman', 'Serif-Bold.ttf', 700, 'normal'],
+  ['Times New Roman', 'Serif-Italic.ttf', 400, 'italic'],
+];
 function fontFaces() {
   let css = '';
-  const inter = fontData('InterVariable.woff2', 'font/woff2', "woff2-variations");
-  if (inter) css += "@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:block;src:url(" + inter.uri + ") format('" + inter.fmt + "')}\n";
-  const serif = fontData('DisplaySerif.ttf', 'font/ttf', 'truetype');
-  if (serif) css += "@font-face{font-family:'DisplayFace';font-style:normal;font-weight:400 700;font-display:block;src:url(" + serif.uri + ") format('" + serif.fmt + "')}\n";
+  for (const [family, file, weight, style] of FACES) {
+    const f = fontData(file, 'font/ttf', 'truetype');
+    if (f) css += "@font-face{font-family:'" + family + "';font-style:" + style + ';font-weight:' + weight + ';font-display:block;src:url(' + f.uri + ") format('truetype')}\n";
+  }
   return css;
 }
 
@@ -63,7 +75,7 @@ function css(palette, ts) {
   const g = T.GRID;
   return fontFaces() + baseVars() + typeVars(ts) + `
 *,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:var(--f-text);overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-kerning:normal}
+html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:var(--f-text);font-synthesis:none;overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-kerning:normal}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
 #stage{position:absolute;left:50%;top:50%;width:${g.W}px;height:${g.H}px;margin:-${g.H / 2}px 0 0 -${g.W / 2}px;transform:scale(var(--fit,1));transform-origin:50% 50%;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.06),0 40px 120px rgba(0,0,0,.6)}

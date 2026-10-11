@@ -349,7 +349,7 @@
           template: 'Шаблонға мәтін салынуда',
           images: 'Суреттер',
           visual: 'Визуалдар',
-          html: 'HTML құрастыру',
+          html: 'Дизайн құрастыру',
           render: 'Рендер',
           critic: 'Vision Critic',
           redesign: 'Қайта өңдеу',
@@ -441,7 +441,6 @@
     const tpl = job.mode === 'template';
     $('#resultTitle').textContent = job.title || (ref ? 'Реферат дайын!' : 'Презентация дайын!');
     $('#btnDlPptx').classList.toggle('hidden', ref);
-    $('#btnDlHtml').classList.toggle('hidden', ref || tpl);
     $('#btnDlDocx').classList.toggle('hidden', !ref);
     $('#btnNew').textContent = ref ? 'Жаңа жұмыс' : 'Жаңа презентация';
     $('#resultScore').textContent = job.qualityScore != null
@@ -452,7 +451,6 @@
     renderTemplateReport(job.templateReport);
     state.currentJobId = job.id;
     $('#btnDlPptx').onclick = () => download(job.id, 'pptx');
-    $('#btnDlHtml').onclick = () => download(job.id, 'html');
     $('#btnDlDocx').onclick = () => download(job.id, 'docx');
   }
 
@@ -563,7 +561,7 @@
             ${h.mode === 'referat'
               ? `<button class="btn secondary small" data-dl="${h.id}" data-type="docx">Word</button>`
               : `<button class="btn secondary small" data-dl="${h.id}" data-type="pptx">PPTX</button>
-            ${h.mode === 'template' ? '' : `<button class="btn secondary small" data-dl="${h.id}" data-type="html">HTML</button>`}`}
+`}
           </div>
         </div>`;
       }).join('');
