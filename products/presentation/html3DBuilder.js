@@ -171,7 +171,7 @@ function renderSlide(slide, index, plan, ctxDeck) {
   const accent = palette.accent;
   const sk = ctxDeck.skin;
   const dec = sk && sk.decor ? decorHtml(sk, refIndexFor(sk, index, ctxDeck.total, ctxDeck.roles), layoutName, index, ctxDeck.mediaIds, palette) : { html: '', vars: '' };
-  return '<article class="slide L-' + layoutName + ' ' + (out.cls || '') + ' cam-' + cam + (index === 0 ? ' is-active' : '') +
+  return '<article class="slide L-' + layoutName + ' ' + (out.cls || '') + (ctxDeck.serif ? ' serif-tone' : '') + ' cam-' + cam + (index === 0 ? ' is-active' : '') +
     '" data-index="' + index + '" data-layout="' + layoutName + '" data-type="' + plan.type + '" data-cam="' + cam + '" data-accent="' + accent +
     '" style="' + paletteVars(palette) + dec.vars + '"><div class="layer layer-bg" data-depth="0.12">' + (out.bg || '') + decoFor(out.bg, palette, index) + (sk && sk.decor ? dec.html : skinShapes(ctxDeck.skin, layoutName, index, ctxDeck.total)) +
     '</div><div class="layer layer-mid" data-depth="0.4">' + out.fg + '</div></article>';
@@ -221,7 +221,8 @@ function buildNew(slides, presentationTitle, opts) {
   if (process.env.DESIGN_DEBUG) console.log('[Design] plan: ' + plan.map((p, i) => (i + 1) + ':' + p.layout).join(' '));
   const skin = opts.skin || null;
   const mt = mediaTable(skin);
-  const ctxDeck = { palette, ts, deckTitle, skin, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
+  const serif = /DisplayFace|serif/i.test(ts.display.split(',')[0]);
+  const ctxDeck = { palette, ts, deckTitle, skin, serif, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
   const slidesHTML = list.map((s, i) => renderSlide(s, i, plan[i], ctxDeck)).join('');
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
   return '<!DOCTYPE html><html lang="kk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +

@@ -15,6 +15,21 @@ const I = require('./imagery');
 const esc = (v) => (v == null ? '' : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
 const pad2 = (n) => String(n).padStart(2, '0');
 const NUMERAL_HERO = [340, 290, 240, 200, 160, 128];
+// Atmosphere (background layer only — no data-role, so the in-page QA never measures it)
+const AURORA = '<div class="aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>';
+const AURORA_SOFT = '<div class="aurora soft" aria-hidden="true"><i class="a1"></i><i class="a2"></i></div>';
+const ghost = (cls, text) => '<div class="ghost ' + cls + '" aria-hidden="true">' + esc(text) + '</div>';
+/** Share of a full bar for each stat: % values are absolute, other numbers relative to the largest one. */
+function statShares(items) {
+  const nums = items.map((s) => parseStatNumber(String(s.value)));
+  const isPct = items.map((s) => /%/.test(String(s.value)));
+  const max = Math.max(0, ...nums.filter((n, i) => n != null && isFinite(n) && !isPct[i]).map(Math.abs));
+  return nums.map((n, i) => {
+    if (n == null || !isFinite(n)) return null;
+    if (isPct[i]) return n >= 0 && n <= 100 ? Math.max(0.04, n / 100) : null;
+    return max > 0 ? Math.max(0.08, Math.abs(n) / max) : null;
+  });
+}
 
 // ── shared building blocks ────────────────────────────────────────────────
 function makeCtx(a, plan, palette, ts, deckTitle) {
@@ -40,9 +55,29 @@ function titleH1(ctx, text, o) {
   const weight = role === 'display' ? ctx.ts.displayWeight : ctx.ts.titleWeight;
   const tracking = parseFloat(role === 'display' ? ctx.ts.displayTracking : ctx.ts.titleTracking);
   const fit = fitSize(text, { width: o.width, maxLines: o.maxLines || 3, scale, kind: ctx.kind, weight, tracking });
-  return el(ctx, 'h1', 'title' + (role === 'display' ? ' t-display' : '') + (o.cls ? ' ' + o.cls : ''), esc(text), {
+  return el(ctx, 'h1', 'title' + (role === 'display' ? ' t-display' : '') + (o.cls ? ' ' + o.cls : ''), titleWords(text, o.hl), {
     role: 'title', style: '--ts:' + fit.size + 'px;' + (o.style || ''),
   });
+}
+
+/**
+ * Title → word spans (staggered reveal in the HTML) with the KEY phrase highlighted in the accent gradient.
+ * Key phrase: the part after a colon/dash when it is short, otherwise the last word (never the whole long title).
+ */
+function keyRange(ws, text) {
+  const m = String(text).match(/^(.{3,}?)\s*[:—–]\s+(\S.*)$/);
+  if (m) {
+    const tail = m[2].trim().split(/\s+/).length;
+    if (tail <= 3 && tail < ws.length) return [ws.length - tail, ws.length];
+  }
+  if (ws.length === 1) return ws[0].length <= 14 ? [0, 1] : [1, 1];
+  return [ws.length - 1, ws.length];
+}
+function titleWords(text, hl) {
+  const ws = String(text == null ? '' : text).trim().split(/\s+/).filter(Boolean);
+  if (!ws.length) return '';
+  const [a, b] = hl ? keyRange(ws, text) : [ws.length, ws.length];
+  return ws.map((w, k) => '<span class="w' + (k >= a && k < b ? ' hl' : '') + '" style="--w:' + Math.min(k, 12) + '">' + esc(w) + '</span>').join(' ');
 }
 const rule = (ctx, w) => el(ctx, 'div', 'rule', '', { style: 'width:' + (w || 56) + 'px' });
 const kicker = (ctx, text) => (text ? el(ctx, 'div', 'kicker', esc(text), { role: 'kicker' }) : '');
@@ -99,7 +134,7 @@ L.cover = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const rc = ctx.plan && ctx.plan.refCover;
   const bleedOK = !rc && a.hasPhoto && I.sharpEnough(a.img, 1400);
-  let bg = '<div class="plate plate-cover"></div>';
+  let bg = '<div class="plate plate-cover"></div>' + AURORA + '<div class="halo" aria-hidden="true"><i></i></div>';
   let fgCls = 'cover-plain';
   if (rc) {
     bg += '<div class="ref-cover-photo' + (rc.shape === 'circle' ? ' is-circle' : '') + '" style="left:' + rc.x + 'px;top:' + rc.y + 'px;width:' + rc.w + 'px;height:' + rc.h + 'px">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div>';
@@ -107,7 +142,7 @@ L.cover = (ctx) => {
   if (a.hasPhoto && bleedOK) {
     bg = '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div>' +
       '<div class="scrim" style="background:' + I.scrim('left', p) + '"></div>' +
-      '<div class="scrim" style="background:' + I.scrim('bottom', p) + '"></div>';
+      '<div class="scrim" style="background:' + I.scrim('bottom', p) + '"></div>' + AURORA_SOFT;
     fgCls = 'cover-photo';
   }
   const w = GRID.span(10);
@@ -128,7 +163,7 @@ L.cover = (ctx) => {
   const fg = '<div class="canvas cover">' +
     '<div class="cover-top">' + (sectionLabel(ctx) ? rule(ctx, 56) + kicker(ctx, sectionLabel(ctx)) : '') + org + '</div>' +
     '<div class="block cover-block">' +
-      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3 }) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3, hl: true }) +
       lead(ctx, labeled ? '' : a.subtitle, 38, { maxw: GRID.span(7) }) +
       (a.body && !a.subtitle ? para(ctx, a.body, 28, { maxw: GRID.span(7) }) : '') +
       metaHtml +
@@ -140,12 +175,12 @@ L.section = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const num = ctx.plan.section ? pad2(ctx.plan.section) : pad2(a.index);
   const hasP = a.hasPhoto && I.sharpEnough(a.img, 900);
-  const bg = '<div class="plate plate-section"></div>' + (hasP ? photoBleed(ctx, 'right', 5) : '');
+  const bg = '<div class="plate plate-section"></div>' + AURORA_SOFT + (hasP ? photoBleed(ctx, 'right', 5) : ghost('ghost-num', num));
   const textW = hasP ? GRID.span(6) : GRID.span(9);
   const fg = '<div class="canvas sect">' +
     el(ctx, 'div', 'numeral-xl', num, { role: 'numeral' }) +
     '<div class="block sect-block">' + rule(ctx, 56) +
-      titleH1(ctx, a.title, { role: 'display', width: textW, maxLines: 3, scale: [120, 104, 92, 80, 68] }) +
+      titleH1(ctx, a.title, { role: 'display', width: textW, maxLines: 3, scale: [120, 104, 92, 80, 68], hl: true }) +
       lead(ctx, a.subtitle || a.body, 34, { maxw: textW }) +
     '</div></div>';
   return { bg, fg, cls: 'sect-slide' };
@@ -158,12 +193,12 @@ L.statement = (ctx) => {
   const support = a.subtitle || a.body;
   const fg = '<div class="canvas stmt"><div class="block stmt-block">' +
     kicker(ctx, sectionLabel(ctx)) +
-    titleH1(ctx, a.title, { role: long ? 'title' : 'display', width: w, maxLines: long ? 4 : 3, scale: long ? [92, 80, 70, 62] : [128, 112, 98, 86, 76] }) +
+    titleH1(ctx, a.title, { role: long ? 'title' : 'display', width: w, maxLines: long ? 4 : 3, scale: long ? [92, 80, 70, 62] : [128, 112, 98, 86, 76], hl: true }) +
     (support ? rule(ctx, 56) : '') +
     (a.subtitle ? lead(ctx, a.subtitle, 38, { maxw: GRID.span(7) }) : '') +
     (a.body ? para(ctx, a.body, bodySize(a.bodyWords), { maxw: GRID.span(7) }) : '') +
     '</div></div>';
-  return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
+  return { bg: '<div class="plate"></div>' + AURORA_SOFT, fg: fg + folio(ctx), cls: 'stmt-slide' };
 };
 
 L.split = (ctx) => {
@@ -197,7 +232,7 @@ L.fullImage = (ctx) => {
   const w = GRID.span(9);
   const fg = '<div class="canvas fimg"><div class="block fimg-block">' +
     rule(ctx, 56) +
-    titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3, scale: [112, 98, 86, 74, 64] }) +
+    titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3, scale: [112, 98, 86, 74, 64], hl: true }) +
     (a.subtitle ? lead(ctx, a.subtitle, 34, { maxw: GRID.span(7) }) : '') +
     '</div></div>';
   return { bg, fg: fg + folio(ctx), cls: 'fimg-slide' };
@@ -324,8 +359,8 @@ function pointsColumns(ctx, parsed) {
   const a = ctx.a; const n = parsed.length;
   const tw = GRID.span(8);
   const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + pad2(k + 1) + '</span>' +
-    '<div class="concept-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 32 : 30) + 'px">' + esc(m.label) + '</div>' +
-    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 27 : n === 4 ? 24 : 23) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
+    '<div class="concept-l" style="--rl:' + (n <= 3 ? 40 : n === 4 ? 36 : 32) + 'px">' + esc(m.label) + '</div>' +
+    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 24) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas conc"><div class="block conc-head">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: tw, maxLines: 2, scale: [92, 80, 70, 62, 54] }) +
@@ -352,11 +387,13 @@ L.stats = (ctx) => {
   const a = ctx.a;
   const items = a.stats.slice(0, 4);
   const n = items.length;
-  const base = n === 2 ? [176, 150, 124, 100] : n === 3 ? [144, 124, 104, 88] : [112, 96, 84, 72];
-  const colW = (GRID.contentW - GRID.gutter * (n - 1)) / n - 12;
+  const base = n === 2 ? [176, 150, 124, 100] : n === 3 ? [144, 124, 104, 88, 76] : [112, 96, 84, 72, 64];
+  // value sits inside a glass card: column minus card padding (2×32), border and a little slack
+  const colW = (GRID.contentW - 32 * (n - 1)) / n - 110;
   const widest = items.reduce((m, s) => (String(s.value).length > m.length ? String(s.value) : m), '0');
   const fit = fitSize(widest.replace(/\s/g, '\u00a0'), { width: colW, maxLines: 1, scale: base, kind: ctx.kind, weight: ctx.ts.displayWeight, tracking: 0.02 });
-  const cells = items.map((s) => {
+  const shares = statShares(items);
+  const cells = items.map((s, k) => {
     const raw = String(s.value);
     const m = raw.match(/^([^\d-]*)(-?[\d][\d\s.,]*)(.*)$/);
     const num = m ? parseStatNumber(m[2]) : null;
@@ -367,8 +404,9 @@ L.stats = (ctx) => {
         '<span data-count="' + num + '" data-raw="' + esc(numTxt) + '">' + esc(numTxt) + '</span>' +
         (m[3] ? '<span class="sfx">' + esc(m[3].trim()) + '</span>' : '');
     } else valHtml = esc(raw);
-    return '<li class="stat" data-role="stat"><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
-      '<div class="stat-l">' + esc(s.label || '') + '</div></li>';
+    const meter = shares[k] != null ? '<div class="meter" aria-hidden="true"><i style="--p:' + shares[k].toFixed(3) + ';--k:' + k + '"></i></div>' : '';
+    return '<li class="stat" data-role="stat"><span class="stat-ix">' + pad2(k + 1) + '</span><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
+      meter + '<div class="stat-l">' + esc(s.label || '') + '</div></li>';
   }).join('');
   const support = a.subtitle || a.body;
   const fg = '<div class="canvas stats">' +
@@ -391,14 +429,24 @@ L.number = (ctx) => {
   const valHtml = num != null
     ? '<span data-count="' + num + '" data-raw="' + esc(raw) + '">' + esc(raw) + '</span>' : esc(raw);
   const tw = GRID.span(4);
+  const pct = /%/.test(raw) && num != null && num >= 0 && num <= 100;
+  let hero;
+  if (pct) {
+    // percentage → the number sits inside a progress ring that fills up to its value
+    const inner = fitSize(raw.replace(/\s/g, ''), { width: 430, maxLines: 1, scale: [220, 190, 160, 136, 112], kind: ctx.kind, weight: ctx.ts.displayWeight, tracking: -0.04 });
+    hero = '<div class="ring-wrap"><div class="ring" aria-hidden="true" style="--p:' + (num / 100).toFixed(3) + '"></div>' +
+      el(ctx, 'div', 'mega in-ring', valHtml, { role: 'numeral', style: '--ns:' + inner.size + 'px' }) + '</div>';
+  } else {
+    hero = el(ctx, 'div', 'mega', valHtml, { role: 'numeral', style: '--ns:' + fit.size + 'px' });
+  }
   const fg = '<div class="canvas g12 numb">' +
-    '<div class="cell numb-l" style="' + cols(1, 7) + '">' + el(ctx, 'div', 'mega', valHtml, { role: 'numeral', style: '--ns:' + fit.size + 'px' }) + '</div>' +
+    '<div class="cell numb-l" style="' + cols(1, 7) + '">' + hero + '</div>' +
     '<div class="cell numb-r" style="' + cols(9, 12) + '"><div class="block">' +
       el(ctx, 'div', 'kicker', esc(s.label || ''), { role: 'kicker' }) + rule(ctx, 48) +
       titleH1(ctx, a.title, { width: tw, maxLines: 4, scale: [56, 50, 44, 40] }) +
       (a.subtitle ? para(ctx, a.subtitle, 26, { maxw: tw }) : '') +
     '</div></div></div>';
-  return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
+  return { bg: '<div class="plate"></div>' + AURORA_SOFT, fg: fg + folio(ctx), cls: 'numb-slide' };
 };
 
 function nodeList(a, field, max) {
@@ -452,8 +500,8 @@ L.hierarchy = (ctx) => {
   const nodes = nodeList(a, 'hierarchy', 6);
   const n = nodes.length;
   const kids = nodes.map((nd, i) => '<li class="hn drop" data-role="node"><span class="hn-n">' + pad2(i + 1) + '</span>' +
-    '<div class="hn-l" style="--rl:' + (n <= 3 ? 32 : 28) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
-    (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 4 ? 24 : 22) + 'px">' + esc(truncate(nd.detail, 130)) + '</div>' : '') + '</li>').join('');
+    '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
+    (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 23) + 'px">' + esc(truncate(nd.detail, 130)) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas hier"><div class="block hier-root">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: GRID.span(9), maxLines: 2, scale: [80, 70, 62, 54, 48], cls: 'center' }) +
@@ -504,7 +552,7 @@ L.quote = (ctx) => {
     el(ctx, 'blockquote', 'qtext', esc(text), { role: 'title', style: '--ts:' + fit.size + 'px' }) +
     (who ? '<div class="qwho rv" style="--i:4">' + '<i class="qrule"></i><span data-role="lead">' + esc(who) + '</span></div>' : '') +
     '</div></div>';
-  return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
+  return { bg: '<div class="plate"></div>' + AURORA_SOFT + ghost('ghost-quote', '”'), fg: fg + folio(ctx), cls: 'quote-slide' };
 };
 
 L.closing = (ctx) => {
@@ -512,13 +560,13 @@ L.closing = (ctx) => {
   const hasP = a.hasPhoto;
   const bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
-    : '<div class="plate plate-section"></div>';
+    : '<div class="plate plate-section"></div>' + AURORA;
   const items = a.bullets.slice(0, 4);
   const lw = GRID.span(5);
   const fg = '<div class="canvas g12 close">' +
     '<div class="cell close-l" style="' + cols(1, 5) + '"><div class="block">' +
       rule(ctx, 56) +
-      titleH1(ctx, a.title, { role: 'display', width: lw, maxLines: 3, scale: [112, 96, 84, 72, 62, 54] }) +
+      titleH1(ctx, a.title, { role: 'display', width: lw, maxLines: 3, scale: [112, 96, 84, 72, 62, 54], hl: true }) +
       (a.subtitle ? lead(ctx, a.subtitle, 32, { maxw: lw }) : '') +
     '</div></div>' +
     '<div class="cell close-r" style="' + cols(7, 12) + '">' +
