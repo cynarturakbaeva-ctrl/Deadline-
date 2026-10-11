@@ -472,15 +472,38 @@ const CONTENT_RULES = `CONTENT & LANGUAGE (teach, do not encyclopedia-dump):
 - Set unused fields to null`;
 
 const VISUAL_RULES = `SEMANTIC VISUAL FIELD (diagram only when it teaches faster than text):
-- visual is null on MOST slides. Set it when meaning is relational:
-  • diagram — process, flow, cycle, hierarchy, architecture, cause→effect (3-6 named parts, clear direction)
-  • infographic — 3-6 REAL numbers/facts from THIS slide only
+- visual is null on MOST slides — prefer the "infographic" field (charts, cycle, funnel, pyramid, venn, matrix, roadmap, icon grid). Use visual only for what the library cannot draw:
+  • diagram — architecture or cause→effect with 3-6 named parts and a clear direction
   • map — places/routes as SCHEMATIC only (never fake borders)
+- Never set both "visual" and "infographic" on the same slide.
 - At most ONE visual per batch; never on cover. If in doubt, null.
 - Shape: {"type":"diagram|infographic|map","brief":"English: what to draw and the relationship","data":["3-8 short items in presentation language from THIS slide only"]}
 - NEVER invent statistics. Prefer qualitative structure over fake numbers.
 - Brief must state the relationship (e.g. "left-to-right pipeline: data → model → deploy"), not "nice infographic".
 - Slide with visual still needs title, subtitle, 2-4 short bullets as text fallback.`;
+
+const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram library — the code draws it beautifully, you only give the data):
+- Use it whenever a slide's meaning is numbers or a clear structure: aim for 2-4 infographic slides per 10 slides, each a DIFFERENT kind; never on the cover or the references slide; never two in a row.
+- Shape: {"kind":"...","items":[{"label":"...","value":"...","detail":"...","icon":"...","group":"..."}],"unit":"","center":"","source":"","headers":[]}
+- kinds and their data:
+  • bar — 3-8 categories compared by one number (ranking, shares). value required.
+  • column — 3-10 periods/categories (years, months) with one number each. value required.
+  • line — 4-12 points over time (trend). label = period, value = number.
+  • donut — 2-6 parts of a whole (shares that add up to ~100%). value required.
+  • compare — exactly 2 things with one number each (A vs B, before/after). value required, detail optional.
+  • pictogram — ONE percentage to make tangible ("7 of 10 people"). items:[{label, value:"70%", detail}].
+  • cycle — 3-6 steps that repeat in a loop (life cycle, water cycle, PDCA). center = cycle name.
+  • funnel — 3-6 narrowing stages (sales, selection, filtering); value optional per stage.
+  • pyramid — 3-5 levels from top (most important/smallest) to base (Maslow, hierarchy).
+  • venn — 2-3 overlapping sets; center = what they share.
+  • matrix — exactly 4 quadrants (SWOT, 2×2 classification); detail = short explanation.
+  • prosCons — advantages vs disadvantages: items with group "pro" or "con" (2-5 each); headers = 2 column titles.
+  • roadmap — 3-6 milestones in time: value = date/year, label = milestone, detail = 1 short line.
+  • iconGrid — 3-6 key aspects/features/directions with an icon each; detail = 1 sentence.
+- label ≤ 4 words, detail ≤ 12 words, value keeps its unit as text ("72%", "4,2 млн", "2019"). Write labels in the presentation language.
+- icon (optional, English): one of users, user, graduation-cap, book-open, school, briefcase, building-2, landmark, factory, globe, map-pin, leaf, tree-pine, sun, droplets, flame, zap, cpu, monitor, smartphone, wifi, database, cloud, shield, lock, heart-pulse, stethoscope, microscope, flask-conical, atom, dna, brain, lightbulb, target, trophy, award, star, flag, rocket, trending-up, trending-down, coins, wallet, shopping-cart, truck, car, plane, house, wrench, settings, scale, file-text, calendar, clock, message-circle, megaphone, handshake, puzzle, layers, network, recycle, wheat, mountain, waves, music, palette, camera, history, crown, swords, castle, baby, apple, sprout, church, scroll, newspaper, vote, bot.
+- Numbers: use real, well-established figures you are confident about (statistics, dates, shares); add "source" (organisation + year) when you know it.
+- A slide with an infographic still has title + subtitle; bullets may be null. Default for "infographic" is null.`;
 
 const CLIENT_FIRST_RULES = `CLIENT INTENT IS LAW (highest priority — overrides defaults when they conflict):
 - The client's message is a BRIEF you must obey: topic, structure, slide count, language, tone, what to include/exclude, syllabus points, names, numbers, dates.
@@ -500,7 +523,8 @@ const SLIDE_JSON_SHAPE = `{
   "bullets": ["...", "..."],
   "stats": null,
   "table": null,
-  "visual": null,
+"  "visual": null,
+  "infographic": null,
   "imageQuery": "English photographic query with scene, mood, lighting",
   "visualIntent": "semantic visual concept for the optional 3D web scene",
   "composition": {
@@ -705,7 +729,9 @@ ${COMPOSITION_RULES}
 
 ${CONTENT_RULES}
 
-${VISUAL_RULES}`;
+${VISUAL_RULES}
+
+${INFOGRAPHIC_RULES}`;
 
   const text = await withRetry(() => groqChat(system, user, `generateBatch[${batchTopics.map(b=>b.index).join(',')}]`), 'generateBatch');
   const parsed = parseJSON(text);
@@ -815,10 +841,11 @@ Return the full corrected JSON with the same shape: { "slides": [...] }`;
     return slidesBatch;
   }
 
-  // "visual" өрісін модельге сенбей, кодпен қайтарамыз (review оны түсіріп кетуі мүмкін)
+  // "visual" / "infographic" өрістерін модельге сенбей, кодпен қайтарамыз (review оны түсіріп кетуі мүмкін)
   return reviewed.slides.map((s, i) => {
     const orig = slidesBatch.find((o) => o && o.index === s.index) || slidesBatch[i];
     if (orig && orig.visual !== undefined) s.visual = orig.visual;
+    if (orig && orig.infographic) s.infographic = orig.infographic;
     return s;
   });
 }

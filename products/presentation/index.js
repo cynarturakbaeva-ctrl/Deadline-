@@ -31,6 +31,7 @@ const { runNarrativePass, buildDimensionScores } = require('./narrative');
 const { runVisionCritic } = require('./visionCritic');
 const { uniqueId } = require('../../core/tmpFiles');
 const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
+const { validateInfographic } = require('./design/infographics');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
@@ -518,6 +519,8 @@ async function generatePresentation(userInput, options = {}) {
     if (raw && !query) console.warn(`[Image] non-English imageQuery ignored: "${raw.slice(0, 60)}"`);
     // image:"none" слайдтарға (кесте/диаграмма) сурет керек емес — бекер іздемейміз
     if (slide.composition && slide.composition.image === 'none') return null;
+    // инфографика слайды фотоны қолданбайды (сызба толық ені/оң жағын алады)
+    if (validateInfographic(slide.infographic)) return null;
     console.log(`[Image] query="${query}"`);
     try {
       return await fetchImageWithFallback(query, topic, usedImages, deckQueries);

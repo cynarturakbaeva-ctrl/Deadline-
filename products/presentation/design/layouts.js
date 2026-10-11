@@ -11,6 +11,7 @@ const { GRID, TYPE_SCALE } = require('./tokens');
 const { fitSize, bodySize } = require('./typography');
 const { splitLabelDetail, toNode, truncate, parseStatNumber } = require('./analyze');
 const I = require('./imagery');
+const IG = require('./infographics');
 
 const esc = (v) => (v == null ? '' : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -540,6 +541,36 @@ L.diagram = (ctx) => {
     '</div></div>' +
     '<div class="cell diag-r" style="' + cols(5, 12) + '">' + fig + '</div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
+};
+
+/**
+ * Infographic slide. "side": message on the left (4 cols), graphic on the right (7 cols);
+ * "stack": heading row on top, graphic across the full width.
+ */
+L.infographic = (ctx) => {
+  const a = ctx.a; const d = a.infographic; const p = ctx.palette;
+  const spec = IG.KINDS[d.kind];
+  const support = a.subtitle || a.body;
+  const source = d.source ? '<div class="ig-source" data-role="meta">' + esc(d.source) + '</div>' : '';
+  let fg;
+  if (spec.layout === 'side') {
+    const W = GRID.span(7); const H = 720;
+    fg = '<div class="canvas g12 igs">' +
+      '<div class="cell igs-l" style="' + cols(1, 4) + '"><div class="block">' +
+        kicker(ctx, sectionLabel(ctx)) + rule(ctx, 48) +
+        titleH1(ctx, a.title, { width: GRID.span(4), maxLines: 4, scale: [72, 64, 56, 50, 44] }) +
+        (support ? para(ctx, support, 26, { maxw: GRID.span(4) }) : '') +
+      '</div></div>' +
+      '<div class="cell igs-r" style="' + cols(6, 12) + '">' + el(ctx, 'div', 'ig-wrap', IG.renderInfographic(d, W, H, p) + source, { role: 'figure-wrap' }) + '</div></div>';
+  } else {
+    const W = GRID.contentW; const H = 540;
+    fg = '<div class="canvas igk"><div class="igk-head g12"><div class="block" style="' + cols(1, 8) + '">' +
+      kicker(ctx, sectionLabel(ctx)) +
+      titleH1(ctx, a.title, { width: GRID.span(8), maxLines: 2, scale: [80, 70, 62, 54, 48] }) + '</div>' +
+      '<div class="cell" style="' + cols(9, 12) + ';align-self:end">' + (support ? para(ctx, support, 24, { maxw: GRID.span(4) }) : '') + '</div></div>' +
+      el(ctx, 'div', 'ig-wrap', IG.renderInfographic(d, W, H, p) + source, { role: 'figure-wrap' }) + '</div>';
+  }
+  return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: 'ig-slide' };
 };
 
 L.quote = (ctx) => {

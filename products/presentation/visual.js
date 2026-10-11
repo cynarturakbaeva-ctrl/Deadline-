@@ -21,6 +21,7 @@ const { recordApiUsage } = require('../../core/cost');
  */
 
 const { slideSvgPalette } = require('./html3DBuilder');
+const { validateInfographic } = require('./design/infographics');
 
 const DEFAULT_VB = { w: 1100, h: 740 };            // builder-дегі .figure өлшемімен бірдей
 const TYPES = new Set(['diagram', 'infographic', 'map']);
@@ -112,6 +113,8 @@ function prepareVisuals(slides) {
   (slides || []).forEach((s, i) => {
     if (!s || typeof s !== 'object') return;
     if (i === 0) { delete s.visual; return; }
+    // our infographic library draws this slide — an extra LLM SVG would only compete with it
+    if (validateInfographic(s.infographic)) { delete s.visual; return; }
     const n = normalizeVisualSpec(s.visual);
     if (n) s.visual = n; else delete s.visual;
   });

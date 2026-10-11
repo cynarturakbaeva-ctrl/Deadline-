@@ -100,6 +100,13 @@ const RE = {
   section: /^(бөлім|тарау|раздел|глава|part|section|chapter)\b/i,
 };
 
+/** Validated infographic for the slide: the LLM's own `infographic` field, else one detected from the content. */
+function infographicOf(s, isFirst) {
+  if (isFirst) return null;
+  const IG = require('./infographics'); // lazy: infographics.js itself uses helpers from this file
+  return IG.validateInfographic(s.infographic) || IG.autoInfographic(s);
+}
+
 /**
  * Analyse ONE slide → facts the layout engine reasons about.
  */
@@ -151,6 +158,7 @@ function analyzeSlide(slide, index, total) {
     mood: c.mood, accent: c.accentColor, overlayHint: c.overlay || '',
     imageHint: c.image || '', positionHint: c.textPosition || '',
     focus: typeof s.imageFocus === 'string' ? s.imageFocus : (typeof c.imageFocus === 'string' ? c.imageFocus : ''),
+    infographic: infographicOf(s, isFirst),
   };
 }
 
@@ -163,6 +171,7 @@ function classify(a) {
   if (a.isFirst) return 'cover';
   if (a.isReferences) return 'references';
   if (a.isQuoteSlide && !a.bullets.length && !a.stats.length) return 'quote';
+  if (a.infographic) return 'infographic';
   if (a.hasVisual) return 'diagram';
   if (a.hasTable) return 'comparison';
   if (a.stats.length === 1 && !a.bullets.length && !a.body && !a.hasTable) return 'number';
@@ -198,7 +207,7 @@ function classify(a) {
 
 /** Layout names keyed by type; variants picked by planDeck() for rhythm. */
 const LAYOUT_FOR = {
-  cover: 'cover', references: 'references', quote: 'quote', diagram: 'diagram', comparison: 'table',
+  cover: 'cover', references: 'references', quote: 'quote', infographic: 'infographic', diagram: 'diagram', comparison: 'table',
   number: 'number', stats: 'stats', conclusion: 'closing', section: 'section', timeline: 'timeline',
   process: 'process', hierarchy: 'hierarchy', image_focus: 'imageFocus', editorial: 'editorial',
   statement: 'statement', split: 'split', points: 'points',
