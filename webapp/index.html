@@ -34,13 +34,33 @@
 
     <!-- CREATE -->
     <section id="tab-create" class="panel active">
+      <button type="button" class="tpl-promo" id="tplPromo">
+        <span class="tpl-promo-badge">ЖАҢА</span>
+        <span class="tpl-promo-title">🎨 Өз шаблоныңмен презентация</span>
+        <span class="tpl-promo-text">Canva / PowerPoint-тен ұнаған шаблонды жүкте — дизайны сол күйі қалады, мәтінді бот сенің тақырыбыңа жазады.</span>
+        <span class="tpl-promo-cta">Шаблонмен жасау →</span>
+      </button>
+
       <div class="card compact">
         <div class="chips" id="modeChips">
-          <button class="chip active" data-v="presentation">✨ AI Presentation</button>
-          <button class="chip" data-v="template">🎨 Template → Content</button>
+          <button class="chip active" data-v="presentation">✨ AI өзі жасайды</button>
+          <button class="chip chip-new" data-v="template">🎨 Өз шаблоным</button>
           <button class="chip" data-v="referat">📄 Реферат</button>
         </div>
-        <p class="hint" id="modeHint" style="text-align:left">Тақырыптан толық презентация жасайды: құрылым, мәтін, визуал, layout — бәрін AI өзі шешеді.</p>
+        <p class="hint" id="modeHint" style="text-align:left">Тақырыпты жазсаңыз болды: құрылым, мәтін, сурет, дизайн — бәрін AI өзі жасайды.</p>
+      </div>
+
+      <div class="card compact tpl-only">
+        <label class="label">Шаблон жүктеу (міндетті)</label>
+        <ol class="tpl-steps">
+          <li>Canva, PowerPoint немесе Google Slides-тан ұнаған шаблонды <b>.pptx</b> форматында жүктеп алыңыз.</li>
+          <li>Төмендегі батырманы басып, сол файлды таңдаңыз.</li>
+          <li>Бот дизайнды (түс, шрифт, суреттер) сақтап, ішіндегі мәтінді сіздің тақырыбыңызға ауыстырады.</li>
+        </ol>
+        <button type="button" class="tpl-upload" id="refBtn">📎 .pptx шаблонды таңдау</button>
+        <input id="refFile" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+        <div class="hint" id="refInfo">Тек .pptx файл қабылданады (PDF, Word емес).</div>
+        <div class="hint">Жүктелген шаблонның дизайн деректері (мәтінсіз, суретсіз) бот үйренуі үшін сақталады.</div>
       </div>
 
       <div class="card">
@@ -109,18 +129,6 @@
         <div class="hint" id="sampleInfo">Жүктемесеңіз де болады — реферат стандарт талаптармен жасалады.</div>
       </div>
 
-      <div class="card compact tpl-only">
-        <label class="label">Шаблон жүктеу (міндетті)</label>
-        <ol class="tpl-steps">
-          <li>Canva, PowerPoint немесе Google Slides-тан ұнаған шаблонды <b>.pptx</b> форматында жүктеп алыңыз.</li>
-          <li>Төмендегі батырманы басып, сол файлды таңдаңыз.</li>
-          <li>Бот дизайнды (түс, шрифт, суреттер) сақтап, ішіндегі мәтінді сіздің тақырыбыңызға ауыстырады.</li>
-        </ol>
-        <button type="button" class="tpl-upload" id="refBtn">📎 .pptx шаблонды таңдау</button>
-        <input id="refFile" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" />
-        <div class="hint" id="refInfo">Тек .pptx файл қабылданады (PDF, Word емес).</div>
-        <div class="hint">Жүктелген шаблонның дизайн деректері (мәтінсіз, суретсіз) бот үйренуі үшін сақталады.</div>
-      </div>
 
       <div class="card compact ai-req">
         <label class="label" for="requirements" id="reqLabel">Мұғалімнің талабы (опционал)</label>

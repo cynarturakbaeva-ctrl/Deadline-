@@ -197,3 +197,17 @@ label.btn { display: flex; align-items: center; justify-content: center; cursor:
 .rate-more { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .rate-more.hidden { display: none; }
 .rate-more textarea { width: 100%; box-sizing: border-box; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; background: var(--bg2); color: var(--text); border: 1px solid rgba(255,255,255,.08); }
+
+/* Шаблон режимін көрсететін баннер */
+.tpl-promo { position: relative; display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  margin: 0 0 12px; padding: 14px 16px; border: 1.5px solid var(--btn); border-radius: 16px; cursor: pointer;
+  background: var(--bg2); color: var(--text); font: inherit; }
+.tpl-promo.hidden { display: none; }
+.tpl-promo-badge { position: absolute; top: 10px; right: 12px; font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  padding: 3px 7px; border-radius: 999px; background: var(--btn); color: var(--btn-text); }
+.tpl-promo-title { font-weight: 700; font-size: 15px; padding-right: 48px; }
+.tpl-promo-text { font-size: 13px; opacity: .85; line-height: 1.35; }
+.tpl-promo-cta { margin-top: 4px; font-weight: 700; font-size: 13px; color: var(--link); }
+.chip-new { position: relative; }
+.chip-new::after { content: 'ЖАҢА'; position: absolute; top: -7px; right: -4px; font-size: 8px; font-weight: 800;
+  padding: 1px 4px; border-radius: 6px; background: var(--danger); color: #fff; }

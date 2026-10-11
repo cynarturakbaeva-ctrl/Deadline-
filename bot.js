@@ -66,6 +66,8 @@ function webAppKeyboard() {
   return {
     inline_keyboard: [[
       { text: '📱 DeadLine Mini App', web_app: { url: WEBAPP_URL.replace(/\/$/, '') + '/webapp/' } },
+    ], [
+      { text: '🎨 Өз шаблоныммен жасау', web_app: { url: WEBAPP_URL.replace(/\/$/, '') + '/webapp/#template' } },
     ]],
   };
 }
@@ -89,6 +91,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     chatId,
     '👋 *Сәлем!* DeadLine — кәсіби AI презентация студиясы.\n\n' +
     `💳 *Баға:* ${PRICE}₸ — 1 презентация\n${plusLine}\n\n` +
+    '🆕 *Жаңа:* ұнаған шаблоныңызды (.pptx) жүктеңіз — бот дизайнын сақтап, мәтінді сіздің тақырыбыңызға жазады.\n\n' +
     '📱 Презентация мен реферат *Mini App* ішінде жасалады: шаблон, тіл, слайд саны, прогресс және тарих бір жерде.',
     { parse_mode: 'Markdown', reply_markup: MAIN_KEYBOARD.reply_markup }
   ).then(() => {

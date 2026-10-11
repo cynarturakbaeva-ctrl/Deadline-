@@ -114,8 +114,11 @@
       ? 'Мысалы: Қазақстан экономикасының даму кезеңдері'
       : 'Мысалы: Жасанды интеллекттің білім берудегі рөлі';
     $('#modeHint').textContent = isTemplate
-      ? 'Клиенттің өз .pptx шаблонын өңделетін күйінде қайтарады: тек мәтін ауыстырылады, қораптар, түс, шрифт, макет өзгермейді.'
-      : 'Тақырыптан толық презентация жасайды: құрылым, мәтін, визуал, layout — бәрін AI өзі шешеді.';
+      ? 'Өзіңіз таңдаған .pptx шаблон: түсі, шрифті, суреттері сол күйі қалады — бот тек мәтінді сіздің тақырыбыңызға жазады. Файл PowerPoint-те өңделеді.'
+      : isReferat
+        ? 'Word (.docx) реферат. Мұғалім қабылдаған үлгіні жүктесеңіз — сол үлгідей жазылады.'
+        : 'Тақырыпты жазсаңыз болды: құрылым, мәтін, сурет, дизайн — бәрін AI өзі жасайды.';
+    $('#tplPromo').classList.toggle('hidden', !isAi);
 
     const input = $('#slideCountInput');
     input.max = isReferat ? 30 : 15;
@@ -124,6 +127,21 @@
     $('#btnGenerate').disabled = false;
   }
   $('#modeChips').addEventListener('click', () => setTimeout(applyMode, 0));
+  function selectMode(v) {
+    const chip = $(`#modeChips .chip[data-v="${v}"]`);
+    if (chip) chip.click();
+  }
+  $('#tplPromo').addEventListener('click', () => {
+    selectMode('template');
+    haptic('light');
+    const card = $('.tpl-only');
+    if (card) setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  });
+  // Сілтеме арқылы бірден шаблон режимі: .../webapp/#template немесе startapp=template
+  try {
+    const sp = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.start_param) || '';
+    if (/template/.test(location.hash) || sp === 'template') setTimeout(() => selectMode('template'), 0);
+  } catch {}
   bindChips('#styleChips', 'style');
   applyMode();
 

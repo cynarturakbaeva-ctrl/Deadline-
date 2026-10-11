@@ -26,6 +26,16 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^@/, '');
 const WEBAPP_URL = process.env.WEBAPP_URL || `http://localhost:${PORT}`;
+
+const templateNudged = new Set();
+async function nudgeTemplate(chatId) {
+  if (!global.__deadlineBot || templateNudged.has(String(chatId))) return;
+  templateNudged.add(String(chatId));
+  const url = WEBAPP_URL.replace(/\/$/, '') + '/webapp/#template';
+  await global.__deadlineBot.sendMessage(chatId,
+    '💡 Ұнаған дизайн бар ма? Енді өз шаблоныңызды (.pptx) жүктесеңіз болады — түсі, шрифті, суреттері сол күйі қалады, бот тек мәтінді сіздің тақырыбыңызға жазады.',
+    { reply_markup: { inline_keyboard: [[{ text: '🎨 Өз шаблоныммен жасау', web_app: { url } }]] } });
+}
 const MAX_CONCURRENT = Math.max(1, parseInt(process.env.MAX_CONCURRENT_GENERATIONS || '3', 10) || 3);
 const MAX_TOPIC_CHARS = Math.max(200, parseInt(process.env.MAX_TOPIC_CHARS || '8000', 10) || 8000);
 const { PRICE, PLUS } = require('./core/pricing');
@@ -833,6 +843,9 @@ async function executeJob(jobId) {
     } catch (e) {
       console.warn('[Job] file send failed', e.message);
     }
+
+    // Шаблон режимін әлі қолданбағандарға бір рет еске саламыз (процесс ішінде бір рет)
+    if (job.mode !== 'template' && job.payload?.mode !== 'template') nudgeTemplate(chatId).catch(() => {});
 
     console.log(`[Job] ${jobId} done — ${result.title}`);
   } catch (err) {
