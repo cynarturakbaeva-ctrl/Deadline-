@@ -261,7 +261,7 @@ app.post('/api/job/:id/feedback', authMiddleware, async (req, res) => {
 // Референс PPTX жүктеу (тек .pptx): сырой бинарлы дене, DNA талданады, файл уақытша сақталады
 const REF_DIR = path.join(JOBS_DIR, '_ref');
 fs.mkdirSync(REF_DIR, { recursive: true });
-app.post('/api/reference', authMiddleware, express.raw({ type: '*/*', limit: '30mb' }), (req, res) => {
+app.post('/api/reference', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), (req, res) => {
   try {
     const buf = req.body;
     if (!Buffer.isBuffer(buf) || buf.length < 1000 || buf.readUInt32LE(0) !== 0x04034b50) {
@@ -285,7 +285,7 @@ app.post('/api/reference', authMiddleware, express.raw({ type: '*/*', limit: '30
 const MATERIAL_DIR = path.join(JOBS_DIR, '_mat');
 fs.mkdirSync(MATERIAL_DIR, { recursive: true });
 const MATERIAL_EXT = /\.(pdf|docx?|pptx?|txt|md|rtf|csv|json|log|png|jpe?g|webp|gif|bmp)$/i;
-app.post('/api/material', authMiddleware, express.raw({ type: '*/*', limit: '30mb' }), async (req, res) => {
+app.post('/api/material', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
   try {
     const buf = req.body;
     const name = String(req.query.name || req.headers['x-file-name'] || 'file');
@@ -788,7 +788,13 @@ async function executeJob(jobId) {
           for (const c of tr.checks) lines.push(`${c.status === 'pass' ? '✅' : '❌'} ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
           await global.__deadlineBot.sendMessage(chatId, lines.join('\n')).catch(() => {});
         }
-        if (pptxPath && fs.existsSync(pptxPath)) {
+        if (pptxPath && fs.existsSync(pptxPath) && fs.statSync(pptxPath).size > 50 * 1024 * 1024) {
+          // Telegram боты 50 МБ-тан үлкен файлды жібере алмайды (шаблон 50 МБ-қа жақын болса, нәтиже де сондай)
+          const mb = Math.round(fs.statSync(pptxPath).size / 1024 / 1024);
+          console.warn(`[Job] ${jobId} pptx ${mb}MB > Telegram 50MB limit`);
+          await refundCredit(chatId);
+          await global.__deadlineBot.sendMessage(chatId, `⚠️ Дайын файл ${mb} МБ — Telegram 50 МБ-тан үлкен файлды жібере алмайды. Кредитіңіз қайтарылды.\nШаблондағы суреттерді кішірейтіп (сығып) қайта жүктеңіз.`).catch(() => {});
+        } else if (pptxPath && fs.existsSync(pptxPath)) {
           const pptxName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.pptx`;
           await global.__deadlineBot.sendDocument(chatId, pptxPath, {}, {
             filename: pptxName,

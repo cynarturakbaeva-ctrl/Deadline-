@@ -186,7 +186,7 @@
     if (!f) { $('#refInfo').textContent = ''; return; }
     if (!/\.pptx$/i.test(f.name)) { ev.target.value = ''; return showToast('Тек .pptx қабылданады'); }
     $('.tpl-upload').textContent = `📎 ${f.name} — басқасын таңдау`;
-    if (f.size > 30 * 1024 * 1024) { ev.target.value = ''; return showToast('Файл 30 МБ-тан үлкен'); }
+    if (f.size > 50 * 1024 * 1024) { ev.target.value = ''; return showToast('Файл 50 МБ-тан үлкен'); }
     $('#refInfo').textContent = 'Талдануда...';
     try {
       const r = await fetch('/api/reference', {
@@ -211,7 +211,7 @@
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
     if (!/\.(docx?|pdf|txt|rtf)$/i.test(f.name)) { ev.target.value = ''; return showToast('Word, PDF немесе TXT жүктеңіз'); }
-    if (f.size > 30 * 1024 * 1024) { ev.target.value = ''; return showToast('Файл 30 МБ-тан үлкен'); }
+    if (f.size > 50 * 1024 * 1024) { ev.target.value = ''; return showToast('Файл 50 МБ-тан үлкен'); }
     state.sampleId = null;
     $('#sampleBtn').textContent = `📎 ${f.name} — басқасын таңдау`;
     $('#sampleInfo').textContent = 'Оқылуда...';
