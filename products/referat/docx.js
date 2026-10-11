@@ -85,6 +85,10 @@ function tocPage(lang, entries) {
  */
 function buildDocx(opts) {
   const { lang, title, meta = {}, blocks, tocEntries } = opts;
+  return packDocx(lang, title, referatBody(lang, title, meta, blocks, tocEntries));
+}
+
+function referatBody(lang, title, meta, blocks, tocEntries) {
   const body = [];
   body.push(titlePage(lang, title, meta));
   body.push(tocPage(lang, tocEntries));
@@ -101,6 +105,14 @@ function buildDocx(opts) {
       body.push(para(run(b.text)));
     }
   }
+  return body.join('');
+}
+
+/**
+ * Wrap a WordprocessingML body into a .docx (A4, ГОСТ margins, Times New Roman 14, page numbers from page 2).
+ * `bodyXml` is a string of <w:p>…</w:p>; shared by the referat and the presentation's speech document.
+ */
+function packDocx(lang, title, bodyXml) {
   const sect = '<w:sectPr>'
     + '<w:footerReference w:type="default" r:id="rIdF1"/><w:footerReference w:type="first" r:id="rIdF2"/>'
     + '<w:pgSz w:w="11906" w:h="16838"/>'
@@ -108,7 +120,7 @@ function buildDocx(opts) {
     + '<w:titlePg/></w:sectPr>';
 
   const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body.join('')}${sect}</w:body></w:document>`;
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${bodyXml}${sect}</w:body></w:document>`;
 
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -142,4 +154,4 @@ function buildDocx(opts) {
   ]);
 }
 
-module.exports = { buildDocx, L10N };
+module.exports = { buildDocx, packDocx, para, run, esc, L10N };

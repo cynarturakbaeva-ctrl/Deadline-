@@ -30,6 +30,8 @@ const { maybeAttachReferencesSlide, sanitizeMetaLeakSlides } = require('./source
 const { runNarrativePass, buildDimensionScores } = require('./narrative');
 const { runVisionCritic } = require('./visionCritic');
 const { uniqueId } = require('../../core/tmpFiles');
+const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
+const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
 function simplifyQuery(query) {
@@ -414,6 +416,8 @@ async function generatePresentation(userInput, options = {}) {
   //     тек ішіндегі мәтінді жаңа тақырып мәтінімен ауыстырамыз (HTML/рендер жасалмайды).
   let htmlPath = null;
   let pptxPath = null;
+  let speechPath = null;   // «Баяндама мәтіні» .docx
+  let notesMeta = { ok: 0, study: false };
   let pngPaths = [];
   let bgPaths = [];     // мәтінсіз фондар (өңделетін PPTX)
   let textLayers = [];  // әр слайдтың нативті мәтін блоктары
@@ -498,6 +502,11 @@ async function generatePresentation(userInput, options = {}) {
   if (!pptxPath) {
   // 3. Суреттер мен визуалдар (SVG диаграмма/инфографика) — бір мезгілде, бірін-бірі күтпейді.
   //    Екеуі де ЕШҚАШАН лақтырмайды: сәтсіз болса, слайд қалыпты күйінде қалады.
+  // Баяндамашы мәтіні + оқу көмекшісі: мазмұн енді түпкілікті → суреттермен ҚАТАР жазылады (күту уақыты қосылмайды)
+  const notesTask = generateSpeakerNotes({
+    slides: slides.map((sl) => ({ ...sl })), title, topic, language, coverMeta,
+  }).catch((e) => { console.warn(`[Notes] failed (continuing): ${e.message}`); return null; });
+
   await onProgress('media', 'Суреттер мен диаграммалар...');
   console.log('[Pipeline] Fetching images + drawing visuals...');
   const usedImages = new Set(); // бір сурет екі слайдқа түспесін
@@ -715,10 +724,21 @@ async function generatePresentation(userInput, options = {}) {
     if (!pngPaths.length) {
       throw new Error('Render produced zero PNGs');
     }
+    // Баяндамашы мәтіні → PPTX Notes + бөлек .docx (слайд саны өзгермесе ғана — әйтпесе нөмірлер сәйкес келмейді)
+    const notesRes = await notesTask;
+    if (notesRes && notesRes.notes.length === slides.length) {
+      notesMeta = { ok: applySpeakerNotes(slides, notesRes.notes), study: !!notesRes.study };
+      try {
+        speechPath = path.join(os.tmpdir(), `speech-${uniqueId()}.docx`);
+        fs.writeFileSync(speechPath, buildSpeechDocx({ title, slides, notes: notesRes.notes, study: notesRes.study, language, coverMeta }));
+      } catch (e) { console.warn(`[Notes] speech docx failed: ${e.message}`); speechPath = null; }
+      console.log(`[Pipeline] Speaker notes: ${notesMeta.ok}/${slides.length} slides, study guide=${notesMeta.study}`);
+    }
     // Өңделетін PPTX: мәтінсіз фон + нативті мәтін қораптары (HTML тек ішкі «сурет салушы»)
     pptxPath = await exportToPptx(pngPaths, title, slides, { bgPaths, textLayers, language });
   } catch (err) {
     try { if (htmlPath) fs.unlinkSync(htmlPath); } catch {}
+    try { if (speechPath) fs.unlinkSync(speechPath); } catch {}
     throw err;
   } finally {
     cleanupPngs();
@@ -805,6 +825,7 @@ async function generatePresentation(userInput, options = {}) {
     mode,
     pptxPath,
     htmlPath,
+    speechPath,
     title,
     visualStats,
     genId,
