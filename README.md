@@ -83,6 +83,21 @@ HTML клиентке жіберілмейді — ол тек ішкі «сур
 
 Бәрі бөлек «Баяндама мәтіні» .docx болып (`speechDoc.js`) PPTX-тен кейін чатқа жіберіледі; Mini App-та «🎤 Баяндама» батырмасы. Файл `jobs/<id>/speech.docx`-те сақталады (DB өзгермейді). LLM сәтсіз болса — презентация баяндамасыз жеткізіледі. Шаблон режимінде әзірге жоқ.
 
+## Инфографика кітапханасы
+
+`design/infographics.js` — кодпен салынатын 14 кәсіби компонент (LLM тек дерек береді, сурет әрқашан біздікі):
+
+| Топ | Компоненттер |
+|---|---|
+| Сандар | `bar`, `column`, `line`, `donut`, `compare`, `pictogram` |
+| Құрылым | `cycle`, `funnel`, `pyramid`, `venn`, `matrix` (SWOT), `prosCons`, `roadmap`, `iconGrid` |
+
+- Мазмұн промпты `infographic: {kind, items[{label, value, detail, icon, group}], unit, center, source}` өрісін толтырады; әр түрдің өз тексерісі бар — жарамсыз болса, слайд қалыпты макетке түседі.
+- LLM-сіз анықтау: бірдей бірліктегі 4+ сан → `bar`, SWOT буллеттері → `matrix`.
+- Дизайн ережесі: бір мән акцент градиентімен бөлектеледі, қалғаны күңгірт; жұқа пішін, жіңішке ось, мән тікелей жазылады. Иконкалар — Lucide (ISC, `design/icons.js`, 105 таңдалған).
+- Жазулар HTML мәтін → PPTX-те өңделетін мәтін қораптары; пішіндер фонда.
+- Көрме: `node scripts/infographic-gallery.js ./out midnight,blush` — барлық компонент таңдалған тақырыптарда PNG болып шығады.
+
 ## Pipeline (сапа)
 
 `Тақырып → мазмұн → QC → quality loop → narrative → composition → sources → images → visual SVG → HTML (ішкі) → render QA → Vision Critic → redesign → өңделетін PPTX`

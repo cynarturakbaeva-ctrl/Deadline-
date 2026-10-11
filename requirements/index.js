@@ -199,6 +199,7 @@ Return the full corrected slides array.`;
         index: i + 1,
         title: String(s.title || (prev && prev.title) || '').slice(0, 160),
         visual: s.visual !== undefined ? s.visual : (prev && prev.visual),
+        infographic: s.infographic && typeof s.infographic === 'object' ? s.infographic : (prev && prev.infographic) || null,
         visualSvg: (prev && prev.visualSvg) || undefined,
         webImageUrl: (prev && prev.webImageUrl) || '',
         imageQuery: s.imageQuery || (prev && prev.imageQuery) || '',

@@ -466,8 +466,77 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rule{background:linear-gradient(90deg,var(--accent),var(--accent2))}
 /* decoration sits behind the text, never on top of the folio */
 .deco{opacity:.75;-webkit-mask-image:linear-gradient(0deg,transparent 0,#000 140px);mask-image:linear-gradient(0deg,transparent 0,#000 140px)}
+
+/* ══ INFOGRAPHICS (design/infographics.js) — one highlighted mark, muted rest, hairline axes, text in text colours ══ */
+.igs{align-items:center}.igs-l,.igs-r{align-self:center}
+.igk{display:flex;flex-direction:column;justify-content:center;gap:var(--s6)}.igk-head{align-items:start}
+.ig-wrap{position:relative}
+.ig{position:relative}
+.ig>*{position:absolute}
+.ig-svg{left:0;top:0;overflow:visible}
+.ig-lab,.ig-val,.ig-det,.ig-big,.ig-date,.ig-center,.ig-n,.ig-vs-t{line-height:1.22;margin:0;text-wrap:balance}
+.ig-lab{color:var(--text2)}
+.ig-lab.strong{color:var(--text);font-weight:700}
+.ig-det{color:var(--text2);line-height:1.38;text-wrap:pretty}
+.ig-det-in{color:var(--text2);font-weight:400}
+.right{text-align:right}.center{text-align:center}
+.ig-val{color:var(--text);font-weight:700;letter-spacing:-.01em;font-variant-numeric:lining-nums;white-space:nowrap}
+.ig-val.muted{color:var(--text3);font-weight:400}
+.ig-big{color:var(--text);font-weight:700;letter-spacing:-.025em;line-height:1;white-space:nowrap;font-variant-numeric:lining-nums}
+.ig-k{color:var(--accent);font-weight:700;margin-right:.2em}
+.ig-n{color:var(--accent);font-weight:700}
+.ig-center{font-family:var(--f-display);font-weight:var(--tw);color:var(--text);line-height:1.1}
+.ig-date{color:var(--accent);font-weight:700;letter-spacing:-.01em;line-height:1.1}
+.ig-source{margin-top:var(--s3);font-size:20px;color:var(--text3);letter-spacing:.02em}
+/* bars / columns */
+.ig-track{border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--text) 8%,transparent)}
+.ig-bar{border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--text) 30%,transparent)}
+.ig-bar.on{background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 26px color-mix(in srgb,var(--accent) 45%,transparent)}
+.ig-col{border-radius:10px 10px 0 0;background:color-mix(in srgb,var(--text) 22%,transparent)}
+.ig-col.on{background:linear-gradient(180deg,var(--accent2),var(--accent));box-shadow:0 0 30px color-mix(in srgb,var(--accent) 40%,transparent)}
+.ig-axis{background:var(--line)}
+.ig-grid{stroke:var(--line-soft);stroke-width:1}
+.ig-base{stroke:var(--line);stroke-width:2}
+/* donut */
+.ig-ring-track{stroke:color-mix(in srgb,var(--text) 7%,transparent)}
+.ig-sw{border-radius:5px}
+/* compare */
+.ig-vs{border-radius:50%;border:2px solid var(--accent);background:var(--bg)}
+.ig-vs-t{color:var(--accent);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.ig-split{display:flex;gap:4px}.ig-split i{position:static;display:block;height:100%}
+.ig-split .a{border-radius:13px 0 0 13px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.ig-split .b{border-radius:0 13px 13px 0;background:color-mix(in srgb,var(--text) 18%,transparent)}
+/* pictogram */
+.ig-pic{display:flex;align-items:flex-end;justify-content:center;color:color-mix(in srgb,var(--text) 16%,transparent)}
+.ig-pic.on{color:var(--accent)}
+/* cycle / nodes / badges */
+.ig-arc{fill:none;stroke:var(--accent);stroke-width:3;opacity:.75}
+.ig-node,.ig-badge{display:flex;align-items:center;justify-content:center;border-radius:50%}
+.ig-node{background:linear-gradient(160deg,var(--glass-hi),var(--glass));border:2px solid color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);box-shadow:var(--card-sh)}
+.ig-node.on{background:linear-gradient(140deg,var(--accent),var(--accent2));color:var(--accent-ink);border-color:transparent}
+.ig-badge{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.ig-badge.on{background:linear-gradient(140deg,var(--accent),var(--accent2));color:var(--accent-ink)}
+.ig-dot{border-radius:50%;background:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 25%,transparent)}
+/* funnel / pyramid */
+.ig-band{border-radius:4px}
+.ig-lead{background:var(--line)}
+/* cards (matrix, icon grid) */
+.ig-card{border:1px solid var(--glass-line);border-radius:calc(var(--radius) + 8px);background:linear-gradient(165deg,var(--glass-hi) 0%,var(--glass) 70%);box-shadow:var(--card-sh);overflow:hidden}
+.ig-card::before{content:"";position:absolute;left:32px;top:0;width:64px;height:4px;border-radius:0 0 4px 4px;background:var(--c,linear-gradient(90deg,var(--accent),var(--accent2)))}
+/* pros / cons */
+.ig-col-head{border-radius:3px}.ig-col-head.good{background:linear-gradient(90deg,var(--accent),var(--accent2))}.ig-col-head.bad{background:var(--text3)}
+.ig-mark{display:flex;align-items:center;justify-content:center;border-radius:50%}
+.ig-mark.good{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.ig-mark.bad{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text2)}
+/* roadmap */
+.ig-road{border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent2) 60%,transparent),var(--accent))}
+.ig-stem{background:var(--line)}
+.ig-mile{border-radius:50%;background:var(--bg);border:5px solid var(--accent)}
+.ig-mile.on{background:var(--accent);box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 22%,transparent),0 0 30px color-mix(in srgb,var(--accent) 60%,transparent)}
+.ig .ic{display:block}
+
 /* slides that carry their own hero graphic stay clean */
-.sect-slide .deco,.quote-slide .deco,.numb-slide .deco,.stmt-slide .deco{display:none}
+.sect-slide .deco,.quote-slide .deco,.numb-slide .deco,.stmt-slide .deco,.ig-slide .deco{display:none}
 /* client reference skins keep their own flat design */
 .ref-decor .aurora,.ref-decor .halo,.ref-decor .ghost,.ref-flat .aurora,.ref-flat .halo{display:none}
 

@@ -459,6 +459,7 @@ Return repaired slides JSON.`;
       title: rs.title || prev.title,
       composition: rs.composition || prev.composition,
       visual: rs.visual !== undefined ? rs.visual : prev.visual,
+      infographic: rs.infographic && typeof rs.infographic === 'object' ? rs.infographic : prev.infographic,
       imageQuery: rs.imageQuery || prev.imageQuery,
       webImageUrl: prev.webImageUrl,
       visualSvg: prev.visualSvg,

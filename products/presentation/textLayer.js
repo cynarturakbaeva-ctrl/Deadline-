@@ -121,9 +121,20 @@ function extractTextLayer(idx) {
     var fontSize = parseFloat(cs.fontSize);
     var lh = cs.lineHeight === 'normal' ? fontSize * 1.2 : parseFloat(cs.lineHeight);
     var align = cs.textAlign === 'center' ? 'center' : (cs.textAlign === 'right' || cs.textAlign === 'end') ? 'right' : cs.textAlign === 'justify' ? 'justify' : 'left';
+    // Box = where the text really is. Flex-centred labels (infographics) sit anywhere inside their box, so the box
+    // is taken from the ink; in normal flow this equals the content box. Top = top of the first LINE box.
+    var flex = /flex|grid/.test(cs.display);
+    var firstH = Math.max(1, b.words[0].bottom - b.words[0].top);
+    var lineTop = top - (lh - firstH) / 2;
+    var bx = flex ? left : br.left + pl;
+    var bw = flex ? right - left : br.width - pl - pr;
+    if (flex) {
+      var jc = cs.justifyContent;
+      if (/center/.test(jc)) align = 'center'; else if (/end|right/.test(jc)) align = 'right';
+    }
     out.push({
-      x: (br.left + pl - sr.left) / k, y: (br.top + pt - sr.top) / k,
-      w: (br.width - pl - pr) / k, h: (br.height - pt - pb) / k,
+      x: (bx - sr.left) / k, y: (lineTop - sr.top) / k,
+      w: bw / k, h: Math.max(lines.length * lh, bottom - lineTop) / k,
       ink: { x: (left - sr.left) / k, y: (top - sr.top) / k, w: (right - left) / k, h: (bottom - top) / k },
       align: align, lineHeight: lh / k, nowrap: /nowrap|pre/.test(cs.whiteSpace),
       lines: lines.map(function (ln) {
