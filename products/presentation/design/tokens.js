@@ -98,23 +98,24 @@ const TYPE_SCALE = Object.freeze({
 
 // Typography personalities. `display` is used for major titles, `text` for everything else.
 const FONT_STACKS = Object.freeze({
-  sans: 'Inter,"Segoe UI","Noto Sans","Helvetica Neue",Arial,system-ui,sans-serif',
-  serif: '"DisplayFace","Iowan Old Style","Palatino Linotype","Book Antiqua","Noto Serif","DejaVu Serif",Georgia,serif',
+  // Office fonts → the PPTX text stays editable and looks the same on any PC (see style.js FACES)
+  sans: 'Calibri,Carlito,sans-serif',
+  serif: '"Times New Roman","Liberation Serif",serif',
 });
 const TYPE_STYLES = Object.freeze({
   editorial: {
     display: FONT_STACKS.serif, text: FONT_STACKS.sans,
-    displayWeight: 500, titleWeight: 500, displayTracking: '-0.02em', titleTracking: '-0.015em',
+    displayWeight: 400, titleWeight: 400, displayTracking: '-0.01em', titleTracking: '-0.005em',
     displayLine: 1.02, titleLine: 1.08, caps: false, italicQuote: true,
   },
   modern: {
     display: FONT_STACKS.sans, text: FONT_STACKS.sans,
-    displayWeight: 800, titleWeight: 750, displayTracking: '-0.045em', titleTracking: '-0.035em',
+    displayWeight: 700, titleWeight: 700, displayTracking: '-0.02em', titleTracking: '-0.015em',
     displayLine: 0.98, titleLine: 1.04, caps: false, italicQuote: false,
   },
   technical: {
     display: FONT_STACKS.sans, text: FONT_STACKS.sans,
-    displayWeight: 650, titleWeight: 650, displayTracking: '-0.03em', titleTracking: '-0.025em',
+    displayWeight: 700, titleWeight: 700, displayTracking: '-0.015em', titleTracking: '-0.01em',
     displayLine: 1.0, titleLine: 1.06, caps: false, italicQuote: false,
   },
 });

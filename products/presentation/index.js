@@ -415,6 +415,8 @@ async function generatePresentation(userInput, options = {}) {
   let htmlPath = null;
   let pptxPath = null;
   let pngPaths = [];
+  let bgPaths = [];     // мәтінсіз фондар (өңделетін PPTX)
+  let textLayers = [];  // әр слайдтың нативті мәтін блоктары
   let tmpDir = null;
   let overflowWarnings = [];
   let visionMeta = { overallScore: null, source: 'skipped', applied: [] };
@@ -534,7 +536,7 @@ async function generatePresentation(userInput, options = {}) {
   console.log(`[Pipeline] Images embedded: ${images.filter(Boolean).length}/${slides.length}; visuals: ${visualStats.ok}/${visualStats.requested}`);
 
   // 4–5. HTML + render with optional composition re-repair on overflow
-  await onProgress('html', 'HTML жиналуда...');
+  await onProgress('html', 'Слайд дизайны жиналуда...');
   console.log('[Pipeline] Building HTML presentation...');
 
   const cleanupPngs = () => {
@@ -549,6 +551,8 @@ async function generatePresentation(userInput, options = {}) {
       }
     } catch {}
     pngPaths = [];
+    bgPaths = [];
+    textLayers = [];
     tmpDir = null;
   };
 
@@ -556,7 +560,7 @@ async function generatePresentation(userInput, options = {}) {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
     restoreCover(slides);
     fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
-    await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Рендер және PPTX...');
+    await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Өңделетін PPTX жасалуда...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
     cost.addRenderAttempt();
     const result = await renderHtmlToPngs(pathHtml);
@@ -568,6 +572,8 @@ async function generatePresentation(userInput, options = {}) {
     let rendered = await buildAndRender(attempt);
     htmlPath = rendered.pathHtml;
     pngPaths = rendered.pngPaths;
+    bgPaths = rendered.bgPaths || [];
+    textLayers = rendered.textLayers || [];
     tmpDir = rendered.tmpDir;
     overflowWarnings = rendered.overflowWarnings || [];
 
@@ -588,6 +594,8 @@ async function generatePresentation(userInput, options = {}) {
           rendered = await buildAndRender(attempt);
           htmlPath = rendered.pathHtml;
           pngPaths = rendered.pngPaths;
+          bgPaths = rendered.bgPaths || [];
+          textLayers = rendered.textLayers || [];
           tmpDir = rendered.tmpDir;
           overflowWarnings = rendered.overflowWarnings || [];
           if (overflowWarnings.length) {
@@ -628,6 +636,8 @@ async function generatePresentation(userInput, options = {}) {
         const beforeSlides = slides.map((s) => JSON.parse(JSON.stringify(s)));
         const beforeHtml = htmlPath;
         const beforePngs = pngPaths.slice();
+        const beforeBgs = bgPaths.slice();
+        const beforeLayers = textLayers.slice();
         const beforeTmp = tmpDir;
         const beforeOverflow = (overflowWarnings || []).slice();
         const beforeVisionScore = vision.overallScore;
@@ -639,6 +649,8 @@ async function generatePresentation(userInput, options = {}) {
         slides.forEach((slide, i) => { slide.index = i + 1; });
         // Keep before PNG files; buildAndRender creates a new tmpDir
         pngPaths = [];
+        bgPaths = [];
+        textLayers = [];
         tmpDir = null;
         attempt = Math.max(attempt, 2) + 1;
         rendered = await buildAndRender(attempt);
@@ -672,6 +684,8 @@ async function generatePresentation(userInput, options = {}) {
           if (beforeTmp) { try { fs.rmSync(beforeTmp, { recursive: true, force: true }); } catch {} }
           htmlPath = afterHtml;
           pngPaths = afterPngs;
+          bgPaths = rendered.bgPaths || [];
+          textLayers = rendered.textLayers || [];
           tmpDir = afterTmp;
           overflowWarnings = afterOverflow;
           visionMeta.acceptedVersion = 'after';
@@ -685,6 +699,8 @@ async function generatePresentation(userInput, options = {}) {
           slides = beforeSlides;
           htmlPath = beforeHtml;
           pngPaths = beforePngs;
+          bgPaths = beforeBgs;
+          textLayers = beforeLayers;
           tmpDir = beforeTmp;
           overflowWarnings = beforeOverflow;
           visionMeta.acceptedVersion = 'before';
@@ -699,7 +715,8 @@ async function generatePresentation(userInput, options = {}) {
     if (!pngPaths.length) {
       throw new Error('Render produced zero PNGs');
     }
-    pptxPath = await exportToPptx(pngPaths, title, slides);
+    // Өңделетін PPTX: мәтінсіз фон + нативті мәтін қораптары (HTML тек ішкі «сурет салушы»)
+    pptxPath = await exportToPptx(pngPaths, title, slides, { bgPaths, textLayers, language });
   } catch (err) {
     try { if (htmlPath) fs.unlinkSync(htmlPath); } catch {}
     throw err;

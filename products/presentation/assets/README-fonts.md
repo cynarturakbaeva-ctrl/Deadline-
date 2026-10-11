@@ -1,8 +1,11 @@
 # Embedded fonts
 
-- `InterVariable.woff2` — text face (Inter, SIL OFL 1.1). Loaded by design/style.js when present.
-- `DisplaySerif.ttf` — Lora variable (SIL OFL 1.1), display face for the "editorial" tone.
-  Full Kazakh Cyrillic coverage (Ә Ғ Қ Ң Ө Ұ Ү Һ І) verified via cmap.
+The delivered PPTX is editable, so slide text uses Office fonts present in every PowerPoint / Google Slides:
+**Calibri** (text) and **Times New Roman** (display serif). The internal HTML renderer measures and draws with
+their metric-compatible open clones, registered under the Office names in design/style.js:
 
-Both are base64-embedded into the generated HTML so output looks identical on any server.
-If a file is missing the engine falls back to the system stack defined in design/tokens.js.
+- `Text-Regular.ttf`, `Text-Bold.ttf` — Carlito (SIL OFL 1.1), metric-compatible with Calibri.
+- `Serif-Regular.ttf`, `Serif-Bold.ttf`, `Serif-Italic.ttf` — Liberation Serif (SIL OFL 1.1), metric-compatible with Times New Roman.
+
+Subset to Latin, Latin-1, Latin Extended-A, Cyrillic (full Kazakh: Ә Ғ Қ Ң Ө Ұ Ү Һ І), punctuation, ₸ and №.
+`DisplaySerif.ttf` (Lora) is kept for the legacy builder only.

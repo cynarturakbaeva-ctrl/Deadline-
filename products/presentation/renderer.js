@@ -4,6 +4,7 @@ const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
 const { pathToFileURL } = require('url');
+const { extractTextLayer, hideText } = require('./textLayer');
 
 const SLIDE_W = 1920;
 const SLIDE_H = 1080;
@@ -76,6 +77,8 @@ async function renderHtmlToPngs(htmlPath) {
   const puppeteer = require('puppeteer');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slides-'));
   const pngPaths = [];
+  const bgPaths = [];      // мәтінсіз фон (өңделетін PPTX үшін)
+  const textLayers = [];   // әр слайдтың мәтін блоктары (орны, жолдары, стилі)
   const overflowWarnings = [];
 
   const browser = await launchBrowser(puppeteer);
@@ -203,12 +206,29 @@ async function renderHtmlToPngs(htmlPath) {
       const outPath = path.join(tmpDir, 'slide-' + String(i + 1).padStart(3, '0') + '.png');
       await stage.screenshot({ path: outPath, type: 'png' });
       pngPaths.push(outPath);
+
+      // Өңделетін PPTX: мәтінді өлшеп аламыз да, мәтінсіз фонды бөлек түсіреміз.
+      // Сәтсіз болса — бұл слайд PPTX-те толық сурет болып қалады (ешқашан құламаймыз).
+      let layer = null; let bgPath = null;
+      try {
+        layer = await page.evaluate(extractTextLayer, i);
+        await page.evaluate(hideText, true);
+        bgPath = path.join(tmpDir, 'bg-' + String(i + 1).padStart(3, '0') + '.png');
+        await stage.screenshot({ path: bgPath, type: 'png' });
+      } catch (e) {
+        console.warn('[Render] слайд ' + (i + 1) + ' мәтін қабаты алынбады: ' + e.message);
+        layer = null; bgPath = null;
+      } finally {
+        await page.evaluate(hideText, false).catch(() => {});
+      }
+      textLayers.push(layer);
+      bgPaths.push(bgPath);
     }
   } finally {
     await browser.close();
   }
 
-  return { pngPaths, tmpDir, overflowWarnings };
+  return { pngPaths, bgPaths, textLayers, tmpDir, overflowWarnings };
 }
 
 module.exports = { renderHtmlToPngs };

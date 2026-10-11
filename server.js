@@ -508,10 +508,6 @@ app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
       filePath = job.pptxPath;
       mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       name = `${(job.title || 'referat').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60) || 'referat'}.docx`;
-    } else if (type === 'html' && job.htmlPath) {
-      filePath = job.htmlPath;
-      mime = 'text/html; charset=utf-8';
-      name = `${(job.title || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.html`;
     } else {
       return res.status(404).json({ error: 'file_not_found' });
     }
@@ -759,11 +755,8 @@ async function executeJob(jobId) {
       fs.copyFileSync(result.pptxPath, pptxPath);
       try { fs.unlinkSync(result.pptxPath); } catch {}
     }
-    if (result.htmlPath && fs.existsSync(result.htmlPath)) {
-      htmlPath = path.join(destDir, 'presentation.html');
-      fs.copyFileSync(result.htmlPath, htmlPath);
-      try { fs.unlinkSync(result.htmlPath); } catch {}
-    }
+    // HTML — тек ішкі «сурет салушы» (PPTX сол арқылы жасалады), клиентке жіберілмейді
+    if (result.htmlPath) { try { fs.unlinkSync(result.htmlPath); } catch {} }
 
     if (result.requirementsReport) {
       try { fs.writeFileSync(path.join(destDir, 'requirements.json'), JSON.stringify(result.requirementsReport)); } catch (e) { console.warn('[Job] requirements.json', e.message); }
@@ -830,13 +823,6 @@ async function executeJob(jobId) {
           await global.__deadlineBot.sendDocument(chatId, pptxPath, {}, {
             filename: pptxName,
             contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-          });
-        }
-        if (htmlPath && fs.existsSync(htmlPath)) {
-          const htmlName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.html`;
-          await global.__deadlineBot.sendDocument(chatId, htmlPath, {}, {
-            filename: htmlName,
-            contentType: 'text/html',
           });
         }
       }

@@ -1,6 +1,6 @@
 # DeadLine v3 — AI Presentation Studio (Telegram Mini App)
 
-Telegram **Mini App** + бот: тақырып/материал/шаблон → кәсіби PPTX + HTML презентация.
+Telegram **Mini App** + бот: тақырып/материал/шаблон → кәсіби, **өңделетін** PPTX презентация.
 
 ## Режимдер
 
@@ -62,14 +62,22 @@ server.js, bot.js    тек тіркеу және тасымалдау
                                     │
               ┌─────────────────────┼─────────────────────┐
               ▼                     ▼                     ▼
-         DeepSeek content      Images/SVG            HTML (source of truth)
+         DeepSeek content      Images/SVG       HTML (ішкі сурет салушы)
               │                     │                     │
-              └─────────────────────┴──► Puppeteer PNG ──► PPTX
+              └─────────────────────┴──► Puppeteer ──► мәтінсіз фон + мәтін өлшемі ──► өңделетін PPTX
 ```
+
+## Өңделетін PPTX
+
+HTML клиентке жіберілмейді — ол тек ішкі «сурет салушы». Әр слайд PPTX-те:
+- **фон-сурет** (фото, карточка, шкала, декор) — мәтінсіз рендерленеді;
+- **нативті мәтін қораптары** — HTML-дегі орны, жолдары, кегль, салмақ, түсімен (`textLayer.js` өлшейді, `pptxExporter.js` жазады).
+
+Мәтін **Calibri** мен **Times New Roman**-да (кез келген PowerPoint / Google Slides-та бар). HTML оларды метрикасы бірдей ашық көшірмелермен (Carlito, Liberation Serif — `assets/Text-*.ttf`, `assets/Serif-*.ttf`, қазақ әріптері толық) өлшейді, сондықтан жол ауысулары PowerPoint-тағымен бірдей. Тексеру тілі блок бойынша қойылады (kk-KZ / ru-RU / en-US). Слайдтың мәтін қабаты алынбаса — сол слайд толық сурет болып қалады.
 
 ## Pipeline (сапа)
 
-`Тақырып → мазмұн → QC → quality loop → narrative → composition → sources → images → visual SVG → HTML → render QA → Vision Critic → redesign → PPTX`
+`Тақырып → мазмұн → QC → quality loop → narrative → composition → sources → images → visual SVG → HTML (ішкі) → render QA → Vision Critic → redesign → өңделетін PPTX`
 
 Сапа қақпасы: overflow/бос слайд табылса — толық қайта генерация (1 рет). Екінші сәтсіздік — кредит қайтарылады.
 

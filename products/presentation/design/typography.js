@@ -8,9 +8,9 @@ const { TYPE_SCALE } = require('./tokens');
 
 // average glyph width (em) per family/weight class; Cyrillic/Kazakh run a bit wider than Latin.
 function glyphEm(kind, weight) {
-  // Cyrillic/Kazakh glyphs run wider than Latin; measured against Lora + Inter renders
-  const base = kind === 'serif' ? 0.60 : 0.605;
-  return base + (weight >= 700 ? 0.035 : weight >= 600 ? 0.02 : 0);
+  // measured on Kazakh text with the deck fonts (Calibri ≈ Carlito, Times New Roman ≈ Liberation Serif) + ~2% margin
+  if (kind === 'serif') return weight >= 600 ? 0.55 : 0.515;
+  return weight >= 600 ? 0.535 : 0.515;
 }
 
 function simulateLines(text, sizePx, widthPx, em, tracking) {

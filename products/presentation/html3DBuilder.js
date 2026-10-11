@@ -221,7 +221,7 @@ function buildNew(slides, presentationTitle, opts) {
   if (process.env.DESIGN_DEBUG) console.log('[Design] plan: ' + plan.map((p, i) => (i + 1) + ':' + p.layout).join(' '));
   const skin = opts.skin || null;
   const mt = mediaTable(skin);
-  const serif = /DisplayFace|serif/i.test(ts.display.split(',')[0]);
+  const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
   const ctxDeck = { palette, ts, deckTitle, skin, serif, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
   const slidesHTML = list.map((s, i) => renderSlide(s, i, plan[i], ctxDeck)).join('');
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
