@@ -285,15 +285,6 @@ async function getUser(chatId) {
 
 async function registerUser(chatId, referredBy = null) {
   await ensureUser(chatId, referredBy);
-  // Адам базада бұрын болса (мыс. Mini App-ты алдымен ашқан) — реферал белгісі жоғалмасын.
-  // Тек әлі презентация жасамаған және белгісі жоқ болса ғана жазамыз.
-  if (referredBy && String(referredBy) !== String(chatId)) {
-    await q(
-      `UPDATE users SET referred_by = $2::text
-       WHERE chat_id = $1::text AND referred_by IS NULL AND COALESCE(total, 0) = 0`,
-      [String(chatId), String(referredBy)]
-    );
-  }
 }
 
 async function addCredits(chatId, amount) {

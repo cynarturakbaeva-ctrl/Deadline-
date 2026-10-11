@@ -117,11 +117,7 @@ async function getUser(chatId) {
 }
 
 async function registerUser(chatId, referredBy = null) {
-  const u = ensureUser(chatId, referredBy);
-  // Бұрын тіркелген, бірақ белгісі жоқ және әлі презентация жасамаған адамға реферал белгісін жазу
-  if (referredBy && String(referredBy) !== String(chatId) && !u.referred_by && !(Number(u.total) > 0)) {
-    u.referred_by = String(referredBy);
-  }
+  ensureUser(chatId, referredBy);
   saveDB(db);
 }
 

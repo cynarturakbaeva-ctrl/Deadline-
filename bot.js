@@ -264,7 +264,7 @@ bot.onText(/^\/learn(?:\s+(.+))?$/, async (msg, match) => {
     bot.sendMessage(msg.chat.id,
       `🧠 Үйрену жүйесі\n\n` +
       `Шаблон: ${a.templates} (слайд: ${a.slides})\nҚолдану: ${a.uses} · сәтті ${a.done} · құлаған ${a.failed}\n` +
-      `Таза сыйды: ${a.cleanFitPct}%\nБаға: ${a.avgRating == null ? '—' : a.avgRating + '/5'} (${a.rated} баға)\n\n` +
+      `Таза сыйды: ${a.cleanFitPct}%\nТексеруші: ${a.qa.withIssues} рет ақау тапты, ${a.qa.allFixed} рет бәрін түзеді\nБаға: ${a.avgRating == null ? '—' : a.avgRating + '/5'} (${a.rated} баға)\n\n` +
       `Тақырып қарпі: слайд биіктігінің ${pc(a.typography.titleSizeRel)} · мәтін ${pc(a.typography.bodySizeRel)} · арақатынас ${a.typography.hierarchy ?? '—'}\n` +
       `Шеттер: сол ${pc(a.margins.left)}, жоғары ${pc(a.margins.top)}\nОрташа сөз/слайд: ${a.avgWordsPerSlide ?? '—'}\nҚараңғы шаблон: ${a.darkPct}%\n\n` +
       `Шрифт жұптары: ${fmt(a.topPairs)}\nТақырып шрифті: ${fmt(a.titleClasses)}\nМәтін шрифті: ${fmt(a.bodyClasses)}\n` +

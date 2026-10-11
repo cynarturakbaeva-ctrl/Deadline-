@@ -74,5 +74,5 @@ test('planLayout: LLM құласа/нашар жоспар берсе — null (
 test('index.js: planLayout толтырудан бұрын шақырылады және fillTemplatePptx-ке беріледі', () => {
   const idx = fs.readFileSync(require('path').join(__dirname, '../products/presentation/index.js'), 'utf8');
   assert.ok(idx.indexOf('planLayout({') < idx.indexOf('fillTemplatePptx(referencePptxBuf'));
-  assert.match(idx, /fillTemplatePptx\(referencePptxBuf, slides, \{ language, layout \}\)/);
+  assert.match(idx, /fillTemplatePptx\(referencePptxBuf, slides, \{ language, layout(, qaReport)? \}\)/);
 });

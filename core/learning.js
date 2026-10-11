@@ -27,7 +27,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const avg1 = (a) => { const s = a.filter(Number.isFinite); return s.length ? Math.round((s.reduce((x, y) => x + y, 0) / s.length) * 10) / 10 : null; };
 
 /** Сыйғызу таза өтті ме (қалған ақау жоқ). */
-const cleanFit = (u) => u && u.outcome === 'done' && !(u.fit && u.fit.after > 0);
+const cleanFit = (u) => u && u.outcome === 'done' && !(u.fit && u.fit.after > 0) && !(u.fit && u.fit.qa && u.fit.qa.found > u.fit.qa.fixed);
 
 /** Слайд макет «отбасылары»: бірдей қолтаңбасы бар слайдтар әртүрлі шаблонда қанша рет кездесті. */
 function layoutFamilies(templates) {
@@ -73,6 +73,8 @@ function aggregate(templates, uses) {
     done: U.filter((u) => u.outcome === 'done').length,
     failed: U.filter((u) => u.outcome === 'failed').length,
     cleanFitPct: pct(U.filter(cleanFit).length, U.length),
+    // соңғы тексеруші: қанша қолдануда геометриялық ақау табылды / бәрі түзелді
+    qa: { withIssues: U.filter((u) => u.fit && u.fit.qa && u.fit.qa.found).length, allFixed: U.filter((u) => u.fit && u.fit.qa && u.fit.qa.found && u.fit.qa.fixed === u.fit.qa.found).length },
     rated: rated.length,
     avgRating: avg1(rated.map((u) => u.rating)),
     darkPct: pct(dark, T.length),

@@ -436,7 +436,14 @@ async function generatePresentation(userInput, options = {}) {
     await onProgress('template', 'Шаблонға мәтін салынуда...');
     try {
       pptxPath = path.join(os.tmpdir(), `template-${uniqueId()}.pptx`);
-      fs.writeFileSync(pptxPath, fillTemplatePptx(referencePptxBuf, slides, { language, layout }));
+      const qaReport = [];
+      fs.writeFileSync(pptxPath, fillTemplatePptx(referencePptxBuf, slides, { language, layout, qaReport }));
+      // соңғы тексерушінің нәтижесі үйрену жүйесіне: қай ақау қанша, нешеуі түзелді
+      const qa = qaReport.flatMap((r) => r.issues);
+      if (qa.length) {
+        fitInfo = { ...(fitInfo || {}), qa: { found: qa.length, fixed: qa.filter((q) => q.fixed).length, codes: [...new Set(qa.map((q) => q.code))] } };
+        console.log(`[Pipeline] Template QA: ${qa.length} ақау, ${qa.filter((q) => q.fixed).length} түзелді`);
+      }
       console.log('[Pipeline] Template-Fill: PPTX = пайдаланушы шаблоны, тек мәтін ауыстырылды');
     } catch (err) {
       // Рендерге (сурет-слайд) түспейміз: клиентке өңделетін PPTX керек. Қате болса — кредит қайтарылады.

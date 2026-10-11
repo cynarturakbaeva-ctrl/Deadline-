@@ -19,6 +19,8 @@ const zlib = require('zlib');
 const { makeZip } = require('../referat/zipmin');
 const { orderedSlides, tagBlocks, xfrmOf } = require('../../design-dna/structure');
 const L = require('./templateLayout');
+const QA = require('./templateCheck');
+const { embeddedMetrics } = require('./embeddedMetrics');
 const { slotKind } = require('./templateStory');
 
 const MAX_BYTES = 80 * 1024 * 1024;
@@ -73,7 +75,30 @@ function xmlProblem(xml) {
     } else if (m[2] && !m[3]) stack.push(m[2]);
   }
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(xml)) return 'жарамсыз control таңба';
+  const dup = dupAttrTag(xml);
+  if (dup) return `қайталанған атрибут: ${dup}`;
   return stack.length ? `жабылмаған тег: <${stack[stack.length - 1]}>` : null;
+}
+
+// Бір тегте бірдей атрибут екі рет болса (мыс. <a:rPr b="1" b="true">) — PowerPoint файлды мүлде ашпайды.
+const START_TAG = /<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))+)(\s*\/?)>/g;
+const ATTR = /\s+([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')/g;
+function dupAttrTag(xml) {
+  START_TAG.lastIndex = 0;
+  let m;
+  while ((m = START_TAG.exec(xml))) {
+    const seen = new Set();
+    for (const a of m[2].matchAll(ATTR)) { if (seen.has(a[1])) return `<${m[1]} ${a[1]}=…>`; seen.add(a[1]); }
+  }
+  return null;
+}
+/** Қайталанған атрибуттарды алып тастау (біріншісі қалады). Өзгеріс болмаса — сол жол қайтарылады. */
+function dedupeAttrs(xml) {
+  return String(xml).replace(START_TAG, (whole, tag, attrs, end) => {
+    const seen = new Set(); let dup = false;
+    const kept = attrs.replace(ATTR, (a, name) => { if (seen.has(name)) { dup = true; return ''; } seen.add(name); return a; });
+    return dup ? `<${tag}${kept}${end}>` : whole;
+  });
 }
 
 function writeZipAll(files) {
@@ -173,6 +198,7 @@ const isSerifFace = (f) => /serif|times|georgia|cambria|garamond|didot|bodoni|pl
 const fallbackFace = (face, szPt) => (isSerifFace(face) || (szPt || 0) >= 30 ? SAFE_FALLBACK : SAFE_SANS);
 
 const FM = require('./fontMetrics');
+const IS_BOLD = / b="(?:1|true)"/;
 const BOLD_NAME = /bold|black|heavy|extrabold|semibold|demi/i;
 
 /**
@@ -329,7 +355,11 @@ function shortenLine(cur) {
   for (let i = maxKeep; i >= minKeep; i--) {                   // соңғы мағыналық шекара (үтір, ;, —, нүкте)
     if (/[,;—–.]/.test(cur[i])) return tidy(cur.slice(0, i)).replace(/\.$/, '') + '.';
   }
-  const word = cur.slice(0, maxKeep).replace(/\s+\S*$/, '');
+  const head = cur.slice(0, maxKeep);
+  // Сөз шекарасы жоқ (бір ұзын сөз) — қыспаймыз: «Назарларыңызға» → «Назарларыңы.» сияқты үзік сөз шықпасын
+  if (!/\s/.test(head.trim())) return cur;
+  const word = head.replace(/\s+\S*$/, '');
+  if (!word.trim()) return cur;
   return (tidy(word) || word) + '.';
 }
 
@@ -347,7 +377,8 @@ function adaptRPr(rPr, lines, ctx) {
       return a + fallbackFace(face, szPt) + c;
     });
     // «Agrandir Bold» сияқты атаудағы жуандық ауыстырғанда жоғалмасын (Times/Arial-да b="1" керек)
-    if (boldName && !/ b="1"/.test(r)) r = / b="0"/.test(r) ? r.replace(/ b="0"/, ' b="1"') : r.replace(/^<a:rPr/, '<a:rPr b="1"');
+    // b= бар болса (1/true/0/false) — тек мәнін ауыстырамыз; екінші b= қосу XML-ді бұзады (PowerPoint ашпайды)
+    if (boldName) r = / b="[^"]*"/.test(r) ? r.replace(/ b="[^"]*"/, ' b="1"') : r.replace(/^<a:rPr/, '<a:rPr b="1"');
     if (/ lang="[^"]*"/.test(r)) r = r.replace(/ lang="[^"]*"/, ' lang="kk-KZ"');
     else r = r.replace(/^<a:rPr/, '<a:rPr lang="kk-KZ"');
   }
@@ -386,7 +417,7 @@ function replaceShapeText(block, lines, ctx) {
     const face = (rPr.match(/<a:latin [^>]*typeface="([^"]+)"/) || [])[1] || '';
     const inset = (n, d) => { const m = bodyPr.match(new RegExp(' ' + n + '="(\\d+)"')); return (m ? +m[1] : d) / 12700; };
     const fit = fitLines(list, {
-      box: ctx.box, grow: ctx.grow || 0, pPr, rPr, bold: / b="1"/.test(rPr) || BOLD_NAME.test(face), serif: isSerifFace(face), single: !!ctx.single,
+      box: ctx.box, grow: ctx.grow || 0, pPr, rPr, bold: IS_BOLD.test(rPr) || BOLD_NAME.test(face), serif: isSerifFace(face), single: !!ctx.single,
       unknownFace: !!face && !/^(arial|times new roman|liberation (sans|serif))$/i.test(face),
       minScale: ctx.minScale, relax: !!ctx.relax, noShorten: !!ctx.noShorten, fontPt: ctx.fontPt,
       origTexts: paras.map((pp) => [...pp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join('')).filter((t) => t.trim()),
@@ -611,7 +642,7 @@ function logoScale(pairs, words) {
     const rest = String(words[i] || '').slice(1);
     const sz = szOf(p.dsp.block) / 100;
     if (!rest || !sz) return;
-    const serif = isSerifFace(faceOfBlock(p.dsp.block)), bold = / b="1"/.test(p.dsp.block);
+    const serif = isSerifFace(faceOfBlock(p.dsp.block)), bold = IS_BOLD.test(p.dsp.block);
     const fits = (kk) => {
       const x = p.ini.x.x + (p.dsp.x.x - p.ini.x.x) * kk;                 // сөз әріпке жақындайды
       return textWidthPt(rest, sz * kk, serif, bold) * DISPLAY_SAFETY <= (p.end - x) / 12700;
@@ -885,7 +916,7 @@ function capacityChars(block, comfort, maxW, growEmu) {
   const perLine = Math.max(1, Math.floor(wPt / (sz * avg)));
   let lines = Math.max(1, Math.floor(hPt / (ratio * sz)));
   const origTexts = tagBlocks(tx, 'a:p').map((pp) => [...pp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join('')).filter((t) => t.trim());
-  const origEst = origTexts.reduce((n, t) => n + countLines(t, orig, wPt, serif, / b="1"/.test(rPr)), 0);
+  const origEst = origTexts.reduce((n, t) => n + countLines(t, orig, wPt, serif, IS_BOLD.test(rPr)), 0);
   if (origEst && origEst <= (orig >= 30 ? 3 : 2)) lines = Math.min(lines, orig >= 30 ? origEst + 1 : origEst);   // түпнұсқадағы қатар санынан аспайды
   return Math.max(4, Math.floor(perLine * lines * 0.85));
 }
@@ -903,8 +934,9 @@ function roomFor(xml, block, W, H) {
 function planTemplateSlots(templateBuf) {
   const files = readZipAll(templateBuf);
   const { W, H } = slideSize(files);
+  const alphaCache = new Map();
   return orderedSlides(files).map((sp) => {
-    const xml = files.get(sp) || '';
+    const xml = QA.hideDeco(files.get(sp) || '', QA.seeThroughIds(files, sp, alphaCache)).xml;
     const cl = classify(xml, { W, H });
     if (cl.pairs) {
       // сөз ең көбі LOGO_KMIN-ге дейін кішірейе алады (әріппен бірге) — әріп саны сол бойынша
@@ -1003,6 +1035,9 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
   const slidePaths = orderedSlides(files);
   const { W, H } = slideSize(files);
   const badFonts = uncoveredFonts(files);
+  const alphaCache = new Map();
+  let metrics = null;
+  try { metrics = embeddedMetrics(files); } catch (e) { metrics = null; }
   const list = Array.isArray(slides) ? slides : [];
   if (slidePaths.length && list.length && slidePaths.length !== list.length) {
     console.warn(`[TemplateFill] слайд саны сәйкес емес: шаблон ${slidePaths.length}, контент ${list.length}`);
@@ -1010,7 +1045,21 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
   slidePaths.forEach((sp, i) => {
     const xml = files.get(sp);
     if (!xml) return;
-    let filled = fillSlide(xml, list[i], { W, H, badFonts, layoutPlan: opts.layout && opts.layout[i] });
+    // мөлдір безендірулер (жарқыл, дақ) мәтінге кедергі емес: толтыру кезінде жасырып, кейін орнына қоямыз
+    const ids = QA.seeThroughIds(files, sp, alphaCache);
+    const hid = QA.hideDeco(xml, ids);
+    let filled = dedupeAttrs(hid.restore(fillSlide(hid.xml, list[i], { W, H, badFonts, layoutPlan: opts.layout && opts.layout[i] })));
+    // Соңғы тексеруші: мәтін ↔ мәтін/таблетка/сурет қабаттасуы, сөз бөлінуі, слайдтан шығу → жылжыту/кішірейту
+    if (opts.qa !== false && process.env.TEMPLATE_QA !== '0') try {
+      const qa = QA.checkSlide(xml, filled, { W, H, ids, metrics });
+      if (qa.issues.length) {
+        console.log(`[TemplateQA] ${sp}: ${qa.issues.map((q) => `${q.code}(${q.shape})${q.fixed ? `→${q.how.scale}×,${q.how.dyPt}pt` : ' ТҮЗЕЛМЕДІ'}`).join('; ')}`);
+        if (Array.isArray(opts.qaReport)) opts.qaReport.push({ slide: i + 1, issues: qa.issues });
+      }
+      filled = qa.xml;
+    } catch (e) {
+      console.warn(`[TemplateQA] ${sp}: тексеру қатесі — ${e.message}`);
+    }
     const prob = xmlProblem(filled);
     if (prob) {
       // Бұзылған слайдты ЖІБЕРМЕЙМІЗ: түпнұсқа слайд қалады, қате логқа жазылады
@@ -1022,4 +1071,4 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
   return writeZipAll(files);
 }
 
-module.exports = { roomFor, countLines, textWidthPt, fitLines, fallbackFace, auditSlides, auditTemplateFill, minItemChars, shortenLine, logoScale, scaleBlock, roomBelow, fillTemplatePptx, planTemplateSlots, slotRuleLine, classify, capacityChars, uncoveredFonts, cmapOf, readZipAll, writeZipAll, fillSlide, linesForSlide, replaceShapeText, textShapes };
+module.exports = { roomFor, countLines, textWidthPt, fitLines, fallbackFace, auditSlides, auditTemplateFill, minItemChars, shortenLine, logoScale, scaleBlock, roomBelow, fillTemplatePptx, planTemplateSlots, slotRuleLine, classify, capacityChars, uncoveredFonts, cmapOf, readZipAll, writeZipAll, dedupeAttrs, xmlProblem, fillSlide, linesForSlide, replaceShapeText, textShapes };

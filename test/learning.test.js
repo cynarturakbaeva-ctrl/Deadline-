@@ -119,19 +119,3 @@ test('JSON база: шаблон бір рет (uses+1), қолдану + ба�
   const uses = await db.listLearnUses(10);
   assert.strictEqual(uses.length, 1); assert.strictEqual(uses[0].rating, 5); assert.strictEqual(uses[0].comment, 'Жақсы');
 });
-
-test('registerUser: бұрын тіркелген адамға реферал белгісі жазылады (төлемегенге ғана)', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-ref-'));
-  fs.mkdirSync(path.join(dir, 'storage'));
-  fs.copyFileSync(path.join(__dirname, '../storage/jsonDb.js'), path.join(dir, 'storage/jsonDb.js'));
-  const db = require(path.join(dir, 'storage/jsonDb.js'));
-  await db.initDB();
-  await db.registerUser('100');            // алдымен сілтемесіз кірген
-  await db.registerUser('100', '555');     // кейін сілтемемен
-  assert.strictEqual((await db.getUser('100')).referredBy, '555');
-  await db.registerUser('100', '777');     // қайта жазылмайды
-  assert.strictEqual((await db.getUser('100')).referredBy, '555');
-  await db.registerUser('200');
-  await db.registerUser('200', '200');     // өзін өзі шақыра алмайды
-  assert.strictEqual((await db.getUser('200')).referredBy, null);
-});
