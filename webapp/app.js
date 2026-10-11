@@ -441,6 +441,7 @@
     const tpl = job.mode === 'template';
     $('#resultTitle').textContent = job.title || (ref ? 'Реферат дайын!' : 'Презентация дайын!');
     $('#btnDlPptx').classList.toggle('hidden', ref);
+    $('#btnDlSpeech').classList.toggle('hidden', ref || !job.hasSpeech);
     $('#btnDlDocx').classList.toggle('hidden', !ref);
     $('#btnNew').textContent = ref ? 'Жаңа жұмыс' : 'Жаңа презентация';
     $('#resultScore').textContent = job.qualityScore != null
@@ -451,6 +452,7 @@
     renderTemplateReport(job.templateReport);
     state.currentJobId = job.id;
     $('#btnDlPptx').onclick = () => download(job.id, 'pptx');
+    $('#btnDlSpeech').onclick = () => download(job.id, 'speech');
     $('#btnDlDocx').onclick = () => download(job.id, 'docx');
   }
 
@@ -561,7 +563,7 @@
             ${h.mode === 'referat'
               ? `<button class="btn secondary small" data-dl="${h.id}" data-type="docx">Word</button>`
               : `<button class="btn secondary small" data-dl="${h.id}" data-type="pptx">PPTX</button>
-`}
+${h.hasSpeech ? `<button class="btn secondary small" data-dl="${h.id}" data-type="speech">🎤 Баяндама</button>` : ''}`}
           </div>
         </div>`;
       }).join('');

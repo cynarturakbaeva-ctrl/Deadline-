@@ -89,6 +89,7 @@ app.use('/webapp', express.static(WEBAPP_DIR, {
 // Jobs output dir (PPTX/HTML served securely)
 // Railway-де файлдар жүйесі уақытша: сақтау керек болса Volume қосып, JOBS_DIR=/data/jobs сияқты беріңіз
 const JOBS_DIR = process.env.JOBS_DIR || path.join(__dirname, 'jobs');
+const speechFile = (jobId) => path.join(JOBS_DIR, String(jobId).replace(/[^\w-]/g, ''), 'speech.docx');
 fs.mkdirSync(JOBS_DIR, { recursive: true });
 
 // ─── Telegram WebApp initData validation ──────────────────────────────────
@@ -187,7 +188,7 @@ app.get('/api/history', authMiddleware, async (req, res) => {
     await Promise.all(list.filter((h) => done.has(h.id)).map(async (h) => {
       try { const f = await getFeedbackForJob(h.id); if (f && String(f.chat_id) === String(req.tgUser.id)) ratings[h.id] = f.rating; } catch {}
     }));
-    res.json({ items: list.map(h => ({ ...h, mode: modes[h.id] || 'presentation', canRate: done.has(h.id), rating: ratings[h.id] || null })) });
+    res.json({ items: list.map(h => ({ ...h, mode: modes[h.id] || 'presentation', canRate: done.has(h.id), rating: ratings[h.id] || null, hasSpeech: fs.existsSync(speechFile(h.id)) })) });
   } catch (err) {
     console.error('[API] /history', err);
     res.status(500).json({ error: 'server_error' });
@@ -212,7 +213,7 @@ app.get('/api/jobs', authMiddleware, async (req, res) => {
         mode: j.payload?.mode || 'presentation',
         hasPptx: j.payload?.mode !== 'referat' && !!j.pptxPath,
         hasDocx: j.payload?.mode === 'referat' && !!j.pptxPath,
-        hasHtml: !!j.htmlPath,
+        hasSpeech: fs.existsSync(speechFile(j.id)),
       })),
     });
   } catch (err) {
@@ -253,7 +254,7 @@ app.get('/api/job/:id', authMiddleware, async (req, res) => {
       mode: job.payload?.mode || 'presentation',
       hasPptx: job.payload?.mode !== 'referat' && !!job.pptxPath,
       hasDocx: job.payload?.mode === 'referat' && !!job.pptxPath,
-      hasHtml: !!job.htmlPath,
+      hasSpeech: fs.existsSync(speechFile(job.id)),
       feedback: await getFeedbackForJob(job.id).then((f) => (f && String(f.chat_id) === job.chatId ? { rating: f.rating, comment: f.comment || '' } : null)).catch(() => null),
       payload: {
         topic: job.payload?.topic,
@@ -504,6 +505,10 @@ app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
       filePath = job.pptxPath;
       mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
       name = `${(job.title || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.pptx`;
+    } else if (type === 'speech' && job.payload?.mode !== 'referat' && fs.existsSync(speechFile(job.id))) {
+      filePath = speechFile(job.id);
+      mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      name = `${(job.title || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 50)} — баяндама.docx`;
     } else if (type === 'docx' && job.payload?.mode === 'referat' && job.pptxPath) {
       filePath = job.pptxPath;
       mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -757,6 +762,13 @@ async function executeJob(jobId) {
     }
     // HTML — тек ішкі «сурет салушы» (PPTX сол арқылы жасалады), клиентке жіберілмейді
     if (result.htmlPath) { try { fs.unlinkSync(result.htmlPath); } catch {} }
+    // «Баяндама мәтіні» (.docx): тұрақты жолда сақталады — DB бағаны керек емес (speechFile(jobId))
+    let speechPath = null;
+    if (result.speechPath && fs.existsSync(result.speechPath)) {
+      speechPath = speechFile(jobId);
+      try { fs.copyFileSync(result.speechPath, speechPath); } catch (e) { console.warn('[Job] speech.docx', e.message); speechPath = null; }
+      try { fs.unlinkSync(result.speechPath); } catch {}
+    }
 
     if (result.requirementsReport) {
       try { fs.writeFileSync(path.join(destDir, 'requirements.json'), JSON.stringify(result.requirementsReport)); } catch (e) { console.warn('[Job] requirements.json', e.message); }
@@ -824,6 +836,15 @@ async function executeJob(jobId) {
             filename: pptxName,
             contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
           });
+          if (speechPath && fs.existsSync(speechPath)) {
+            const speechName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 50)} — баяндама.docx`;
+            await global.__deadlineBot.sendDocument(chatId, speechPath, {
+              caption: '🎤 Баяндама мәтіні: әр слайдта не айту керек, негізгі терминдер және мұғалім қоюы мүмкін сұрақтар мен жауаптар. Бұл мәтін PPTX-тің «Заметки» бөлімінде де бар.',
+            }, {
+              filename: speechName,
+              contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }).catch((e) => console.warn('[Job] speech send failed', e.message));
+          }
         }
       }
     } catch (e) {
