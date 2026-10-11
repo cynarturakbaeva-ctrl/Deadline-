@@ -43,6 +43,19 @@ function ensureContrast(fg, bg, toward, min) {
   while (contrast(c, bg) < min && t < 1) { t += 0.08; c = mixHex(fg, toward, t); }
   return c;
 }
+/** Rotate the hue of a hex colour by `deg` (keeps saturation/lightness) — used for the accent's gradient partner. */
+function shiftHue(hex, deg) {
+  const [r, g, b] = hexToRgb(hex).map((v) => v / 255);
+  const mx = Math.max(r, g, b); const mn = Math.min(r, g, b); const d = mx - mn;
+  const l = (mx + mn) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + deg + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s; const x = c * (1 - Math.abs(((h / 60) % 2) - 1)); const m = l - c / 2;
+  const [R, G, B] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return rgbToHex((R + m) * 255, (G + m) * 255, (B + m) * 255);
+}
 function rgba(hex, a) {
   const [r, g, b] = hexToRgb(hex);
   return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
@@ -110,22 +123,22 @@ const TYPE_STYLES = Object.freeze({
 // `deco` picks the background decoration drawn on plain (photo-less) slides — see style.js (.deco-*).
 const MOODS = ({
   // ── dark ──
-  dark:     { bg: '#07090d', text: '#f3f5f8', accent: '#d6b25e', tone: 'modern',    deco: 'orbs',     img: 'saturate(.92) contrast(1.04) brightness(.96)', scrim: 0.55 },
-  warm:     { bg: '#140e0a', text: '#f3e8da', accent: '#d9954f', tone: 'editorial', deco: 'diagonal', img: 'sepia(.14) saturate(.94) contrast(1.03)',    scrim: 0.55 },
-  cold:     { bg: '#060d15', text: '#e9f1f8', accent: '#62b0e0', tone: 'technical', deco: 'rings',    img: 'saturate(.86) contrast(1.04) hue-rotate(-4deg)', scrim: 0.55 },
-  vivid:    { bg: '#0b0612', text: '#f8f3fd', accent: '#d65bc4', tone: 'modern',    deco: 'orbs',     img: 'saturate(1.05) contrast(1.04)',              scrim: 0.55 },
-  archive:  { bg: '#110d0a', text: '#efe4d3', accent: '#c19a5b', tone: 'editorial', deco: 'rings',    img: 'sepia(.22) saturate(.86) contrast(1.05)',    scrim: 0.6 },
-  midnight: { bg: '#0a1224', text: '#eaf0fb', accent: '#5aa9ff', tone: 'technical', deco: 'grid',     img: 'saturate(.9) contrast(1.05)',                scrim: 0.55 },
-  forest:   { bg: '#08150f', text: '#e8f4ec', accent: '#4fc08d', tone: 'editorial', deco: 'dots',     img: 'saturate(.95) contrast(1.03)',               scrim: 0.55 },
-  wine:     { bg: '#16080d', text: '#f7e9ec', accent: '#e5677f', tone: 'editorial', deco: 'diagonal', img: 'saturate(.95) contrast(1.04)',               scrim: 0.55 },
-  graphite: { bg: '#131416', text: '#f1f1ef', accent: '#ff7a45', tone: 'modern',    deco: 'bands',    img: 'saturate(.9) contrast(1.06)',                scrim: 0.55 },
+  dark:     { bg: '#07090d', text: '#f3f5f8', accent: '#d6b25e', accent2: '#f4e2b0', tone: 'modern',    deco: 'orbs',     img: 'saturate(.92) contrast(1.04) brightness(.96)', scrim: 0.55 },
+  warm:     { bg: '#140e0a', text: '#f3e8da', accent: '#d9954f', accent2: '#e8616b', tone: 'editorial', deco: 'diagonal', img: 'sepia(.14) saturate(.94) contrast(1.03)',    scrim: 0.55 },
+  cold:     { bg: '#060d15', text: '#e9f1f8', accent: '#62b0e0', accent2: '#7af0d0', tone: 'technical', deco: 'rings',    img: 'saturate(.86) contrast(1.04) hue-rotate(-4deg)', scrim: 0.55 },
+  vivid:    { bg: '#0b0612', text: '#f8f3fd', accent: '#d65bc4', accent2: '#8b7bff', tone: 'modern',    deco: 'orbs',     img: 'saturate(1.05) contrast(1.04)',              scrim: 0.55 },
+  archive:  { bg: '#110d0a', text: '#efe4d3', accent: '#c19a5b', accent2: '#e6c99a', tone: 'editorial', deco: 'rings',    img: 'sepia(.22) saturate(.86) contrast(1.05)',    scrim: 0.6 },
+  midnight: { bg: '#0a1224', text: '#eaf0fb', accent: '#5aa9ff', accent2: '#9b7bff', tone: 'technical', deco: 'grid',     img: 'saturate(.9) contrast(1.05)',                scrim: 0.55 },
+  forest:   { bg: '#08150f', text: '#e8f4ec', accent: '#4fc08d', accent2: '#c6e070', tone: 'editorial', deco: 'dots',     img: 'saturate(.95) contrast(1.03)',               scrim: 0.55 },
+  wine:     { bg: '#16080d', text: '#f7e9ec', accent: '#e5677f', accent2: '#f2a65a', tone: 'editorial', deco: 'diagonal', img: 'saturate(.95) contrast(1.04)',               scrim: 0.55 },
+  graphite: { bg: '#131416', text: '#f1f1ef', accent: '#ff7a45', accent2: '#ff3d7f', tone: 'modern',    deco: 'bands',    img: 'saturate(.9) contrast(1.06)',                scrim: 0.55 },
   // ── light ──
-  light:    { bg: '#f1ece4', text: '#15171c', accent: '#a5432f', tone: 'editorial', deco: 'bands',    img: 'saturate(.95) contrast(1.02)',               scrim: 0.0 },
-  ivory:    { bg: '#f7f5ee', text: '#14213d', accent: '#1d4e89', tone: 'editorial', deco: 'rings',    img: 'saturate(.95) contrast(1.02)',               scrim: 0.0 },
-  cloud:    { bg: '#f2f6fb', text: '#0e1a2b', accent: '#1f6fd1', tone: 'technical', deco: 'grid',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
-  mint:     { bg: '#eef6f1', text: '#10241a', accent: '#1f8a5b', tone: 'modern',    deco: 'dots',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
-  blush:    { bg: '#fbf1ee', text: '#2a1519', accent: '#c2415a', tone: 'modern',    deco: 'orbs',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
-  sand:     { bg: '#f3ebdc', text: '#2a2118', accent: '#b8651b', tone: 'editorial', deco: 'diagonal', img: 'sepia(.08) saturate(.96) contrast(1.02)',    scrim: 0.0 },
+  light:    { bg: '#f1ece4', text: '#15171c', accent: '#a5432f', accent2: '#c27a1f', tone: 'editorial', deco: 'bands',    img: 'saturate(.95) contrast(1.02)',               scrim: 0.0 },
+  ivory:    { bg: '#f7f5ee', text: '#14213d', accent: '#1d4e89', accent2: '#2a8fa8', tone: 'editorial', deco: 'rings',    img: 'saturate(.95) contrast(1.02)',               scrim: 0.0 },
+  cloud:    { bg: '#f2f6fb', text: '#0e1a2b', accent: '#1f6fd1', accent2: '#7a4fe0', tone: 'technical', deco: 'grid',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
+  mint:     { bg: '#eef6f1', text: '#10241a', accent: '#1f8a5b', accent2: '#1a7f9a', tone: 'modern',    deco: 'dots',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
+  blush:    { bg: '#fbf1ee', text: '#2a1519', accent: '#c2415a', accent2: '#c4662a', tone: 'modern',    deco: 'orbs',     img: 'saturate(.98) contrast(1.02)',               scrim: 0.0 },
+  sand:     { bg: '#f3ebdc', text: '#2a2118', accent: '#b8651b', accent2: '#a8352a', tone: 'editorial', deco: 'diagonal', img: 'sepia(.08) saturate(.96) contrast(1.02)',    scrim: 0.0 },
 });
 
 /** Register a theme derived from a client's reference PPTX. Key is content-hashed → idempotent, bounded. */
@@ -206,6 +219,10 @@ function buildPalette(mood, accent, styleKey) {
   let acc = safeColor(accent, m.accent);
   // Accent must be readable as text/graphic on the background.
   acc = ensureContrast(acc, bg, text, 3.4);
+  // Gradient partner of the accent (hero numbers, highlighted title words, aurora glow) — same family, shifted hue.
+  // A custom accent (LLM/client) gets a hue-shifted partner; built-in themes use a hand-picked one.
+  const custom = accent && safeColor(accent, null) && safeColor(accent, null).toLowerCase() !== m.accent.toLowerCase();
+  const acc2 = ensureContrast(!custom && m.accent2 ? m.accent2 : shiftHue(acc, -30), bg, text, 3.4);
   const hint = STYLE_HINTS[String(styleKey || '').toLowerCase()] || {};
   return {
     mood: String(mood || 'dark').toLowerCase() in MOODS ? String(mood || 'dark').toLowerCase() : 'dark',
@@ -219,6 +236,7 @@ function buildPalette(mood, accent, styleKey) {
     line: mixHex(bg, text, 0.2),
     lineSoft: mixHex(bg, text, 0.11),
     accent: acc,
+    accent2: acc2,
     accentSoft: mixHex(bg, acc, 0.22),
     accentInk: contrast('#000000', acc) >= contrast('#ffffff', acc) ? '#0a0a0a' : '#ffffff',
     image: m.img,
@@ -236,5 +254,5 @@ function typeStyleFor(palette) {
 module.exports = {
   SPACE, RADIUS, SHADOW, GRID, TYPE_SCALE, FONT_STACKS, TYPE_STYLES, MOODS, THEME_POOLS, STYLE_HINTS,
   buildPalette, typeStyleFor, pickTheme, isLightMood, registerMood,
-  safeColor, hexToRgb, mixHex, luminance, contrast, ensureContrast, rgba,
+  safeColor, hexToRgb, mixHex, shiftHue, luminance, contrast, ensureContrast, rgba,
 };

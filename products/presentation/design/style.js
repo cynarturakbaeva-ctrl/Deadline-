@@ -43,6 +43,11 @@ function paletteVars(p) {
     '--surface:' + T.rgba(p.text, 0.06), '--wash:transparent',
     '--bg2:' + p.bg2, '--bg3:' + p.bg3, '--text2:' + p.text2, '--text3:' + p.text3,
     '--line:' + p.line, '--line-soft:' + p.lineSoft, '--accent-soft:' + p.accentSoft, '--accent-ink:' + p.accentInk,
+    '--accent2:' + (p.accent2 || p.accent),
+    '--glass:' + T.rgba(p.text, p.isLight ? 0.035 : 0.045), '--glass-line:' + T.rgba(p.text, p.isLight ? 0.1 : 0.11),
+    '--glass-hi:' + (p.isLight ? 'rgba(255,255,255,.75)' : T.rgba(p.text, 0.08)),
+    '--card-sh:' + (p.isLight ? '0 24px 60px -28px ' + T.rgba(p.text, 0.28) + ',0 2px 6px ' + T.rgba(p.text, 0.05) : '0 30px 70px -30px rgba(0,0,0,.7)'),
+    '--aura:' + (p.isLight ? '30%' : '48%'), '--blend:' + (p.isLight ? 'multiply' : 'screen'), '--vig:' + (p.isLight ? '.16' : '.55'), '--grain:' + (p.isLight ? '.05' : '.085'),
     '--radius:' + (T.RADIUS[p.radius] != null ? T.RADIUS[p.radius] : T.RADIUS.md) + 'px',
     '--deco:' + (p.isLight ? '24%' : '34%'), '--deco-line:' + (p.isLight ? '40%' : '38%'),
   ].join(';');
@@ -162,7 +167,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* ── reveal ── */
 .rv{opacity:0;transform:translateY(14px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
 .slide.is-active .rv{opacity:1;transform:none;transition-delay:calc(.12s + var(--i,0)*.07s)}
-.measuring .rv,.measuring .figure,.measuring .bleed .ph,.measuring .full .ph{transition:none!important;opacity:1!important;transform:none!important}
+.measuring .rv,.measuring .figure,.measuring .bleed .ph,.measuring .full .ph,.measuring .photo .ph{transition:none!important;opacity:1!important;transform:none!important}
 
 /* ── cover ── */
 .cover{display:flex;flex-direction:column;justify-content:space-between}
@@ -353,6 +358,106 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .refs-list.two{column-count:2;column-gap:var(--s5)}
 .refs-list li{display:flex;gap:var(--s2);padding:var(--s2) 0;border-bottom:1px solid var(--line-soft);font-size:calc(var(--bs,24px)*var(--fs,1));line-height:1.4;color:var(--text2);break-inside:avoid}
 .ref-n{flex:none;width:32px;color:var(--accent);font-weight:650;font-variant-numeric:tabular-nums}
+
+
+/* ══ FX LAYER — "wow" without hurting legibility: atmosphere, gradient key-words, glass, motion ══ */
+@property --pp{syntax:'<number>';inherits:false;initial-value:0}
+/* film grain + vignette on every generated slide (client reference skins keep their own look) */
+#stage:not(.ref-decor) .layer-bg::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:5;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\");background-size:240px 240px;opacity:var(--grain);mix-blend-mode:overlay}
+#stage:not(.ref-decor) .layer-bg::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:4;background:radial-gradient(130% 120% at 50% 45%,transparent 58%,color-mix(in srgb,var(--bg) 70%,#000) 100%);opacity:var(--vig,.55)}
+/* aurora: blurred accent fields that drift slowly (static in the PPTX, alive in the HTML) */
+.aurora{position:absolute;inset:-10%;pointer-events:none;filter:blur(90px) saturate(1.15);opacity:1}
+.aurora i{position:absolute;border-radius:50%;mix-blend-mode:var(--blend,screen)}
+.aurora .a1{width:62%;height:78%;right:-6%;top:-18%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) var(--aura),transparent) 0%,transparent 66%);animation:drift1 18s ease-in-out infinite alternate}
+.aurora .a2{width:52%;height:70%;right:22%;bottom:-30%;background:radial-gradient(circle,color-mix(in srgb,var(--accent2) var(--aura),transparent) 0%,transparent 66%);animation:drift2 22s ease-in-out infinite alternate}
+.aurora .a3{width:36%;height:46%;left:-8%;top:8%;background:radial-gradient(circle,color-mix(in srgb,var(--accent2) calc(var(--aura) * .55),transparent) 0%,transparent 70%);animation:drift1 26s ease-in-out infinite alternate-reverse}
+.aurora.soft{opacity:.62}
+.aurora.soft .a1{width:48%;height:62%;right:-14%;top:-26%}
+.aurora.soft .a2{width:40%;height:56%;right:-4%;bottom:-38%}
+@keyframes drift1{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-6%,5%,0) scale(1.12)}}
+@keyframes drift2{from{transform:translate3d(0,0,0) scale(1.05)}to{transform:translate3d(7%,-6%,0) scale(.95)}}
+/* cover halo: a thin orbit ring with a travelling accent dot */
+.halo{position:absolute;width:980px;height:980px;right:-250px;top:50%;margin-top:-490px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);-webkit-mask-image:linear-gradient(100deg,transparent 8%,#000 55%);mask-image:linear-gradient(100deg,transparent 8%,#000 55%)}
+.halo::before{content:"";position:absolute;inset:110px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent2) 22%,transparent)}
+.halo i{position:absolute;inset:0;border-radius:50%;animation:orbit 30s linear infinite}
+.halo i::after{content:"";position:absolute;left:50%;top:-7px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 22%,transparent),0 0 40px 8px color-mix(in srgb,var(--accent) 60%,transparent)}
+@keyframes orbit{from{transform:rotate(200deg)}to{transform:rotate(560deg)}}
+/* ghost typography: giant outlined glyphs bleeding off the edge */
+.ghost{position:absolute;pointer-events:none;font-family:var(--f-display);font-weight:var(--dw);line-height:.8;letter-spacing:-.06em;color:transparent;-webkit-text-stroke:2px color-mix(in srgb,var(--accent) 30%,transparent);white-space:nowrap;font-variant-numeric:lining-nums}
+.ghost-num{right:-40px;bottom:-120px;font-size:860px;-webkit-mask-image:linear-gradient(200deg,#000 20%,transparent 85%);mask-image:linear-gradient(200deg,#000 20%,transparent 85%)}
+.ghost-quote{right:60px;top:-80px;font-size:900px;line-height:1;-webkit-text-stroke:0;color:color-mix(in srgb,var(--accent) 9%,transparent)}
+/* gradient key-word in display titles */
+.title .hl{background:linear-gradient(100deg,var(--accent) 0%,var(--accent2) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-box-decoration-break:clone;box-decoration-break:clone;padding-right:.04em}
+.serif-tone .title.t-display .hl{font-style:italic}
+/* title words materialise one by one */
+.title .w{opacity:0;filter:blur(10px);transition:opacity .8s var(--ease),filter .8s var(--ease)}
+.slide.is-active .title .w{opacity:1;filter:blur(0);transition-delay:calc(.18s + var(--w,0)*.06s)}
+.measuring .title .w{transition:none!important;opacity:1!important;filter:none!important}
+/* section numeral + hero numbers in gradient metal */
+.numeral-xl,.mega,.st-n,.tl-date{background:linear-gradient(160deg,var(--accent) 10%,var(--accent2) 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tl-date{background:linear-gradient(160deg,var(--text) 30%,var(--accent) 140%);-webkit-background-clip:text;background-clip:text}
+/* stats → glass cards with an index, gradient value and a filling meter */
+.stat-row{column-gap:var(--s4);align-items:stretch}
+.stat{border:1px solid var(--glass-line);border-radius:calc(var(--radius) + 8px);padding:var(--s5) var(--s4);background:linear-gradient(160deg,var(--glass-hi) 0%,var(--glass) 60%);box-shadow:var(--card-sh);overflow:hidden}
+.stat::before{left:var(--s4);top:0;width:72px;height:4px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.stat::after{content:"";position:absolute;right:-90px;top:-90px;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) 22%,transparent),transparent 70%);pointer-events:none}
+.stat-ix{display:block;font-size:20px;letter-spacing:.16em;font-weight:650;color:var(--text3);margin-bottom:var(--s3)}
+.stat-v{background:linear-gradient(170deg,var(--text) 35%,color-mix(in srgb,var(--accent) 70%,var(--text)) 120%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat-v .sfx{-webkit-text-fill-color:var(--accent)}
+.meter{position:relative;height:8px;margin-top:var(--s4);border-radius:8px;background:color-mix(in srgb,var(--text) 9%,transparent);overflow:hidden}
+.meter i{position:absolute;inset:0;border-radius:8px;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 18px color-mix(in srgb,var(--accent) 55%,transparent);transition:transform 1.1s var(--ease)}
+.slide.is-active .meter i{transform:scaleX(var(--p,0));transition-delay:calc(.45s + var(--k,0)*.12s)}
+.measuring .meter i{transition:none!important}
+/* percentage hero: progress ring around the number */
+.ring-wrap{position:relative;width:640px;height:640px;display:flex;align-items:center;justify-content:center;margin:0 auto}
+.ring{position:absolute;inset:0;border-radius:50%;--pp:0;background:conic-gradient(from -90deg,var(--accent) 0,var(--accent2) calc(var(--pp)*360deg),color-mix(in srgb,var(--text) 8%,transparent) calc(var(--pp)*360deg));-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 34px),#000 calc(100% - 33px));mask:radial-gradient(farthest-side,transparent calc(100% - 34px),#000 calc(100% - 33px));transition:--pp 1.3s var(--ease) .3s;filter:drop-shadow(0 0 24px color-mix(in srgb,var(--accent) 45%,transparent))}
+.slide.is-active .ring{--pp:var(--p)}
+.measuring .ring{transition:none!important}
+.mega.in-ring{position:relative;line-height:1}
+/* concept / step / hierarchy cards become glass panels */
+.concept{border:1px solid var(--glass-line);border-radius:calc(var(--radius) + 6px);padding:var(--s5) var(--s4) var(--s5);background:linear-gradient(170deg,var(--glass-hi) 0%,var(--glass) 70%);box-shadow:var(--card-sh);overflow:hidden;align-self:stretch}
+.concept::before{left:var(--s4);top:0;width:56px;height:4px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.concept::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%);pointer-events:none}
+.concepts{align-items:stretch}
+.concept-l,.concept-d{position:relative;z-index:1}
+.st{border:1px solid var(--glass-line);border-radius:calc(var(--radius) + 6px);padding:var(--s4) var(--s4) var(--s5);background:linear-gradient(170deg,var(--glass-hi) 0%,var(--glass) 70%);box-shadow:var(--card-sh);position:relative}
+.steps{align-items:stretch;column-gap:var(--s4)}
+.st-arrow{background:linear-gradient(90deg,var(--accent),transparent);height:2px}
+.st-arrow::after{border-color:var(--accent)}
+.steps.wrap .st-mark{border-bottom:0;padding-bottom:0}
+.hn{background:linear-gradient(170deg,var(--glass-hi) 0%,var(--glass) 70%);border-color:var(--glass-line);box-shadow:var(--card-sh);border-radius:calc(var(--radius) + 6px);padding:var(--s4) var(--s4) var(--s5)}
+.hn::after{content:"";position:absolute;left:var(--s4);top:-1px;width:44px;height:4px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.tree::before,.tree::after,.hn::before{background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 30%,transparent))}
+/* rows: numbered pills */
+.row-n{width:auto;min-width:56px;height:38px;padding:0 12px;margin-top:2px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:20px;background:color-mix(in srgb,var(--accent) 14%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--accent)}
+.rows{border-top:0}
+.row{border-bottom:1px solid var(--line-soft);align-items:flex-start}
+.row:first-child{border-top:1px solid var(--line-soft)}
+/* timeline: glowing nodes on a line that draws itself */
+.tl-mark::before{height:2px;margin-top:-1px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent2) 60%,transparent));transform-origin:0 50%;transform:scaleX(0);transition:transform .9s var(--ease)}
+.slide.is-active .tl-mark::before{transform:scaleX(1);transition-delay:calc(.35s + var(--i,0)*.05s)}
+.measuring .tl-mark::before{transition:none!important;transform:none!important}
+.tl-mark::after{width:22px;height:22px;margin-top:-11px;background:var(--bg);border:5px solid var(--accent);box-shadow:0 0 0 6px var(--bg),0 0 28px 4px color-mix(in srgb,var(--accent) 55%,transparent)}
+/* table: header band + soft zebra */
+.data-table th{background:color-mix(in srgb,var(--accent) 12%,transparent);padding:var(--s3) var(--s3) var(--s3) var(--s3);border-bottom:2px solid var(--accent)}
+.data-table th:first-child{border-top-left-radius:var(--radius)}.data-table th:last-child{border-top-right-radius:var(--radius)}
+.data-table td{padding-left:var(--s3)}
+.data-table tbody tr:nth-child(even) td{background:var(--glass)}
+/* quote: gradient mark */
+.qmark{background:linear-gradient(160deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+/* photos: cinematic slow push-in + inner light edge */
+.photo{box-shadow:var(--card-sh)}
+.photo::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);pointer-events:none}
+.photo .ph,.bleed .ph{transform:scale(1.08);transition:transform 2.4s var(--ease)}
+.slide.is-active .photo .ph,.slide.is-active .bleed .ph{transform:scale(1)}
+/* accent rule becomes a gradient bar */
+.rule{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+/* decoration sits behind the text, never on top of the folio */
+.deco{opacity:.75;-webkit-mask-image:linear-gradient(0deg,transparent 0,#000 140px);mask-image:linear-gradient(0deg,transparent 0,#000 140px)}
+/* slides that carry their own hero graphic stay clean */
+.sect-slide .deco,.quote-slide .deco,.numb-slide .deco,.stmt-slide .deco{display:none}
+/* client reference skins keep their own flat design */
+.ref-decor .aurora,.ref-decor .halo,.ref-decor .ghost,.ref-flat .aurora,.ref-flat .halo{display:none}
 
 /* ── chrome (hidden in export) ── */
 #dots{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:20;display:flex;gap:6px}

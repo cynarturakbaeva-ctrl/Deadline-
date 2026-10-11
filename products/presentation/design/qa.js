@@ -60,6 +60,7 @@ function revise(slide){
   function set(v){fs=v;slide.style.setProperty('--fs',String(v));}
   set(1);res=measure(slide);
   function hard(r){return r.issues.filter(function(i){return i.hard;});}
+  report.initial=hard(res).map(function(i){return i.type+'('+i.detail+')';});
   var plan=[.95,.9,'drop','photo',.95,.9,'drop','note',.86,.82,.78,.74,.68,.62];
   for(var p=0;p<plan.length&&hard(res).length;p++){
     var step=plan[p];report.iterations++;
