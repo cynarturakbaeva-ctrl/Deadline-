@@ -2,7 +2,16 @@
 /** DeepSeek JSON шақыру (ортақ). Кілт жоқ немесе сәтсіз болса — лақтырады; шақырушы өзі ұстайды. */
 const { recordApiUsage } = require('./cost');
 
-async function deepseekJson(system, user, label, maxTokens = 3000, opts = {}) {
+/**
+ * DeepSeek V4 Flash шығысының ресми максимумы. Жасанды төмен лимит қойылмайды: модель қанша керек
+ * болса сонша жазып, табиғи түрде (finish_reason=stop) тоқтайды — төленетін тек нақты жазылған токен.
+ * Қажет болса env DEEPSEEK_MAX_OUTPUT арқылы өзгертуге болады.
+ */
+const DEEPSEEK_MAX_OUTPUT = Number(process.env.DEEPSEEK_MAX_OUTPUT) || 393216;
+
+async function deepseekJson(system, user, label, maxTokensHint, opts = {}) {
+  const maxTokens = DEEPSEEK_MAX_OUTPUT;   // шақырушының «hint»-і елеусіз: лимитке тірелмесін
+  void maxTokensHint;
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error('DEEPSEEK_API_KEY жоқ');
   const tries = opts.tries || 2;
@@ -28,6 +37,8 @@ async function deepseekJson(system, user, label, maxTokens = 3000, opts = {}) {
       const data = await res.json();
       recordApiUsage(data.usage || null, { label, model: 'deepseek' });
       const text = data.choices?.[0]?.message?.content || '';
+      // max_tokens-қа жетіп КЕСІЛГЕН жауап: JSON толық емес — қайталаудың мәні жоқ, шақырушы сұранысты бөлуі керек
+      if (data.choices?.[0]?.finish_reason === 'length') { const err = new Error(`truncated: response hit max_tokens=${maxTokens}`); err.truncated = true; throw err; }
       if (!text) throw new Error('empty response');
       try { return JSON.parse(text); } catch {
         const m = text.match(/\{[\s\S]*\}/);
@@ -36,6 +47,7 @@ async function deepseekJson(system, user, label, maxTokens = 3000, opts = {}) {
       }
     } catch (e) {
       lastErr = e;
+      if (e && e.truncated) break;
       await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
     } finally {
       clearTimeout(timer);
@@ -44,4 +56,4 @@ async function deepseekJson(system, user, label, maxTokens = 3000, opts = {}) {
   throw lastErr;
 }
 
-module.exports = { deepseekJson };
+module.exports = { deepseekJson, DEEPSEEK_MAX_OUTPUT };

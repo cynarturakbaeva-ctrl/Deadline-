@@ -292,7 +292,7 @@ Max 8 issues. Prefer fewer precise findings.`;
         model: DEEPSEEK_MODEL,
         thinking: { type: 'disabled' },
         temperature: 0.2,
-        max_tokens: 2000,
+        max_tokens: require('../../core/llm').DEEPSEEK_MAX_OUTPUT,   // лимитке тірелмесін (тек жазылғаны төленеді)
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: system },

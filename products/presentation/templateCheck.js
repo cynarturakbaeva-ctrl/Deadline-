@@ -105,10 +105,12 @@ function readText(blk) {
     const bef = pPr.match(/<a:spcBef>\s*<a:(spcPts|spcPct) val="(-?\d+)"/);
     paras.push({
       text: t, sz, face, bold: /^(1|true)$/.test(attr(rPr, 'b') || '') || /bold|black|heavy/i.test(face),
+      italic: /^(1|true)$/.test(attr(rPr, 'i') || '') || /italic|oblique/i.test(face),
       spc: (+(attr(rPr, 'spc') || 0)) / 100,
       lineH: !ln ? sz * 1.2 : ln[1] === 'spcPts' ? +ln[2] / 100 : sz * 1.2 * (+ln[2] / 100000),
       bef: !bef ? 0 : bef[1] === 'spcPts' ? +bef[2] / 100 : sz * (+bef[2] / 100000),
       algn: attr(pPr, 'algn') || 'l',
+      marL: (+(attr(pPr, 'marL') || 0)) / PT,
     });
   }
   if (!paras.some((p) => p.text.trim())) return null;
@@ -126,7 +128,9 @@ function readText(blk) {
 function wrap(p, avail, s, noWrap, metrics) {
   const sz = p.sz * s; const spc = p.spc * s; const k = widthFactor(p.face); const serif = isSerif(p.face);
   const em = metrics && metrics.get(p.face);
-  const W = em ? (str) => em.width(str, sz, spc) : (str) => textWidth(str, sz, serif, p.bold, spc) * k;
+  // ірі/көлбеу мәтін: рендерлер арасындағы айырма және көлбеу әріптің «ұшы» үшін қор
+  const safety = 1 + (sz >= 30 ? 0.03 : 0) + (p.italic ? 0.03 : 0);
+  const W = em ? (str) => em.width(str, sz, spc) * safety : (str) => textWidth(str, sz, serif, p.bold, spc) * k * safety;
   const words = p.text.split(/\s+/).filter(Boolean);
   if (!words.length) return { lines: [0], broken: false };
   if (noWrap) return { lines: [W(p.text)], broken: false };
@@ -134,7 +138,7 @@ function wrap(p, avail, s, noWrap, metrics) {
   const lines = []; let cur = -1; let broken = false;
   for (const w of words) {
     const ww = W(w);
-    if (ww > avail + 0.5) broken = true;
+    if (ww > avail * 0.94) broken = true;                                   // 6% қор: PowerPoint/LibreOffice/телефон ені әртүрлі
     if (cur < 0) cur = ww;
     else if (cur + sp + ww <= avail) cur += sp + ww;
     else { lines.push(cur); cur = ww; }
@@ -144,11 +148,11 @@ function wrap(p, avail, s, noWrap, metrics) {
 }
 
 /** Мәтіннің көрінетін аумағы (pt): s — кегль коэфф., dy — тік жылжу. */
-function glyphRect(t, s = 1, dy = 0) {
+function glyphRect(t, s = 1, dy = 0, dx = 0) {
   const avail = Math.max(4, t.box.w - t.ins.l - t.ins.r);
   let h = 0; let maxW = 0; let broken = false; let first = null; let last = null;
   t.paras.forEach((p, i) => {
-    const r = wrap(p, avail, s, t.noWrap, t.metrics);
+    const r = wrap(p, Math.max(4, avail - (p.marL || 0)), s, t.noWrap, t.metrics);
     if (r.broken && p.text.trim()) broken = true;
     const lh = p.lineH * s;
     if (i) h += p.bef * s;
@@ -166,7 +170,7 @@ function glyphRect(t, s = 1, dy = 0) {
   const algn = (t.paras.find((p) => p.text.trim()) || {}).algn || 'l';
   const ax = bx.x + t.ins.l;
   const w = Math.min(maxW, Math.max(avail, maxW));
-  const left = algn === 'ctr' ? ax + (avail - w) / 2 : algn === 'r' ? ax + avail - w : ax;
+  const left = (algn === 'ctr' ? ax + (avail - w) / 2 : algn === 'r' ? ax + avail - w : ax) + dx;
   return { x: left, y: top, w, h: Math.max(1, bottom - top), broken };
 }
 
@@ -179,6 +183,12 @@ const contains = (o, i, tol = 4) => o.x <= i.x + tol && o.y <= i.y + tol && o.x 
 const area = (r) => r.w * r.h;
 /** Шаблонда әуелден бар әдейі қабаттасу: кішісінің ≥30%-ы жабылған. */
 const designed = (a, b) => { const v = inter(a, b); return v > 0 && v >= 0.3 * Math.min(area(a), area(b)); };
+/** Қабаттасу үлесі (кішісінің ауданынан). */
+const fracOf = (a, b) => { const v = inter(a, b); return v > 0 ? v / Math.max(1, Math.min(area(a), area(b))) : 0; };
+/** Кедергіге тию: шаблонда рұқсат етілген үлестен +12%-дан асса ғана. */
+const PAD = 5;   // pt: мәтін суретке/пішінге «тиіп» тұрмасын
+const padded = (r) => ({ x: r.x - PAD, y: r.y - PAD, w: r.w + 2 * PAD, h: r.h + 2 * PAD });
+const hits = (r, ob) => (ob.allow ? inter(r, ob.r) > (ob.allow + 0.12) * Math.min(area(r), area(ob.r)) : inter(r, ob.kind === 'text' || ob.pad === false ? ob.r : padded(ob.r)) > 0);
 
 /** Слайдтың жоғарғы деңгейлі элементтері: мәтіндер және мәтінсіз элементтер (pt). */
 function layout(xml, ids) {
@@ -197,6 +207,9 @@ function layout(xml, ids) {
   return { texts, things };
 }
 
+/** Логотиптің бас әрпі: 1–2 әріп, ≥60pt. */
+const isInitial = (t) => { const txt = t.paras.map((p) => p.text).join('').replace(/\s/g, ''); return txt.length <= 2 && Math.max(...t.paras.map((p) => p.sz)) >= 60; };
+
 function scaleBlock(blk, s) {
   if (s === 1) return blk;
   const sc = (v) => String(Math.max(100, Math.round(+v * s)));
@@ -205,9 +218,9 @@ function scaleBlock(blk, s) {
     .replace(/(<a:(?:rPr|endParaRPr|defRPr)\b[^>]*? spc=")(-?\d+)(")/g, (m, a, v, c) => a + Math.round(+v * s) + c)
     .replace(/(<a:(?:lnSpc|spcBef|spcAft)>\s*<a:spcPts val=")(\d+)(")/g, (m, a, v, c) => a + Math.round(+v * s) + c);
 }
-function shiftBlock(blk, dyPt) {
-  if (!dyPt) return blk;
-  return blk.replace(/(<a:off x="-?\d+" y=")(-?\d+)(")/, (m, a, v, c) => a + Math.round(+v + dyPt * PT) + c);
+function shiftBlock(blk, dyPt, dxPt = 0) {
+  if (!dyPt && !dxPt) return blk;
+  return blk.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (m, x, y) => `<a:off x="${Math.round(+x + dxPt * PT)}" y="${Math.round(+y + dyPt * PT)}"`);
 }
 
 /**
@@ -221,6 +234,7 @@ function checkSlide(origXml, xml, o = {}) {
   const ids = o.ids || new Set();
   const issues = [];
   const metrics = o.metrics || null;
+  const pinned = o.pinned || new Set();
   const lay = (x) => { const L = layout(x, ids); for (const t of L.texts) t.metrics = metrics; return L; };
   const orig = lay(origXml || xml);
   const origRect = new Map();
@@ -238,17 +252,20 @@ function checkSlide(origXml, xml, o = {}) {
       const t = texts[i]; const ob = []; const or = origRect.get(keyOf(t));
       texts.forEach((u, j) => {
         if (j === i) return;
+        if (isInitial(u) || isInitial(t)) return;                             // «К|ино» логотипі: әріп пен сөз әдейі жанасады
         const ou = origRect.get(keyOf(u));
-        if (or && ou && designed(or, ou)) return;
-        ob.push({ r: rects[j], kind: 'text', j });
+        // шаблонда әдейі қабаттасқан болса — сол ДЕҢГЕЙДЕГІ қабаттасуға рұқсат; айтарлықтай көбейсе ақау
+        ob.push({ r: rects[j], kind: 'text', j, allow: or && ou ? fracOf(or, ou) : 0 });
       });
       for (const th of things) {
         if (contains(th.r, t.box, 8)) continue;                                  // мәтін осы элементтің ІШІНДЕ (фон/таблетка/карточка)
         if (area(th.r) > SW * SH * 0.45 || (th.r.w > SW * 0.95 && th.r.h > SH * 0.3)) continue;   // фон/жолақ
         const isHolder = holders.includes(th);
-        if (!isHolder && or && designed(or, th.r)) continue;                    // шаблонда әуелден үстінде тұрған
-        if (!isHolder && or && inter(or, th.r) > 0) continue;
-        ob.push({ r: th.r, kind: isHolder ? 'holder' : th.tag === 'p:pic' ? 'image' : 'shape' });
+        const allow = !isHolder && or ? fracOf(or, th.r) : 0;                   // шаблонда әуелден үстінде тұрған — сол деңгейге дейін рұқсат
+        if (allow >= 0.9) continue;                                              // мәтін әдейі суреттің/пішіннің үстінде (толық)
+        // шаблонда да осы аралықта тұрса (5pt-тен жақын) — қосымша ара талап етілмейді
+        const pad = !(or && inter(or, padded(th.r)) > 0);
+        ob.push({ r: th.r, kind: isHolder ? 'holder' : th.tag === 'p:pic' ? 'image' : 'shape', allow, pad });
       }
       return ob;
     };
@@ -259,13 +276,14 @@ function checkSlide(origXml, xml, o = {}) {
         const or = origRect.get(keyOf(texts[i]));
         if (!(or && outside(or))) return { code: 'off_slide' };                  // шаблонда әуелден шетке шыққан — әдейі
       }
-      for (const ob of obstaclesFor(i)) if (inter(r, ob.r) > 0) return { code: ob.kind === 'text' ? 'text_overlap' : ob.kind === 'holder' ? 'holder_overlap' : 'element_overlap', ob };
+      for (const ob of obstaclesFor(i)) if (hits(r, ob)) return { code: ob.kind === 'text' ? 'text_overlap' : ob.kind === 'holder' ? 'holder_overlap' : 'element_overlap', ob };
       return null;
     };
 
     let changed = false;
     for (let i = 0; i < texts.length && !changed; i++) {
       const t = texts[i];
+      if (isInitial(t)) continue;
       const pr = problemOf(i, rects[i]);
       if (!pr) continue;
       // мәтін↔мәтін: үлкен кегльдісін (тақырыпты) түзетеміз; кішісі таблетка ішінде болса — сөзсіз үлкенін
@@ -277,40 +295,54 @@ function checkSlide(origXml, xml, o = {}) {
         if (inHolder(t) && !inHolder(u)) v = j;
         else if (!(inHolder(u) && !inHolder(t)) && szOf(u) > szOf(t)) v = j;
       }
+      // бекітілген (логотип) мәтінді жылжытпаймыз — екіншісін түзетеміз
+      if (pinned.has(texts[v].name) && pr.code === 'text_overlap' && !pinned.has(texts[pr.ob.j === v ? i : pr.ob.j].name)) v = pr.ob.j === v ? i : pr.ob.j;
       const T = texts[v];
+      if (pinned.has(T.name)) continue;
       if (gaveUp.has(keyOf(T))) continue;
       if (T.rot) { gaveUp.add(keyOf(T)); issues.push({ code: pr.code, shape: T.name, fixed: false }); continue; }
       const maxSz = Math.max(...T.paras.map((p) => p.sz));
       const minS = maxSz >= 30 ? Math.max(0.45, 20 / maxSz) : Math.max(0.7, Math.min(1, 9 / maxSz));
       const best = { cost: Infinity };
-      for (let s = 1; s >= minS - 1e-6; s = Math.round((s - 0.04) * 1000) / 1000) {
+      const scales = [];
+      for (let k = 1; k > minS + 1e-6; k = Math.round((k - 0.04) * 1000) / 1000) scales.push(k);
+      scales.push(minS);                                                          // ең кіші рұқсат етілген кегль де тексеріледі
+      for (const s of scales) {
         const base = glyphRect(T, s, 0);
         const obs = obstaclesFor(v);
-        const dys = [0];
-        let down = 0; let up = 0;
+        const dys = [0]; const dxs = [0];
+        let down = 0; let up = 0; let left = 0; let right = 0;
         for (const ob of obs) {
-          if (inter(base, ob.r) <= 0) continue;
+          if (!hits(base, ob)) continue;
           const obMid = ob.r.y + ob.r.h / 2; const myMid = base.y + base.h / 2;
           if (obMid <= myMid) down = Math.max(down, ob.r.y + ob.r.h + GAP - base.y);
           else up = Math.max(up, base.y + base.h - (ob.r.y - GAP));
+          const obMidX = ob.r.x + ob.r.w / 2; const myMidX = base.x + base.w / 2;
+          if (obMidX >= myMidX) left = Math.max(left, base.x + base.w - (ob.r.x - GAP));
+          else right = Math.max(right, ob.r.x + ob.r.w + GAP - base.x);
         }
         if (base.y + base.h > SH - 2) up = Math.max(up, base.y + base.h - (SH - 2));
         if (base.y < 2) down = Math.max(down, 2 - base.y);
         if (down > 0) dys.push(down);
         if (up > 0) dys.push(-up);
+        // көлденең: тек шағын жылжу (≤12% ені) және слайд шетінен 3% ішінде қалатындай
+        if (left > 0 && left < SW * 0.12 && base.x - left >= SW * 0.03) dxs.push(-left);
+        if (right > 0 && right < SW * 0.12 && base.x + base.w + right <= SW * 0.97) dxs.push(right);
         for (const dy of dys) {
-          if (Math.abs(dy) > SH * 0.35) continue;
-          const r = glyphRect(T, s, dy);
-          if (problemOf(v, r)) continue;                                         // анықтаумен БІРДЕЙ ереже
-          const cost = (1 - s) + Math.abs(dy) / SH * 2;
-          if (cost < best.cost) Object.assign(best, { cost, s, dy });
+          for (const dx of dxs) {
+            if (Math.abs(dy) > SH * 0.35) continue;
+            const r = glyphRect(T, s, dy, dx);
+            if (problemOf(v, r)) continue;                                       // анықтаумен БІРДЕЙ ереже
+            const cost = (1 - s) + Math.abs(dy) / SH * 2 + Math.abs(dx) / SW * 2;
+            if (cost < best.cost) Object.assign(best, { cost, s, dy, dx });
+          }
         }
         if (best.cost <= (1 - s)) break;           // кішірейту бұдан әрі тек қымбаттайды
       }
       if (Number.isFinite(best.cost)) {
-        const nb = shiftBlock(scaleBlock(T.block, best.s), best.dy);
+        const nb = shiftBlock(scaleBlock(T.block, best.s), best.dy, best.dx || 0);
         out = out.replace(T.block, () => nb);
-        issues.push({ code: pr.code, shape: T.name, fixed: true, how: { scale: Math.round(best.s * 100) / 100, dyPt: Math.round(best.dy) } });
+        issues.push({ code: pr.code, shape: T.name, fixed: true, how: { scale: Math.round(best.s * 100) / 100, dyPt: Math.round(best.dy), dxPt: Math.round(best.dx || 0) } });
         changed = true;
       } else {
         issues.push({ code: pr.code, shape: T.name, fixed: false });

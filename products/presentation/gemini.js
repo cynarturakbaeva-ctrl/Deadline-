@@ -29,7 +29,7 @@ const DEEPSEEK_MODEL   = 'deepseek-v4-flash';
 // максимумына қойдық. Бұл "шексіздікке" тең — API-нің өзінде max_tokens
 // параметрі міндетті болғандықтан толық алып тастау мүмкін емес, бірақ
 // осы мән тәжірибеде шектеу жоқтай әсер етеді.
-const MAX_TOKENS_PER_CALL = 393216;
+const MAX_TOKENS_PER_CALL = require('../../core/llm').DEEPSEEK_MAX_OUTPUT;
 const SLIDES_PER_BATCH    = 3;
 
 const REQUEST_TIMEOUT_MS = 90_000; // 90 sek — kalypty generaciya ~10-30 sek alady
@@ -297,6 +297,20 @@ function coverCreditLines(m, language) {
   if (m.checkedBy) lines.push(lb.checked + ': ' + m.checkedBy);
   if (m.group) lines.push(lb.group + ': ' + m.group);
   return lines;
+}
+
+/** Титул деректері құрылымды түрде (шаблон слоттары үшін): [{ kind, label, value }]. */
+function coverCreditItems(m, language) {
+  if (!m) return [];
+  const lb = creditLabels(language);
+  const out = [];
+  if (m.performedBy) out.push({ kind: 'performed', label: lb.performed, value: m.performedBy });
+  if (m.checkedBy) out.push({ kind: 'checked', label: lb.checked, value: m.checkedBy });
+  if (m.group) out.push({ kind: 'group', label: lb.group, value: m.group });
+  if (m.university) out.push({ kind: 'university', label: '', value: m.university });
+  if (m.faculty) out.push({ kind: 'faculty', label: lb.faculty, value: m.faculty });
+  if (m.department) out.push({ kind: 'department', label: lb.department, value: m.department });
+  return out;
 }
 
 /**
@@ -587,7 +601,7 @@ Each slideTopics entry must be specific enough to guide detailed content generat
 // қайта-қайта таңдап, бүкіл презентация бірыңғай болып шығатын (нақты
 // байқалған "бәрі фон+мәтін болып қалған" регресс). Бұл параметр әр
 // келесі батчқа "мыналар қолданылып қойды, басқасын қолдан" деп айтады.
-async function generateSlideBatch(presentationTitle, allTopics, batchTopics, style, language, usedImageTypes, slotRules) {
+async function generateSlideBatch(presentationTitle, allTopics, batchTopics, style, language, usedImageTypes, slotRules, slotMode) {
   const languageRule = language
     ? `Write ALL text in ${language}. Title, subtitle, body, bullets — everything in ${language}.`
     : `Write content in the same language as the topic.`;
@@ -630,7 +644,15 @@ STRICT RULES for this slide:
   }
 
   // Template → Content: шаблон қораптарының нақты сыйымдылығы (templateFill.planTemplateSlots) — LLM лимиттен асырмай жазсын
-  const slotBlock = slotRules
+  const slotBlock = slotRules && slotMode === 'facts'
+    ? `TEMPLATE FORM: this deck will be poured into a client's designed template. A layout editor will later fit your text into its exact boxes, so here write the CONTENT each slide needs, in the shape listed below:
+- write the bullets in the listed order, one bullet per listed item; a card bullet is "Heading: explanation";
+- figures must be REAL and well known (years, dates, percentages with what they measure) — never invent statistics, people or companies;
+- titles are short and specific; every bullet carries concrete information (facts, mechanisms, examples), no filler;
+- never end a text with "…".
+${slotRules}
+`
+    : slotRules
     ? `TEMPLATE TEXT SLOTS (HARD LIMITS): the client's own PPTX template has fixed text boxes. Text longer than a box gets shrunk or cut, so these limits OVERRIDE the content rules below. Do not exceed them and use exactly the stated number of text items per slide.
 SLOT WRITING RULES:
 - Limits are in characters INCLUDING spaces. If a line is over its limit, REWRITE it shorter — never rely on it being cut off.
@@ -732,7 +754,7 @@ async function generateSlides(topic, options = {}) {
     const slotRules = Array.isArray(options.slotRules)
       ? batchTopics.map((b) => options.slotRules[b.index - 1]).filter(Boolean).join('\n')
       : '';
-    const slides = await generateSlideBatch(presentationTitle, slideTopics, batchTopics, style, language, usedImageTypes, slotRules);
+    const slides = await generateSlideBatch(presentationTitle, slideTopics, batchTopics, style, language, usedImageTypes, slotRules, options.slotMode);
     allSlides.push(...slides);
     slides.forEach(s => { if (s.composition?.image) usedImageTypes.push(s.composition.image); });
     console.log(`[Pipeline] Batch done: slides ${batchTopics.map(b => b.index).join(',')} — image types so far: [${usedImageTypes.join(', ')}]`);
@@ -821,5 +843,5 @@ async function reviewAndImproveSlides(presentation) {
   return { ...presentation, slides: allReviewed };
 }
 
-module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, ensureIntroSlide, introTitleFor, languageMismatch };
+module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, coverCreditItems, ensureIntroSlide, introTitleFor, languageMismatch };
                                                                                                                                        

@@ -33,6 +33,7 @@ function slotKind(cap) {
 /** Бір слайдтың формасы (шаблонның мәтінінсіз): тақырып ұзындығы, орындар түрі. */
 function slideProfile(p) {
   if (!p) return 'free form';
+  if (p.profile) return p.profile;                       // рөлдік схемадан (templateSchema): «title; 3 card(s): heading + text; …»
   const title = p.split
     ? `title = ${p.title.words} short striking word(s), each ≤ ${p.title.wordMax} letters`
     : p.title ? `title ≤ ${p.title.max > 0 ? p.title.max : 60} chars` : 'no title box';

@@ -21,6 +21,7 @@ const { orderedSlides, tagBlocks, xfrmOf } = require('../../design-dna/structure
 const L = require('./templateLayout');
 const QA = require('./templateCheck');
 const { embeddedMetrics } = require('./embeddedMetrics');
+const { materializePlaceholders } = require('./phGeometry');
 const { slotKind } = require('./templateStory');
 
 const MAX_BYTES = 80 * 1024 * 1024;
@@ -253,7 +254,9 @@ function fitLines(lines, o) {
   const orig = +origSz100 / 100;
   const insets = o.insets || { l: 0, r: 0, t: 0, b: 0 };
   // Arial/Times емес қаріп (метрикасы белгісіз) — 6% қор
-  const wPt = Math.max(10, box.w / 12700 - insets.l - insets.r) / (single ? DISPLAY_SAFETY : 1) / (o.unknownFace ? 1.06 : 1);
+  // маркер шегінісі (marL): «• For Call» сияқты абзацта мәтін ені қораптан тар
+  const marL = (+(((pPr || '').match(/ marL="(\d+)"/) || [])[1]) || 0) / 12700;
+  const wPt = Math.max(10, box.w / 12700 - insets.l - insets.r - marL) / (single ? DISPLAY_SAFETY : 1) / (o.unknownFace ? 1.06 : 1);
   // box.h — шаблон қорабының биіктігі; o.grow — оның ТӨМЕНІНДЕГІ бос орын (келесі пішінге/слайд шетіне дейін)
   // 6% рұқсат тек қорап өз орнында қалғанда; қорап төмен өссе (grow) — рұқсат жоқ, әйтпесе мәтін көршіге/жылжытылған элементке түседі
   const hPt = Math.max(8, (box.h + (o.grow || 0)) / 12700 - insets.t - insets.b) * (o.grow ? 1 : 1.06);
@@ -278,7 +281,7 @@ function fitLines(lines, o) {
     const lineH = ratio * sz;
     arr.forEach((l, i) => { total += counts[i] * lineH + (i ? gapOf(bef, sz) + gapOf(aft, sz) : 0); });
     const oneWordOk = !single || arr.every((l) => textWidthPt(l, sz, serif, bold, spc) <= wPt);
-    const wordsOk = arr.every((l) => l.split(/\s+/).every((w) => textWidthPt(w, sz, serif, bold, spc) <= wPt));   // сөз ортасынан үзілмейді
+    const wordsOk = arr.every((l) => l.split(/\s+/).every((w) => textWidthPt(w, sz, serif, bold, spc) <= wPt * 0.94));   // сөз ортасынан үзілмейді (6% қор: рендерлер айырмасы)
     return { total, lineH, ratio, ok: total <= hPt && oneWordOk && wordsOk, scale, wrapped, lines: counts.reduce((a, b) => a + b, 0) };
   };
 
@@ -363,6 +366,22 @@ function shortenLine(cur) {
   return (tidy(word) || word) + '.';
 }
 
+/**
+ * Қазақ әріптері жоқ қаріптің орнына СТИЛІ ұқсас, барлық құрылғыда бар қаріп:
+ *   sans / display → Arial (қалыңдығы, көлбеулігі сақталады), serif → Times New Roman,
+ *   script (каллиграфия) → Times New Roman Italic, mono → Courier New.
+ * Стиль белгісіз болса (ескі жол): serif немесе ≥30pt → Times, қалғаны → Arial.
+ */
+function replacementFor(face, szPt, styles) {
+  const st = styles && styles.get && styles.get(face);
+  if (!st) return { face: fallbackFace(face, szPt), italic: /italic|oblique/i.test(face), bold: BOLD_NAME.test(face) };
+  const face2 = st.cls === 'serif' ? SAFE_FALLBACK : st.cls === 'script' ? SAFE_FALLBACK : st.cls === 'mono' ? 'Courier New' : SAFE_SANS;
+  return { face: face2, italic: st.italic || st.cls === 'script', bold: st.weight >= 600 || BOLD_NAME.test(face) };
+}
+
+/** rPr атрибутын қою (бар болса мәнін ауыстырады; екінші рет қоспайды — XML бұзылмасын). */
+const setAttr = (r, name, val) => (new RegExp(` ${name}="[^"]*"`).test(r) ? r.replace(new RegExp(` ${name}="[^"]*"`), ` ${name}="${val}"`) : r.replace(/^<a:rPr/, `<a:rPr ${name}="${val}"`));
+
 /** rPr ішінде: қаріпті ауыстыру (кирилл қамтымаса) және тіл. Кегль fitLines-та қойылады. */
 function adaptRPr(rPr, lines, ctx) {
   if (!rPr) return rPr;
@@ -370,17 +389,18 @@ function adaptRPr(rPr, lines, ctx) {
   if (hasCyr(lines.join(' '))) {
     const bad = (ctx && ctx.badFonts) || new Set();
     const szPt = (+((r.match(/ sz="(\d+)"/) || [])[1] || 0)) / 100;
-    let boldName = false;
+    let rep = null;
     r = r.replace(/(<a:(?:latin|ea|cs|sym) [^>]*?typeface=")([^"]+)(")/g, (m, a, face, c) => {
       if (!bad.has(face)) return m;
-      if (BOLD_NAME.test(face)) boldName = true;
-      return a + fallbackFace(face, szPt) + c;
+      const x = replacementFor(face, szPt, ctx && ctx.fontStyles);
+      if (!rep) rep = x;
+      return a + x.face + c;
     });
-    // «Agrandir Bold» сияқты атаудағы жуандық ауыстырғанда жоғалмасын (Times/Arial-да b="1" керек)
-    // b= бар болса (1/true/0/false) — тек мәнін ауыстырамыз; екінші b= қосу XML-ді бұзады (PowerPoint ашпайды)
-    if (boldName) r = / b="[^"]*"/.test(r) ? r.replace(/ b="[^"]*"/, ' b="1"') : r.replace(/^<a:rPr/, '<a:rPr b="1"');
-    if (/ lang="[^"]*"/.test(r)) r = r.replace(/ lang="[^"]*"/, ' lang="kk-KZ"');
-    else r = r.replace(/^<a:rPr/, '<a:rPr lang="kk-KZ"');
+    // «Agrandir Bold», «Touvlo Italics» сияқты атаудағы/файлдағы жуандық пен көлбеулік ауыстырғанда жоғалмасын.
+    // Атрибут бар болса — тек мәні ауысады (екінші b= қосу XML-ді бұзады, PowerPoint ашпайды)
+    if (rep && rep.bold) r = setAttr(r, 'b', '1');
+    if (rep && rep.italic) r = setAttr(r, 'i', '1');
+    r = / lang="[^"]*"/.test(r) ? r.replace(/ lang="[^"]*"/, ' lang="kk-KZ"') : r.replace(/^<a:rPr/, '<a:rPr lang="kk-KZ"');
   }
   return r;
 }
@@ -401,7 +421,7 @@ function replaceShapeText(block, lines, ctx) {
   const tx = txBodyOf(block);
   if (!tx) return block;
   let bodyPr = elemOf(tx, 'a:bodyPr') || '<a:bodyPr/>';
-  if (ctx && ctx.single) bodyPr = noWrap(bodyPr);          // бір сөз: ешқашан екінші қатарға түспейді
+  if (ctx && ctx.single && !ctx.keepWrap) bodyPr = noWrap(bodyPr);   // бір сөз: ешқашан екінші қатарға түспейді (слот режимінде орам сақталады — қорап орны жылжымайды)
   const lstStyle = elemOf(tx, 'a:lstStyle');
   const paras = tagBlocks(tx, 'a:p');
   let pPr = '';
@@ -588,8 +608,9 @@ function emptyTextShapes(xml) {
 /** Слайд пішіндерін рөлдерге бөледі (мәтінге тәуелсіз): бас әріптер, ірі сөздер, жұптар, дене қораптары. */
 function classify(xml, ctx) {
   const shapes = textShapes(xml);
-  // «01», «2» сияқты нөмір белгілері шаблонда қалады (өзгертілмейді)
-  let content = shapes.filter((s) => !/^\d{1,3}[.)]?$/.test(s.text || ''));
+  // «01», «2», «03.» сияқты реттік нөмір белгілері шаблонда қалады (өзгертілмейді)
+  // (тек ≤2 таңбалы реттік нөмір: «180», «2024» сияқты сандар — мазмұн, ауыстырылады)
+  let content = shapes.filter((s) => !/^0?\d{1,2}[.)]?$/.test((s.text || '').trim()));
 
   // Сәндік БАС ӘРІПТЕР: 1 таңба (≥60pt) немесе 2 таңба (≥200pt)
   const initials = content.filter((s) => { const n = s.text.replace(/\s/g, '').length; const z = szOf(s.block); return (n <= 1 && z >= 6000) || (n <= 2 && z >= 20000); })
@@ -693,10 +714,88 @@ function obstacleLeft(xml, dsp, ctx) {
   return left;
 }
 
+/**
+ * Бас әріп ауыстырылғанда (мыс. каллиграфиялық «F» → қазақша «К»), оның ені өзгереді: сөздің қалған бөлігі
+ * («ино») бұрынғы орнында қалса, арасында үлкен бос орын пайда болады («К   ИНО»). Сөз қорабын жаңа әріптің
+ * еніне сәйкес солға жылжытамыз (оң шеті сол қалпында). Бос орын бұрынғыдан ҮЛКЕН болмайды.
+ */
+function closeLogoGap(p, before, letter, ctx, setBlock) {
+  const ini = xfrmOf(p.ini.block), dsp = xfrmOf(p.dsp.block);
+  if (!ini || !dsp) return;
+  const M = ctx && ctx.metrics;
+  const widthOf = (face, str, sz) => {
+    const em = M && M.get && M.get(face);
+    if (em) return em.width(str, sz, 0);
+    return textWidthPt(str, sz, isSerifFace(face), false);
+  };
+  const ins = (blk, n) => { const m = blk.match(new RegExp('<a:bodyPr[^>]*? ' + n + '="(\\d+)"')); return (m ? +m[1] : 91440) / 12700; };
+  const algnOf = (blk) => (blk.match(/<a:pPr[^>]*? algn="(\w+)"/) || [])[1] || 'l';
+  const iniFace = faceOfBlock(p.ini.block), iniSz = szOf(p.ini.block) / 100;
+  const newW = widthOf(iniFace, letter, iniSz);
+  if (!newW) return;
+  // бас әріптің нақты көрінетін оң шеті (қорап туралауын ескеріп)
+  const ix = ini.x / 12700, iw = ini.w / 12700;
+  const iInner = iw - ins(p.ini.block, 'lIns') - ins(p.ini.block, 'rIns');
+  const ia = algnOf(p.ini.block);
+  const iniStart = ia === 'ctr' ? ix + ins(p.ini.block, 'lIns') + (iInner - newW) / 2 : ia === 'r' ? ix + iw - ins(p.ini.block, 'rIns') - newW : ix + ins(p.ini.block, 'lIns');
+  const iniEnd = iniStart + newW;
+  // сөз бөлігі әріптен кейін тікелей, СОЛ жақтан тураланады (каллиграфиялық әріптің «құйрығы» жоқ — ара қалмасын)
+  const dspSz = szOf(p.dsp.block) / 100;
+  const gap = dspSz * 0.04;
+  const newX = Math.round((iniEnd + gap - ins(p.dsp.block, 'lIns')) * 12700);
+  const right = Math.max(dsp.x + dsp.w, p.end || 0);
+  // қорап ені = сөздің өз ені (+қор): кей бағдарламалар (LibreOffice) wrap=none қорапта мәтінді ортадан өсіреді
+  const dspText = [...p.dsp.block.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join('');
+  const dW = widthOf(faceOfBlock(p.dsp.block), dspText, dspSz);
+  const cxWant = Math.round((dW * 1.08 + ins(p.dsp.block, 'lIns') + ins(p.dsp.block, 'rIns')) * 12700);
+  const cxNew = Math.max(100000, Math.min(Math.max(right - newX, 100000), cxWant));
+  let nb = p.dsp.block.replace(/<a:off x="(-?\d+)" y="(-?\d+)"\/>\s*<a:ext cx="(\d+)" cy="(\d+)"\/>/, (m, x, y, cx, cy) => `<a:off x="${newX}" y="${y}"/><a:ext cx="${cxNew}" cy="${cy}"/>`);
+  nb = nb.replace(/(<a:pPr[^>]*? algn=")\w+(")/g, '$1l$2');
+  // табан сызықтарын теңестіру (екеуі бір сөз болып оқылсын)
+  const bIni = baselineOf(p.ini.block, ini), bDsp = baselineOf(nb, xfrmOf(nb));
+  if (Math.abs(bIni - bDsp) > dspSz * 0.03 * 12700) nb = nb.replace(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/, (m, x, y) => `<a:off x="${x}" y="${+y + (bIni - bDsp)}"/>`);
+  setBlock(p.dsp, nb);
+  p.dsp.x = xfrmOf(nb);
+  void before;
+  return { start: iniStart, end: newX / 12700 + ins(nb, 'lIns') + dW, space: dspSz * 0.28 };
+}
+
+/** Бір қатардағы логотип сөздерін жинақтау: сөздер арасы ≈ бос орын, бүкіл логотип бұрынғы ортасында. */
+function packLogoRow(pairs, ext, setBlock) {
+  const ok = pairs.every((p, i) => ext[i]);
+  if (!ok || pairs.length < 2) return;
+  // бір қатар ма: сөз бөліктерінің тік аралықтары қиылысады (бағанада орналасса — тимейміз)
+  const d0 = pairs[0].dsp.x;
+  if (pairs.some((p) => Math.min(p.dsp.x.y + p.dsp.x.h, d0.y + d0.h) - Math.max(p.dsp.x.y, d0.y) < Math.min(p.dsp.x.h, d0.h) * 0.3)) {
+    if (process.env.DEBUG_LOGO) console.log('[logo] not one row');
+    return;
+  }
+  const origSpan = [ext[0].start, ext[ext.length - 1].end];
+  const moveBy = (p, dxPt) => {
+    const d = Math.round(dxPt * 12700);
+    for (const sh of [p.ini, p.dsp]) {
+      const nb = sh.block.replace(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/, (m, x, y) => `<a:off x="${+x + d}" y="${y}"/>`);
+      setBlock(sh, nb); sh.x = xfrmOf(nb);
+    }
+  };
+  let cursor = ext[0].end;
+  const shifts = [0];
+  for (let i = 1; i < pairs.length; i++) {
+    const want = cursor + ext[i - 1].space;
+    const sh = Math.min(0, want - ext[i].start);                          // тек солға (жинақтау)
+    shifts.push(sh);
+    cursor = ext[i].end + sh;
+  }
+  const newSpan = [ext[0].start, cursor];
+  const recenter = ((origSpan[0] + origSpan[1]) - (newSpan[0] + newSpan[1])) / 2;
+  if (process.env.DEBUG_LOGO) console.log('[logo]', JSON.stringify(ext), shifts, recenter);
+  pairs.forEach((p, i) => { const d = shifts[i] + recenter; if (Math.abs(d) > 1) moveBy(p, d); });
+}
+
 function fillSlide(xml, slide, ctx) {
   if (!xml || !slide) return xml;
   const { title, body } = linesForSlide(slide);
-  const c = { badFonts: ctx && ctx.badFonts };
+  const c = { badFonts: ctx && ctx.badFonts, fontStyles: ctx && ctx.fontStyles };
   const cl = classify(xml, ctx);
   const { initials, pairs } = cl;
   let content = cl.content;
@@ -713,8 +812,9 @@ function fillSlide(xml, slide, ctx) {
     const box = bx && maxW ? { w: Math.min(bx.w, Math.max(maxW, bx.w * 0.25)), h: bx.h } : bx;
     if (single || noGrow || !bx || !(lines || []).some(Boolean)) {
       const grow = !noGrow && bx ? roomBelow(out, s.block, W, H) : 0;
-      const r = replaceShapeText(s.block, lines, { ...c, box, single, grow, growBox: true, fontPt });
+      const r = replaceShapeText(s.block, lines, { ...c, box, single: !!single, keepWrap: single === 'line', grow, growBox: true, fontPt });
       out = out.replace(s.block, () => r);
+      s.block = r; s.x = xfrmOf(r) || s.x;                  // кейінгі өлшеулер (логотип арасы) жаңа қаріппен жүрсін
       return;
     }
     // ── Сатылы сыйғызу: 1) қорапты бос орынға үлкейту → 2) кедергіні кішкене жылжыту → 3) қаріпті кішірейту → 4) ең соңында ғана қысқарту
@@ -832,10 +932,18 @@ function fillSlide(xml, slide, ctx) {
   };
   const setBlock = (s, nb) => { out = out.replace(s.block, () => nb); s.block = nb; };
 
+  // Слот жоспары (templateWriter): әр қорапқа өз мәтіні id бойынша — рет бойынша шашу жоқ
+  const sf = ctx && ctx.slotFill;
+  const slotLines = (id) => (sf && sf.byId && Array.isArray(sf.byId[id]) ? sf.byId[id] : []);
+  const slotSingle = (id) => !!(sf && sf.single && sf.single[id]);
   if (pairs) {
-    const words = String(title).split(/[\s:–—-]+/).map((w) => w.replace(/[^\p{L}\p{N}]/gu, '')).filter((w) => /\p{L}/u.test(w));
-    const ws = pairs.map((_, i) => (words[i] || '').toUpperCase());
+    const srcWords = sf && Array.isArray(sf.logo) && sf.logo.length ? sf.logo : String(title).split(/[\s:–—-]+/);
+    const words = srcWords.map((w) => String(w).replace(/[^\p{L}\p{N}]/gu, '')).filter((w) => /\p{L}/u.test(w));
+    // сөздің қалған бөлігінің регистрі шаблондағыдай («ilm» → «ино», «ISTORY» → «ИСТОРИЯ»)
+    const upperRest = (p) => { const t = (p.dsp.text || '').replace(/[^\p{L}]/gu, ''); return !t || t === t.toUpperCase(); };
+    const ws = pairs.map((p, i) => { const w = words[i] || ''; return w ? w.slice(0, 1).toLocaleUpperCase('kk-KZ') + (upperRest(p) ? w.slice(1).toLocaleUpperCase('kk-KZ') : w.slice(1).toLocaleLowerCase('kk-KZ')) : ''; });
     const k = logoScale(pairs, ws);
+    const logoExt = [];
     pairs.forEach((p, i) => {
       const w = ws[i];
       if (w && k < 0.999) {
@@ -850,13 +958,25 @@ function fillSlide(xml, slide, ctx) {
         p.dsp.x = xfrmOf(p.dsp.block);
         p.limit = p.end - p.dsp.x.x;
       }
+      const iniBefore = { face: faceOfBlock(p.ini.block), sz: szOf(p.ini.block) / 100, letter: (p.ini.text || '').trim().slice(0, 1) };
       put(p.ini, w ? [w.slice(0, 1)] : [], undefined, false, true);
       put(p.dsp, w.slice(1) ? [w.slice(1)] : [], p.limit, true, true);
+      logoExt[i] = w && w.length > 1 ? closeLogoGap(p, iniBefore, w.slice(0, 1), ctx, setBlock) : null;
     });
+    packLogoRow(pairs, logoExt, setBlock);
     if (content.length) {
-      const groups = distributeLines(body, content);
-      content.forEach((s, i) => put(s, groups[i]));
+      if (sf) content.forEach((s, id) => put(s, slotLines(id), undefined, slotSingle(id) ? 'line' : false));
+      else {
+        const groups = distributeLines(body, content);
+        content.forEach((s, i) => put(s, groups[i]));
+      }
     }
+    return out;
+  }
+  if (sf && content.length) {
+    const letters = String(title).split(/\s+/).map(firstLetter).filter(Boolean);
+    initials.forEach((s, i) => put(s, letters[i] ? [letters[i]] : []));
+    content.forEach((s, id) => put(s, slotLines(id), undefined, slotSingle(id) ? 'line' : false));
     return out;
   }
   // LLM орналасу жоспары (templateLayoutPlan): рөл, кегль, жылжыту — LLM шешеді, сыйғызуды қозғалтқыш қорғайды
@@ -904,7 +1024,8 @@ function capacityChars(block, comfort, maxW, growEmu) {
   if (!orig) return 0;
   const bodyPr = elemOf(tx, 'a:bodyPr');
   const inset = (n, d) => { const m = bodyPr.match(new RegExp(' ' + n + '="(\\d+)"')); return (m ? +m[1] : d) / 12700; };
-  const wPt = Math.max(10, Math.min(bx.w, maxW || bx.w) / 12700 - inset('lIns', 91440) - inset('rIns', 91440));
+  const marL = (+(((pPr || '').match(/ marL="(\d+)"/) || [])[1]) || 0) / 12700;
+  const wPt = Math.max(10, Math.min(bx.w, maxW || bx.w) / 12700 - inset('lIns', 91440) - inset('rIns', 91440) - marL);
   const hPt = Math.max(8, (bx.h + (growEmu || 0)) / 12700 - inset('tIns', 45720) - inset('bIns', 45720));
   const serif = isSerifFace(faceOf(block));
   const floor = orig >= 30 ? Math.max(20, orig * 0.35) : Math.max(11, orig * 0.6);
@@ -936,7 +1057,7 @@ function planTemplateSlots(templateBuf) {
   const { W, H } = slideSize(files);
   const alphaCache = new Map();
   return orderedSlides(files).map((sp) => {
-    const xml = QA.hideDeco(files.get(sp) || '', QA.seeThroughIds(files, sp, alphaCache)).xml;
+    const xml = QA.hideDeco(materializePlaceholders(files, sp, files.get(sp) || ''), QA.seeThroughIds(files, sp, alphaCache)).xml;
     const cl = classify(xml, { W, H });
     if (cl.pairs) {
       // сөз ең көбі LOGO_KMIN-ге дейін кішірейе алады (әріппен бірге) — әріп саны сол бойынша
@@ -1038,6 +1159,8 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
   const alphaCache = new Map();
   let metrics = null;
   try { metrics = embeddedMetrics(files); } catch (e) { metrics = null; }
+  let fontStyles = null;
+  try { fontStyles = require('./fontStyle').templateFontStyles(files, metrics); } catch (e) { fontStyles = null; }
   const list = Array.isArray(slides) ? slides : [];
   if (slidePaths.length && list.length && slidePaths.length !== list.length) {
     console.warn(`[TemplateFill] слайд саны сәйкес емес: шаблон ${slidePaths.length}, контент ${list.length}`);
@@ -1047,11 +1170,15 @@ function fillTemplatePptx(templateBuf, slides, opts = {}) {
     if (!xml) return;
     // мөлдір безендірулер (жарқыл, дақ) мәтінге кедергі емес: толтыру кезінде жасырып, кейін орнына қоямыз
     const ids = QA.seeThroughIds(files, sp, alphaCache);
-    const hid = QA.hideDeco(xml, ids);
-    let filled = dedupeAttrs(hid.restore(fillSlide(hid.xml, list[i], { W, H, badFonts, layoutPlan: opts.layout && opts.layout[i] })));
+    // placeholder-лердің мұраланған орны/кеглі слайдқа нақты жазылады — сыйғызу мен тексеру олармен де жұмыс істейді
+    const hid = QA.hideDeco(materializePlaceholders(files, sp, xml), ids);
+    let filled = dedupeAttrs(hid.restore(fillSlide(hid.xml, list[i] || (opts.slotFill && opts.slotFill[i] ? {} : null), { W, H, badFonts, metrics, fontStyles, layoutPlan: opts.layout && opts.layout[i], slotFill: opts.slotFill && opts.slotFill[i] })));
     // Соңғы тексеруші: мәтін ↔ мәтін/таблетка/сурет қабаттасуы, сөз бөлінуі, слайдтан шығу → жылжыту/кішірейту
     if (opts.qa !== false && process.env.TEMPLATE_QA !== '0') try {
-      const qa = QA.checkSlide(xml, filled, { W, H, ids, metrics });
+      const cl0 = classify(hid.xml, { W, H });
+      const nameOf = (b) => (b.match(/<p:cNvPr [^>]*name="([^"]*)"/) || [])[1];
+      const pinned = new Set(cl0.pairs ? cl0.pairs.flatMap((pp) => [nameOf(pp.ini.block), nameOf(pp.dsp.block)]).filter(Boolean) : []);
+      const qa = QA.checkSlide(xml, filled, { W, H, ids, metrics, pinned });
       if (qa.issues.length) {
         console.log(`[TemplateQA] ${sp}: ${qa.issues.map((q) => `${q.code}(${q.shape})${q.fixed ? `→${q.how.scale}×,${q.how.dyPt}pt` : ' ТҮЗЕЛМЕДІ'}`).join('; ')}`);
         if (Array.isArray(opts.qaReport)) opts.qaReport.push({ slide: i + 1, issues: qa.issues });

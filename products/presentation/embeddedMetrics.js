@@ -114,4 +114,4 @@ function embeddedMetrics(files) {
   return out;
 }
 
-module.exports = { embeddedMetrics, parseFont };
+module.exports = { embeddedMetrics, parseFont, ttfOf };

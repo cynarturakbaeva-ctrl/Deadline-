@@ -239,7 +239,7 @@ async function deepseekJson(systemPrompt, userPrompt, label, timeoutMs, maxToken
         thinking: { type: 'disabled' },
         temperature: 0.3,
         top_p: 0.9,
-        max_tokens: maxTokens || 4000,
+        max_tokens: require('../../core/llm').DEEPSEEK_MAX_OUTPUT,   // лимитке тірелмесін (тек жазылғаны төленеді)
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },

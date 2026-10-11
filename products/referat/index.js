@@ -49,7 +49,7 @@ async function deepseekJson(system, user, label, maxTokens = 8000) {
           model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
           thinking: { type: 'disabled' },
           temperature: 0.7,
-          max_tokens: maxTokens,
+          max_tokens: require('../../core/llm').DEEPSEEK_MAX_OUTPUT,   // лимитке тірелмесін (тек жазылғаны төленеді)
           response_format: { type: 'json_object' },
           messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         }),

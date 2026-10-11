@@ -6,7 +6,9 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
-const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch, applyCoverCredits } = require('./gemini');
+const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch, applyCoverCredits, coverCreditItems } = require('./gemini');
+const { analyzeTemplate, schemaRuleLine } = require('./templateSchema');
+const { writeSlots } = require('./templateWriter');
 const { findImage, fallbackQueries, isLatinQuery } = require('./images');
 const { limitTables, applyDeckTheme } = require('./deckPolish');
 const { analyzeReference, referenceItems } = require('../../design-dna');
@@ -192,6 +194,19 @@ async function generatePresentation(userInput, options = {}) {
       console.log(`[Pipeline] id=${genId} Template slots planned: ${plan.length} слайд`);
     } catch (e) { console.warn(`[Pipeline] id=${genId} Slot plan failed (continuing): ${e.message}`); slotRules = null; }
   }
+  // Template → Content v2: қораптардың РӨЛДІК схемасы (мәзір, тақырып, сәндік сөз, карточка, сан, авторлар…).
+  // Схема болса: мазмұн генераторына жұмсақ «фактілер формасы», ал қораптарға мәтінді templateWriter id бойынша жазады.
+  let tplSchema = null;
+  if (slotPlan) {
+    try {
+      tplSchema = analyzeTemplate(referencePptxBuf);
+      if (tplSchema.slides.length !== slotPlan.length) throw new Error(`slide count ${tplSchema.slides.length} ≠ ${slotPlan.length}`);
+      slotRules = tplSchema.slides.map(schemaRuleLine);
+      slotPlan = slotPlan.map((p, k) => ({ ...p, profile: tplSchema.slides[k].profile }));
+      const nSlots = tplSchema.slides.reduce((n, x) => n + x.slots.length, 0);
+      console.log(`[Pipeline] id=${genId} Template schema: ${nSlots} слот, chrome=${tplSchema.deck.chrome.length}, tags=${tplSchema.deck.tags.length}, logo=${tplSchema.slides.filter((x) => x.logo).length}`);
+    } catch (e) { console.warn(`[Pipeline] id=${genId} Template schema failed (old slot path): ${e.message}`); tplSchema = null; }
+  }
   const briefBase = materialText
     ? `${userInput}\n\n[SOURCE MATERIALS PROVIDED BY THE USER — study fully, use its structure, facts, sections and requirements]\n${materialText}`
     : userInput;
@@ -213,7 +228,7 @@ async function generatePresentation(userInput, options = {}) {
   await onProgress('content', 'Мазмұн жазылуда...');
   console.log('[Pipeline] Generating content...');
   let presentation = await generateSlides(topic, {
-    slideCount, language, style, clientBrief: briefForLlm, coverMeta, slotRules, outline: storyOutline,
+    slideCount, language, style, clientBrief: briefForLlm, coverMeta, slotRules, outline: storyOutline, slotMode: tplSchema ? 'facts' : undefined,
   });
   // Модель кейде тақырып тілінде жазып кетеді (орысша таңдалса да қазақша шығады) → 1 рет қайта жазамыз
   const langIssue = mode === 'template' ? null : languageMismatch(presentation && presentation.slides, language);
@@ -221,7 +236,7 @@ async function generatePresentation(userInput, options = {}) {
     console.warn(`[Pipeline] Language mismatch (${langIssue}) — regenerating once`);
     try {
       const retry = await generateSlides(topic, {
-        slideCount, language, style, coverMeta, slotRules,
+        slideCount, language, style, coverMeta, slotRules, slotMode: tplSchema ? 'facts' : undefined,
         clientBrief: userInput + reqBrief + `\n\n[IMPORTANT: write the ENTIRE presentation in ${language}. The topic above may be in another language — translate it.]`,
       });
       if (retry && Array.isArray(retry.slides) && retry.slides.length >= 2 && !languageMismatch(retry.slides, language)) presentation = retry;
@@ -410,7 +425,25 @@ async function generatePresentation(userInput, options = {}) {
 
   const isTemplateFill = mode === 'template' && referencePptxBuf && refAnalysis && refAnalysis.outline;
   let fitInfo = null; let layoutPlanned = null;
-  if (isTemplateFill) {
+  let slotFill = null;
+  let templateHealth = null;
+  let templateGeomScore = null;
+  if (isTemplateFill && tplSchema) {
+    // v2: әр қорапқа өз рөліне сай мәтін (LLM) → тексеру → тек қате слоттарды қайта жазу → детерминді қорғаныс
+    try {
+      await onProgress('template', 'Шаблон қораптарына мәтін жазылуда...');
+      const wr = await writeSlots({ schema: tplSchema, slides, topic, language, deckTitle: title || topic, coverMeta, creditLines: coverCreditItems });
+      slotFill = wr.plan;
+      fitInfo = { writer: { retried: wr.report.retried, fallback: wr.report.fallback, llmFailed: wr.report.llmFailed, problems: wr.report.problems.length } };
+      layoutPlanned = 0;
+      console.log(`[Pipeline] Template writer: retried=${wr.report.retried} fallback=${wr.report.fallback} llmFailed=${wr.report.llmFailed}${wr.report.problems.length ? ' problems=' + wr.report.problems.slice(0, 8).join(' ') : ''}`);
+    } catch (err) {
+      console.warn(`[Pipeline] Template writer failed (old path): ${err.message}`);
+      slotFill = null;
+    }
+  }
+  let layout = null;
+  if (isTemplateFill && !slotFill) {
     // Толтырудан бұрын: мәтін шаблон қораптарының лимитіне сәйкес пе? Сәйкес емес слайдтарды LLM ақау бойынша қайта жазады (≤3 айналым)
     try {
       await onProgress('template', 'Шаблон макетін тексеру...');
@@ -424,7 +457,6 @@ async function generatePresentation(userInput, options = {}) {
     }
     restoreCover(slides);
     // LLM орналасу жоспары: қай мәтін қай қорапқа, кегль, кедергіні жылжыту. Қате болса — детерминді толтыру (layout = null).
-    let layout = null;
     try {
       await onProgress('template', 'Мәтін орналасуын жоспарлау...');
       layout = await planLayout({ templateBuf: referencePptxBuf, slides, topic, language });
@@ -433,17 +465,26 @@ async function generatePresentation(userInput, options = {}) {
     } catch (err) {
       console.warn(`[Pipeline] Template layout plan failed (continuing): ${err.message}`);
     }
+  }
+  if (isTemplateFill) {
     await onProgress('template', 'Шаблонға мәтін салынуда...');
     try {
       pptxPath = path.join(os.tmpdir(), `template-${uniqueId()}.pptx`);
       const qaReport = [];
-      fs.writeFileSync(pptxPath, fillTemplatePptx(referencePptxBuf, slides, { language, layout, qaReport }));
+      fs.writeFileSync(pptxPath, fillTemplatePptx(referencePptxBuf, slides, { language, layout, slotFill, qaReport }));
       // соңғы тексерушінің нәтижесі үйрену жүйесіне: қай ақау қанша, нешеуі түзелді
       const qa = qaReport.flatMap((r) => r.issues);
+      const unfixed = qa.filter((q) => !q.fixed).length;
       if (qa.length) {
-        fitInfo = { ...(fitInfo || {}), qa: { found: qa.length, fixed: qa.filter((q) => q.fixed).length, codes: [...new Set(qa.map((q) => q.code))] } };
-        console.log(`[Pipeline] Template QA: ${qa.length} ақау, ${qa.filter((q) => q.fixed).length} түзелді`);
+        fitInfo = { ...(fitInfo || {}), qa: { found: qa.length, fixed: qa.length - unfixed, codes: [...new Set(qa.map((q) => q.code))] } };
+        console.log(`[Pipeline] Template QA: ${qa.length} ақау, ${qa.length - unfixed} түзелді`);
       }
+      // Шаблон «денсаулығы» (шынайы баға): түзелмеген геометрия ақауы, LLM бермей қорғаныспен толтырылған слот, қалған мәтін ақауы
+      const w = (fitInfo && fitInfo.writer) || {};
+      const oldRemaining = fitInfo && Number.isFinite(fitInfo.after) ? fitInfo.after : 0;
+      templateHealth = Math.max(0, Math.min(100, 100 - unfixed * 12 - (w.fallback || 0) * 3 - (w.problems || 0) * 4 - oldRemaining * 2));
+      templateGeomScore = Math.max(45, 100 - unfixed * 12);
+      console.log(`[Pipeline] Template health=${templateHealth} (unfixedQA=${unfixed} fallback=${w.fallback || 0} problems=${w.problems || 0}${oldRemaining ? ` oldRemaining=${oldRemaining}` : ''})`);
       console.log('[Pipeline] Template-Fill: PPTX = пайдаланушы шаблоны, тек мәтін ауыстырылды');
     } catch (err) {
       // Рендерге (сурет-слайд) түспейміз: клиентке өңделетін PPTX керек. Қате болса — кредит қайтарылады.
@@ -514,7 +555,7 @@ async function generatePresentation(userInput, options = {}) {
   const buildAndRender = async (attempt) => {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
     restoreCover(slides);
-    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis ? refAnalysis.outline.roles : null }), 'utf8');
+    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
     await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Рендер және PPTX...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
     cost.addRenderAttempt();
@@ -679,12 +720,16 @@ async function generatePresentation(userInput, options = {}) {
       : (visualStats.requested
         ? Math.round(40 + 60 * (visualStats.ok / Math.max(visualStats.requested, 1)))
         : 75),
-    compositionScore: qualityMeta.qualityScore,
+    // шаблон режимінде композиция мен рендер — шаблонды толтырудың шынайы нәтижесі (бұрын 98 «алдайтын»)
+    compositionScore: templateHealth != null ? Math.max(30, templateHealth) : qualityMeta.qualityScore,
     readabilityScore: qualityMeta.qualityScore,
     sourceScore: 80,
-    renderScore: overflowWarnings && overflowWarnings.length
-      ? Math.max(40, 100 - overflowWarnings.length * 15)
-      : 95,
+    // рендер бағасы тек геометрия ақауынан (жеткізуді тоқтататын шлюзге қорғаныс слоттары әсер етпейді)
+    renderScore: templateGeomScore != null
+      ? templateGeomScore
+      : overflowWarnings && overflowWarnings.length
+        ? Math.max(40, 100 - overflowWarnings.length * 15)
+        : 95,
   });
   console.log(`[Pipeline] Dimensions overall=${dimensionScores.overall} ${JSON.stringify(dimensionScores.dimensions)}`);
 
