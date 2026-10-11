@@ -32,7 +32,10 @@ function emptyDB() {
     history: {},
     feedback: {},
     receipts: {},
-    partner_log: {}
+    partner_log: {},
+    learn_templates: {},
+    learn_uses: [],
+    rate_prompts: {}
   };
 }
 
@@ -51,7 +54,10 @@ function loadDB() {
       history: db.history || {},
       feedback: db.feedback || {},
       receipts: db.receipts || {},
-      partner_log: db.partner_log || {}
+      partner_log: db.partner_log || {},
+      learn_templates: db.learn_templates || {},
+      learn_uses: Array.isArray(db.learn_uses) ? db.learn_uses : [],
+      rate_prompts: db.rate_prompts || {}
     };
   } catch (err) {
     console.error('[DB] Local read error:', err.message);
@@ -111,7 +117,11 @@ async function getUser(chatId) {
 }
 
 async function registerUser(chatId, referredBy = null) {
-  ensureUser(chatId, referredBy);
+  const u = ensureUser(chatId, referredBy);
+  // Бұрын тіркелген, бірақ белгісі жоқ және әлі презентация жасамаған адамға реферал белгісін жазу
+  if (referredBy && String(referredBy) !== String(chatId) && !u.referred_by && !(Number(u.total) > 0)) {
+    u.referred_by = String(referredBy);
+  }
   saveDB(db);
 }
 
@@ -248,6 +258,71 @@ async function payoutPartner(chatId, amount) {
 
 async function listPartners() {
   return Object.values(db.users).filter((u) => u.partner_status === 'active').map((u) => ({ chatId: u.chat_id, ...partnerView(u) }));
+}
+
+
+// ─── Үйрену жүйесі: шаблонның оқылған дизайн-деректері (файлсыз, мәтінсіз) және әр қолдану ──────────
+// cleanupOldJobs бұларды өшірмейді: клиентке байланбаған (chat_id жоқ), тек дизайн туралы дерек.
+const LEARN_USES_CAP = 20000;
+
+/** Шаблон бір рет сақталады (fingerprint); қайта жүктелсе — uses+1, оқу құралы жаңа болса — дерек жаңарады. */
+async function saveLearnedTemplate(read) {
+  if (!read || !read.fingerprint) return null;
+  const now = Date.now();
+  const cur = db.learn_templates[read.fingerprint];
+  if (cur) {
+    cur.uses = (cur.uses || 1) + 1;
+    cur.updated_at = now;
+    if ((read.readerVersion || 0) > (cur.reader_version || 0)) { cur.reader_version = read.readerVersion; cur.data = read; }
+    saveDB(db);
+    return { fingerprint: read.fingerprint, isNew: false };
+  }
+  db.learn_templates[read.fingerprint] = { fingerprint: read.fingerprint, created_at: now, updated_at: now, reader_version: read.readerVersion || 0, uses: 1, data: read };
+  saveDB(db);
+  return { fingerprint: read.fingerprint, isNew: true };
+}
+
+async function addLearnUse(use) {
+  if (!use || !use.fingerprint) return null;
+  const row = { id: makeJobId(), created_at: Date.now(), ...use };
+  db.learn_uses.push(row);
+  if (db.learn_uses.length > LEARN_USES_CAP) db.learn_uses.splice(0, db.learn_uses.length - LEARN_USES_CAP);
+  saveDB(db);
+  return row.id;
+}
+
+async function listLearnedTemplates(limit = 500) {
+  return Object.values(db.learn_templates).sort((a, b) => b.updated_at - a.updated_at).slice(0, Math.max(1, limit))
+    .map((t) => ({ fingerprint: t.fingerprint, uses: t.uses, createdAt: t.created_at, updatedAt: t.updated_at, readerVersion: t.reader_version, data: t.data }));
+}
+
+/** Қолданулар + клиент бағасы (feedback, job_id бойынша соңғысы). */
+async function listLearnUses(limit = 2000) {
+  const fb = new Map();
+  for (const f of Object.values(db.feedback)) {
+    const prev = fb.get(f.job_id);
+    if (!prev || f.created_at > prev.created_at) fb.set(f.job_id, f);
+  }
+  return db.learn_uses.slice(-Math.max(1, limit)).reverse().map((u) => {
+    const f = u.jobId ? fb.get(String(u.jobId)) : null;
+    return { ...u, createdAt: u.created_at, rating: f ? f.rating : null, comment: f ? f.comment : null };
+  });
+}
+
+// ─── Кешіктірілген баға сұрауы (клиент нәтижені қарап үлгерсін) ─────────────
+async function scheduleRatePrompt({ jobId, chatId, kind, dueAt }) {
+  const key = String(jobId);
+  if (db.rate_prompts[key]) return false;
+  db.rate_prompts[key] = { job_id: key, chat_id: String(chatId), kind: kind || 'presentation', due_at: Number(dueAt) || Date.now(), sent: false, created_at: Date.now() };
+  saveDB(db);
+  return true;
+}
+/** Мерзімі жеткен сұрауларды алады және бірден «жіберілді» деп белгілейді (екі рет жіберілмейді). */
+async function takeDueRatePrompts(now = Date.now(), limit = 20) {
+  const due = Object.values(db.rate_prompts).filter((r) => !r.sent && r.due_at <= now).sort((a, b) => a.due_at - b.due_at).slice(0, limit);
+  for (const r of due) r.sent = true;
+  if (due.length) saveDB(db);
+  return due.map((r) => ({ jobId: r.job_id, chatId: r.chat_id, kind: r.kind, dueAt: r.due_at }));
 }
 
 async function useCredit(chatId) {
@@ -488,6 +563,23 @@ async function addFeedback(jobId, chatId, rating, comment) {
   };
 }
 
+/** Баға/пікірді жаңарту немесе қосу (бір клиент — бір жұмысқа бір жазба). rating/comment — қайсысы берілсе, сол өзгереді. */
+async function setFeedback(jobId, chatId, { rating, comment } = {}) {
+  const key = Object.keys(db.feedback).find((k) => db.feedback[k].job_id === String(jobId) && db.feedback[k].chat_id === String(chatId));
+  const r = rating == null ? null : Math.min(Math.max(parseInt(rating, 10) || 0, 1), 5);
+  if (key) {
+    const f = db.feedback[key];
+    if (r != null) f.rating = r;
+    if (comment != null) f.comment = String(comment).slice(0, 1000);
+    f.created_at = Date.now();
+    saveDB(db);
+    return { jobId: f.job_id, rating: f.rating, comment: f.comment };
+  }
+  if (r == null) return null; // пікір бағадан кейін ғана
+  const f = await addFeedback(jobId, chatId, r, comment || '');
+  return { jobId: f.jobId, rating: f.rating, comment: f.comment };
+}
+
 async function getFeedbackForJob(jobId) {
   const rows = Object.values(db.feedback)
     .filter(x => x.job_id === String(jobId))
@@ -519,6 +611,10 @@ async function cleanupOldJobs(maxAgeMs = 2 * 24 * 3600 * 1000) {
     }
   }
 
+  for (const [k, r] of Object.entries(db.rate_prompts)) {
+    if (Number(r.created_at) < cutoff) { delete db.rate_prompts[k]; changed = true; }
+  }
+
   if (removed || changed) saveDB(db);
   return removed;
 }
@@ -540,6 +636,13 @@ module.exports = {
   creditPartnerCommission,
   payoutPartner,
   listPartners,
+  saveLearnedTemplate,
+  addLearnUse,
+  listLearnedTemplates,
+  listLearnUses,
+  setFeedback,
+  scheduleRatePrompt,
+  takeDueRatePrompts,
   useCredit,
   refundCredit,
   getAllChatIds,

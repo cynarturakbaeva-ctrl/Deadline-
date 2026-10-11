@@ -12,11 +12,13 @@ const http = require('http');
 const { generatePresentation } = require('./products/presentation/index');
 const { generateReferat } = require('./products/referat/index');
 const { analyzeMaterialFile, materialsToText } = require('./core/materials');
+const { ratingKeyboard, ratePromptText, rateDueAt } = require('./core/feedbackUi');
 const {
   initDB, getUser, registerUser, useCredit, refundCredit,
   checkRateLimits, markGenerationAttempt, markGenerationSuccess,
   createJob, updateJob, getJob, getUserJobs, addHistory, getHistory,
-  cleanupOldJobs, REFERRALS_PER_BONUS, closeDB, backend: DB_BACKEND,
+  cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
+  scheduleRatePrompt, takeDueRatePrompts,
 } = require('./db');
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -144,12 +146,17 @@ app.get('/api/history', authMiddleware, async (req, res) => {
   try {
     const list = await getHistory(req.tgUser.id, 30);
     // Тарихта реферат па, презентация ма — job payload-тан аламыз
-    let modes = {};
+    let modes = {}; const done = new Set();
     try {
       const jobs = await getUserJobs(req.tgUser.id, 50);
-      for (const j of jobs) modes[j.id] = j.payload?.mode || 'presentation';
+      for (const j of jobs) { modes[j.id] = j.payload?.mode || 'presentation'; if (j.status === 'done') done.add(j.id); }
     } catch {}
-    res.json({ items: list.map(h => ({ ...h, mode: modes[h.id] || 'presentation' })) });
+    // Баға: жұмыс әлі сақталса (48 сағат) бағалауға болады; бар бағаны көрсетеміз
+    const ratings = {};
+    await Promise.all(list.filter((h) => done.has(h.id)).map(async (h) => {
+      try { const f = await getFeedbackForJob(h.id); if (f && String(f.chat_id) === String(req.tgUser.id)) ratings[h.id] = f.rating; } catch {}
+    }));
+    res.json({ items: list.map(h => ({ ...h, mode: modes[h.id] || 'presentation', canRate: done.has(h.id), rating: ratings[h.id] || null })) });
   } catch (err) {
     console.error('[API] /history', err);
     res.status(500).json({ error: 'server_error' });
@@ -216,6 +223,7 @@ app.get('/api/job/:id', authMiddleware, async (req, res) => {
       hasPptx: job.payload?.mode !== 'referat' && !!job.pptxPath,
       hasDocx: job.payload?.mode === 'referat' && !!job.pptxPath,
       hasHtml: !!job.htmlPath,
+      feedback: await getFeedbackForJob(job.id).then((f) => (f && String(f.chat_id) === job.chatId ? { rating: f.rating, comment: f.comment || '' } : null)).catch(() => null),
       payload: {
         topic: job.payload?.topic,
         slideCount: job.payload?.slideCount,
@@ -226,6 +234,26 @@ app.get('/api/job/:id', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[API] /job', err);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Клиент бағасы (1–5) және пікірі. Баға бірінші, пікір кейін қосылуы мүмкін; қайта жіберілсе — жаңарады.
+app.post('/api/job/:id/feedback', authMiddleware, async (req, res) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job || job.chatId !== String(req.tgUser.id)) return res.status(404).json({ error: 'not_found' });
+    if (job.status !== 'done') return res.status(400).json({ error: 'not_done' });
+    const body = req.body || {};
+    const rating = body.rating == null ? null : parseInt(body.rating, 10);
+    if (rating != null && !(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'bad_rating' });
+    const comment = body.comment == null ? null : String(body.comment).replace(/\u0000/g, '').trim().slice(0, 1000);
+    if (rating == null && comment == null) return res.status(400).json({ error: 'empty' });
+    const fb = await setFeedback(job.id, job.chatId, { rating, comment });
+    if (!fb) return res.status(400).json({ error: 'rating_first', message: 'Алдымен жұлдызша қойыңыз' });
+    res.json({ rating: fb.rating, comment: fb.comment || '' });
+  } catch (err) {
+    console.error('[API] feedback', err);
     res.status(500).json({ error: 'server_error' });
   }
 });
@@ -288,7 +316,7 @@ app.post('/api/material', authMiddleware, express.raw({ type: '*/*', limit: '30m
 app.post('/api/generate', authMiddleware, async (req, res) => {
   try {
     const chatId = String(req.tgUser.id);
-    const { topic, slideCount, language, style, audience, performedBy, checkedBy, mode, pages, university, faculty, department, group, city, refId, requirements, materialIds, sampleId } = req.body || {};
+    const { topic, slideCount, language, style, audience, performedBy, checkedBy, mode, pages, university, faculty, department, group, city, refId, requirements, materialIds, sampleId, learnConsent } = req.body || {};
     const PRESENTATION_MODES = new Set(['presentation', 'template']);
     const genMode = PRESENTATION_MODES.has(String(mode)) ? String(mode) : (mode === 'referat' ? 'referat' : 'presentation');
     const isReferat = genMode === 'referat';
@@ -405,6 +433,8 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       materialText: materialText.slice(0, 60000) || null,
       materialMeta,
       refId: !isReferat && /^[\w-]+$/.test(String(refId || '')) ? String(refId) : null,
+      // Клиент шаблонды жүктеу алдындағы ескертуді қабылдады → шаблонның дизайн-деректері (файлсыз, мәтінсіз) үйрену үшін сақталады
+      learnConsent: !isReferat && genMode === 'template' && learnConsent === true,
       pages: isReferat ? Math.max(5, Math.min(30, parseInt(pages, 10) || 10)) : null,
       meta: isReferat ? referatMeta : null,
       sampleText: sampleText || null,
@@ -475,6 +505,80 @@ app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
 app.get('/', (_req, res) => {
   res.redirect('/webapp/');
 });
+
+// ─── Кешіктірілген баға сұрауы ────────────────────────────────────────────
+// Файл жеткен бойда емес: клиент презентацияны ашып қарап үлгеруі үшін RATE_PROMPT_DELAY_MIN (әдепкі 60) минуттан кейін,
+// түнде (23:00–08:00, TZ_OFFSET_MIN бойынша, әдепкі Алматы +300) — таңғы 10:00-де. Кезек БД-да: бот қайта қосылса да жоғалмайды.
+const RATE_DELAY_MIN = Math.max(1, parseInt(process.env.RATE_PROMPT_DELAY_MIN || '60', 10) || 60);
+const TZ_OFFSET_MIN = parseInt(process.env.TZ_OFFSET_MIN || '300', 10) || 300;
+function queueRatePrompt(job, kind) {
+  scheduleRatePrompt({ jobId: job.id, chatId: job.chatId, kind, dueAt: rateDueAt(Date.now(), { delayMin: RATE_DELAY_MIN, tzOffsetMin: TZ_OFFSET_MIN }) })
+    .catch((e) => console.warn('[Rate] schedule failed:', e.message));
+}
+async function sendDueRatePrompts() {
+  if (!global.__deadlineBot) return;
+  let due = [];
+  try { due = await takeDueRatePrompts(Date.now(), 20); } catch (e) { return console.warn('[Rate] take failed:', e.message); }
+  for (const p of due) {
+    try {
+      const job = await getJob(p.jobId);
+      if (!job || job.status !== 'done') continue;               // жұмыс өшкен/құлаған — сұрамаймыз
+      const fb = await getFeedbackForJob(p.jobId).catch(() => null);
+      if (fb && fb.rating) continue;                              // Mini App-та бұрын бағалаған
+      await global.__deadlineBot.sendMessage(p.chatId, ratePromptText(p.jobId, p.kind), { reply_markup: ratingKeyboard(p.jobId) });
+    } catch (e) {
+      console.warn('[Rate] send failed:', e.message);             // бот блокталған т.б. — қайта жібермейміз
+    }
+  }
+}
+
+// ─── Реферал бонусы (2 адам = 1 кредит) ──────────────────────────────────
+// Бұрын тек чатта жасалған презентацияда саналатын; чатта генерация жойылған соң — Mini App-тағы сәтті презентациядан кейін.
+// Тек сәтті жеткізілгеннен кейін (құлаған жұмыс санауышты өсірмейді).
+async function countReferral(chatId) {
+  try {
+    const u = await getUser(chatId);
+    if (!u || !u.referredBy) return;
+    const { newCount, bonusGiven } = await incrementRefCount(u.referredBy);
+    if (!newCount || !global.__deadlineBot) return;
+    const need = REFERRALS_PER_BONUS - (newCount % REFERRALS_PER_BONUS);
+    const text = bonusGiven
+      ? `🎉 *+1 кредит!* Сенің реферал сілтемең арқылы ${newCount} адам презентация жасатты!\n\nКелесі кредит үшін тағы *${REFERRALS_PER_BONUS} адам* қажет.`
+      : `👥 Сенің реферал сілтемең арқылы жаңа адам презентация жасатты!\n\nКредит алу үшін тағы *${need} адам* керек.`;
+    global.__deadlineBot.sendMessage(u.referredBy, text, { parse_mode: 'Markdown' }).catch(() => {});
+  } catch (e) {
+    console.warn('[Referral] count failed:', e.message);
+  }
+}
+
+// ─── Үйрену жүйесі ────────────────────────────────────────────────────────
+// Клиент келіскен шаблон режимі жұмысынан кейін (сәтті де, сәтсіз де) шаблон файлын ОҚИМЫЗ:
+// дизайн-деректері (орналасу, өлшем, түс, шрифт, элементтер; мәтінсіз, суретсіз) сақталады, файлдың өзі — жоқ
+// (ол бұрынғыдай JOB_RETENTION_HOURS бойынша өшеді). Клиентті күттірмеу үшін жауаптан кейін, фонда.
+const LEARN_ENABLED = process.env.LEARN_FROM_TEMPLATES !== '0';
+function scheduleLearn(job, outcome, info) {
+  if (!LEARN_ENABLED || !job || !job.payload || !job.payload.learnConsent || !job.payload.refId) return;
+  setImmediate(async () => {
+    try {
+      const file = path.join(REF_DIR, job.payload.refId + '.pptx');
+      if (!fs.existsSync(file)) return;
+      const { readTemplate } = require('./design-dna/learnReader');
+      const { topicWords } = require('./core/learning');
+      const read = readTemplate(fs.readFileSync(file));
+      const saved = await saveLearnedTemplate(read);
+      await addLearnUse({
+        fingerprint: read.fingerprint, jobId: job.id, topic: String(job.payload.topic || '').slice(0, 200),
+        topicWords: topicWords(job.payload.topic), language: job.payload.language || null, outcome,
+        slideCount: read.template.slideCount,
+        fit: info && info.fit ? info.fit : null, layoutPlanned: info && info.layoutPlanned != null ? info.layoutPlanned : null,
+        error: info && info.error ? info.error : null,
+      });
+      console.log(`[Learn] ${job.id}: шаблон ${read.fingerprint} ${saved && saved.isNew ? 'жаңа' : 'бұрын көрген'} · ${outcome}`);
+    } catch (e) {
+      console.warn('[Learn] skipped:', e.message);
+    }
+  });
+}
 
 // ─── Generation runner ────────────────────────────────────────────────────
 let activeGenerations = 0;
@@ -549,6 +653,7 @@ async function executeReferatJob(job) {
     } catch (e) {
       console.warn('[Job] referat send failed', e.message);
     }
+    queueRatePrompt(job, 'referat');
     console.log(`[Job] ${jobId} referat done — ${result.title} (${result.pages} pages, fillOk=${result.fillOk})`);
   } catch (err) {
     console.error(`[Job] ${jobId} referat failed:`, err.message);
@@ -636,6 +741,9 @@ async function executeJob(jobId) {
       try { fs.writeFileSync(path.join(destDir, 'template.json'), JSON.stringify(result.templateReport)); } catch (e) { console.warn('[Job] template.json', e.message); }
     }
 
+    scheduleLearn(job, 'done', result.templateLearn);
+    queueRatePrompt(job, 'presentation');
+
     await updateJob(jobId, {
       status: 'done',
       phase: 'done',
@@ -648,6 +756,7 @@ async function executeJob(jobId) {
     });
 
     await markGenerationSuccess(chatId, !!result.expensiveVisuals);
+    await countReferral(chatId);
     await addHistory(chatId, {
       id: jobId,
       title: result.title || job.payload.topic,
@@ -701,6 +810,7 @@ async function executeJob(jobId) {
     console.log(`[Job] ${jobId} done — ${result.title}`);
   } catch (err) {
     console.error(`[Job] ${jobId} failed:`, err.message);
+    scheduleLearn(job, 'failed', { error: String(err.message || 'unknown').slice(0, 80) });
     await refundCredit(chatId);
     await updateJob(jobId, {
       status: 'failed',
@@ -767,6 +877,7 @@ async function main() {
   await initDB();
   await runCleanup();
   setInterval(runCleanup, 60 * 60 * 1000).unref(); // сағат сайын
+  setInterval(() => { sendDueRatePrompts().catch(() => {}); }, 60 * 1000).unref(); // баға сұраулары — минут сайын
 
   // Start bot in same process (shared DB + notify)
   try {

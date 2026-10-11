@@ -112,17 +112,24 @@ L.cover = (ctx) => {
   }
   const w = GRID.span(10);
   const meta = a.bullets.map(splitLabelDetail);
-  const labeled = meta.length && meta.every((m) => m.detail);
+  // Титул деректері: «Кілт: мән» жолдары (факультет, кафедра, орындаған, тексерген, топ) + кілтсіз ұйым атауы (университет).
+  // Барлығы көрсетіледі (бұрын 3–4-ке қиылатын), 3-тен көп болса — ықшам тор.
+  const keyed = meta.filter((m) => m.detail);
+  const plain = meta.filter((m) => !m.detail).map((m) => m.label);
+  const labeled = keyed.length > 0 && plain.length <= 2;
+  const org = labeled && plain.length
+    ? el(ctx, 'div', 'cover-org', esc(plain.join(' · ')), { role: 'meta' })
+    : '';
   const metaHtml = meta.length
-    ? el(ctx, 'div', 'meta-row', (labeled
-      ? meta.slice(0, 4).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
+    ? el(ctx, 'div', 'meta-row' + (labeled && keyed.length > 3 ? ' is-dense' : ''), (labeled
+      ? keyed.slice(0, 6).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
       : '<div class="meta-i" data-role="meta"><span class="meta-v">' + esc(a.bullets.slice(0, 3).join('  ·  ')) + '</span></div>'), { role: 'meta-row' })
     : '';
   const fg = '<div class="canvas cover">' +
-    '<div class="cover-top">' + (sectionLabel(ctx) ? rule(ctx, 56) + kicker(ctx, sectionLabel(ctx)) : '') + '</div>' +
+    '<div class="cover-top">' + (sectionLabel(ctx) ? rule(ctx, 56) + kicker(ctx, sectionLabel(ctx)) : '') + org + '</div>' +
     '<div class="block cover-block">' +
       titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3 }) +
-      lead(ctx, a.subtitle && !labeled ? a.subtitle : (labeled ? '' : a.subtitle), 38, { maxw: GRID.span(7) }) +
+      lead(ctx, labeled ? '' : a.subtitle, 38, { maxw: GRID.span(7) }) +
       (a.body && !a.subtitle ? para(ctx, a.body, 28, { maxw: GRID.span(7) }) : '') +
       metaHtml +
     '</div></div>';

@@ -92,7 +92,7 @@ function elementsOf(xml, W, H, level) {
     const x = xfrmOf(spPr) || xfrmOf(sp);
     const texts = [...sp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(' ').trim();
     const sizes = [...sp.matchAll(/ sz="(\d{3,4})"/g)].map((m) => +m[1] / 100);
-    const fillPart = spPr.split('<a:ln')[0];
+    const fillPart = spPr.split(/<a:ln[\s>]/)[0]; // <a:lnTo> (custGeom жолы) сызық емес — бұрын толтыру жоғалатын
     const fillM = fillPart.match(/<a:solidFill>\s*<a:(?:srgbClr val="([0-9A-Fa-f]{6})"|schemeClr val="(\w+)")/);
     const hasFill = !!fillM;
     const algn = (sp.match(/algn="(ctr|l|r|just)"/) || [])[1] || null;

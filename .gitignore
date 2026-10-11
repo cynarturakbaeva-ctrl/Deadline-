@@ -1,9 +1,6 @@
 node_modules/
-jobs/
 .env
-.env.*
-!.env.example
-*.log
-.DS_Store
-storage/*
-!storage/*.js
+jobs/
+data/
+*.bak
+.cache/

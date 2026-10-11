@@ -180,3 +180,20 @@ textarea#requirements { width: 100%; box-sizing: border-box; resize: vertical; }
 .tpl-steps b { color: inherit; font-weight: 700; }
 .tpl-upload { display: block; text-align: center; padding: 14px; border: 2px dashed var(--link); border-radius: 14px; font-weight: 600; font-size: 15px; color: var(--link); cursor: pointer; }
 .tpl-upload:active { opacity: .7; }
+button.tpl-upload { width: 100%; background: transparent; font-family: inherit; }
+.notice-card { text-align: left; }
+.notice-card .result-icon, .notice-card h2 { text-align: center; }
+.notice-text { font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+.notice-text.muted { font-size: 13px; }
+label.btn { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+/* Баға (жұлдызша) */
+.rate-box { margin-top: 16px; padding: 12px; border-radius: 14px; background: var(--bg); }
+.rate-title { font-size: 13px; color: var(--hint); margin-bottom: 6px; }
+.stars { display: flex; justify-content: center; gap: 6px; }
+.star { background: none; border: 0; font-size: 30px; line-height: 1; padding: 2px 4px; color: rgba(255,255,255,.18); cursor: pointer; transition: transform .12s ease, color .12s ease; }
+.star.on { color: #f5c542; }
+.star:active { transform: scale(1.2); }
+.rate-more { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rate-more.hidden { display: none; }
+.rate-more textarea { width: 100%; box-sizing: border-box; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; background: var(--bg2); color: var(--text); border: 1px solid rgba(255,255,255,.08); }

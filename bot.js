@@ -3,10 +3,9 @@
 require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
-const fs          = require('fs');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { generatePresentation }                                                      = require('./products/presentation/index');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, incrementRefCount, useCredit, refundCredit, getAllChatIds, checkRateLimits, markGenerationAttempt, markGenerationSuccess, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob } = require('./db');
+const { ratingKeyboard, commentPromptText, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -41,9 +40,7 @@ const AUTO_CONFIRM_TIMEOUT_SEC = parseInt(process.env.AUTO_CONFIRM_TIMEOUT_SEC |
 // кодтың өзінде әрқашан дұрыс шығатындай, басындағы @-ты алып тастаймыз.
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^@/, '');
 
-const processing      = new Set();
 const waitingForCount = new Set();
-const waitingForTopic = new Set();
 // Күтудегі чектер: pendingId → { chatId, timer, adminMsgId }
 const pendingReceipts = new Map();
 
@@ -53,10 +50,10 @@ let WEBAPP_URL = process.env.WEBAPP_URL || '';
 const MAIN_KEYBOARD = {
   reply_markup: {
     keyboard: [
-      [{ text: '📱 Mini App ашу' }, { text: '📝 Тақырып жазу' }],
-      [{ text: '💳 Менің есепшотым' }, { text: '🔗 Реферал сілтемем' }],
-      [{ text: '💰 Кредит сатып алу' }, { text: '❓ Көмек' }],
-      [{ text: '🤝 Серіктес болу' }],
+      [{ text: '📱 Mini App ашу' }],
+      [{ text: '💰 Кредит сатып алу' }, { text: '💳 Менің есепшотым' }],
+      [{ text: '🔗 Реферал сілтемем' }, { text: '🤝 Серіктес болу' }],
+      [{ text: '❓ Көмек' }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -92,8 +89,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     chatId,
     '👋 *Сәлем!* DeadLine — кәсіби AI презентация студиясы.\n\n' +
     `💳 *Баға:* ${PRICE}₸ — 1 презентация\n${plusLine}\n\n` +
-    '📱 *Mini App* арқылы стиль, тіл, слайд саны, прогресс пен тарихты басқарыңыз.\n' +
-    'Немесе «📝 Тақырып жазу» арқылы жылдам бастаңыз.',
+    '📱 Презентация мен реферат *Mini App* ішінде жасалады: шаблон, тіл, слайд саны, прогресс және тарих бір жерде.',
     { parse_mode: 'Markdown', reply_markup: MAIN_KEYBOARD.reply_markup }
   ).then(() => {
     const kb = webAppKeyboard();
@@ -248,6 +244,37 @@ bot.onText(/^\/payout (\d+) (\d+)/, async (msg, match) => {
   bot.sendMessage(match[1], `✅ Саған *${match[2]}₸* аударылды. Қалған баланс: *${left}₸*`, { parse_mode: 'Markdown' }).catch(() => {});
 });
 
+// Админ: /learn — үйрену жүйесінің статистикасы; /learn <тақырып> — ұқсас тақырыптағы бұрынғы жұмыстар
+bot.onText(/^\/learn(?:\s+(.+))?$/, async (msg, match) => {
+  if (String(msg.chat.id) !== String(ADMIN_ID)) return;
+  const { aggregate, similar } = require('./core/learning');
+  try {
+    const [templates, uses] = await Promise.all([listLearnedTemplates(1000), listLearnUses(5000)]);
+    if (!templates.length) return bot.sendMessage(msg.chat.id, 'Әзірге дерек жоқ: клиент шаблон режимін қолданғанда жиналады.');
+    const topic = match && match[1] ? match[1].trim() : '';
+    if (topic) {
+      const sim = similar(uses, topic, 8);
+      return bot.sendMessage(msg.chat.id, sim.length
+        ? `🔎 «${topic}» тақырыбына ұқсас бұрынғы жұмыстар:\n` + sim.map((x) => `• ${x.topic} — шаблон ${x.fingerprint}${x.rating ? ' · ' + '⭐'.repeat(x.rating) : ''}${x.outcome === 'failed' ? ' · ❌' : ''}`).join('\n')
+        : `«${topic}» тақырыбына ұқсас жұмыс әлі жоқ.`);
+    }
+    const a = aggregate(templates, uses);
+    const fmt = (arr) => arr.map(([k, v]) => `${k} (${v})`).join(', ') || '—';
+    const pc = (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%');
+    bot.sendMessage(msg.chat.id,
+      `🧠 Үйрену жүйесі\n\n` +
+      `Шаблон: ${a.templates} (слайд: ${a.slides})\nҚолдану: ${a.uses} · сәтті ${a.done} · құлаған ${a.failed}\n` +
+      `Таза сыйды: ${a.cleanFitPct}%\nБаға: ${a.avgRating == null ? '—' : a.avgRating + '/5'} (${a.rated} баға)\n\n` +
+      `Тақырып қарпі: слайд биіктігінің ${pc(a.typography.titleSizeRel)} · мәтін ${pc(a.typography.bodySizeRel)} · арақатынас ${a.typography.hierarchy ?? '—'}\n` +
+      `Шеттер: сол ${pc(a.margins.left)}, жоғары ${pc(a.margins.top)}\nОрташа сөз/слайд: ${a.avgWordsPerSlide ?? '—'}\nҚараңғы шаблон: ${a.darkPct}%\n\n` +
+      `Шрифт жұптары: ${fmt(a.topPairs)}\nТақырып шрифті: ${fmt(a.titleClasses)}\nМәтін шрифті: ${fmt(a.bodyClasses)}\n` +
+      `Макеттер: ${fmt(a.topArchetypes)}\nМакет отбасылары (≥2 шаблонда): ${a.families.filter((f) => f.templates >= 2).length}`);
+  } catch (e) {
+    console.error('[Learn] /learn error:', e.message);
+    bot.sendMessage(msg.chat.id, '❌ Статистика оқылмады: ' + e.message);
+  }
+});
+
 bot.onText(/^\/partners$/, async (msg) => {
   if (String(msg.chat.id) !== String(ADMIN_ID)) return;
   const list = await listPartners();
@@ -263,12 +290,11 @@ function showHelp(chatId) {
   bot.sendMessage(
     chatId,
     '📖 *Қалай пайдалану:*\n\n' +
-    '📱 *Mini App* — толық студия (стиль, тіл, слайд, тарих, прогресс)\n' +
-    '📝 *Тақырып жазу* — жылдам режим\n\n' +
     '1️⃣ «💰 Кредит сатып алу»\n' +
     '2️⃣ Kaspi арқылы төлеңіз\n' +
-    '3️⃣ Чекті (PDF) ботқа жіберіңіз\n' +
-    '4️⃣ Кредит расталған соң презентация жасаңыз\n\n' +
+    '3️⃣ Чекті (PDF) осы чатқа жіберіңіз\n' +
+    '4️⃣ Кредит расталған соң «📱 Mini App ашу» → презентация немесе реферат жасаңыз\n\n' +
+    'Дайын файлдар осы чатқа келеді.\n\n' +
     `📱 Kaspi: *${KASPI_PHONE}* (${KASPI_NAME})\n\n` +
     '⚡ Сапа қақпасы: нашар нәтиже клиентке жіберілмейді, кредит қайтарылады.',
     { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
@@ -340,7 +366,7 @@ async function tryAutoConfirm(chatId, msg) {
     `✅ Төлем расталды!\n\n` +
     `💳 *${verdict.credits}* презентация кредиті қосылды.\n` +
     `📦 Жалпы кредитіңіз: *${applied.user.credits}*\n\n` +
-    `«📝 Тақырып жазу» батырмасын басып бастаңыз! 🚀`,
+    `«📱 Mini App ашу» батырмасы арқылы бастаңыз! 🚀`,
     { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
   );
 
@@ -378,7 +404,7 @@ async function confirmPendingReceipt(chatId, credits, source) {
     `✅ Төлем расталды!\n\n` +
     `💳 *${credits}* презентация кредиті қосылды.\n` +
     `📦 Жалпы кредитіңіз: *${user.credits}*\n\n` +
-    `«📝 Тақырып жазу» батырмасын басып бастаңыз! 🚀`,
+    `«📱 Mini App ашу» батырмасы арқылы бастаңыз! 🚀`,
     { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
   ).catch(() => {});
 
@@ -480,6 +506,28 @@ bot.on('callback_query', async (cq) => {
   }
 });
 
+// ─── Клиент бағасы: ⭐ батырмалары (fb:<jobId>:<1-5>) ─────────────────────
+bot.on('callback_query', async (cq) => {
+  const fb = parseFeedbackCallback(cq.data);
+  if (!fb) return;
+  try {
+    const job = await getJob(fb.jobId);
+    if (!job || String(job.chatId) !== String(cq.from.id)) {
+      return bot.answerCallbackQuery(cq.id, { text: 'Бұл жұмыстың мерзімі өтті', show_alert: false });
+    }
+    await setFeedback(fb.jobId, job.chatId, { rating: fb.rating });
+    await bot.answerCallbackQuery(cq.id, { text: `Бағаңыз: ${fb.rating}/5` });
+    // Жұлдыздарды жаңартамыз (қайта басып өзгертуге болады)
+    await bot.editMessageReplyMarkup(ratingKeyboard(fb.jobId, fb.rating), { chat_id: cq.message.chat.id, message_id: cq.message.message_id }).catch(() => {});
+    await bot.sendMessage(cq.message.chat.id, commentPromptText(fb.jobId, fb.rating), {
+      reply_markup: { force_reply: true, input_field_placeholder: 'Пікіріңіз...' },
+    });
+  } catch (e) {
+    console.error('[Feedback] callback error:', e.message);
+    bot.answerCallbackQuery(cq.id, { text: 'Қате, қайта көріңіз' }).catch(() => {});
+  }
+});
+
 // ─── /broadcast <хабар> — тек admin, барлық пайдаланушыға жіберу ─────────
 bot.onText(/\/broadcast ([\s\S]+)/, async (msg, match) => {
   if (String(msg.chat.id) !== String(ADMIN_ID)) return;
@@ -530,6 +578,21 @@ bot.on('message', async (msg) => {
 
   if (text && text.startsWith('/')) return;
 
+  // Пікір: біздің «Пікір қалдырғыңыз келсе…» хабарламамызға Reply ретінде жазылған мәтін
+  const replied = msg.reply_to_message;
+  if (text && replied && replied.from && replied.from.is_bot && jobTagOf(replied.text)) {
+    const jobId = jobTagOf(replied.text);
+    try {
+      const job = await getJob(jobId);
+      if (!job || String(job.chatId) !== String(chatId)) return bot.sendMessage(chatId, 'Бұл жұмыстың мерзімі өтті, пікір сақталмады.');
+      const saved = await setFeedback(jobId, chatId, { comment: text });
+      return bot.sendMessage(chatId, saved ? '🙏 Рахмет! Пікіріңіз сақталды — бот осыдан үйренеді.' : 'Алдымен жұлдызша қойыңыз ⭐', MAIN_KEYBOARD);
+    } catch (e) {
+      console.error('[Feedback] comment error:', e.message);
+      return bot.sendMessage(chatId, 'Пікір сақталмады, кейінірек қайта көріңіз.');
+    }
+  }
+
   if (text === '💳 Менің есепшотым') return showBalance(chatId);
   if (text === '❓ Көмек')           return showHelp(chatId);
   if (text === '🔗 Реферал сілтемем') return showReferral(chatId);
@@ -546,18 +609,14 @@ bot.on('message', async (msg) => {
     return bot.sendMessage(chatId, 'Mini App URL әлі бапталмаған (WEBAPP_URL).');
   }
 
+  // Ескі пернетақтадағы «Тақырып жазу» (чатта генерация енді жоқ) → Mini App-қа бағыттаймыз
   if (text === '📝 Тақырып жазу') {
-    waitingForCount.delete(chatId); // eki rejim bir mezgilde bolmauy ushin
-    waitingForTopic.add(chatId);
-    return bot.sendMessage(
-      chatId,
-      '📝 Презентация тақырыбын жазыңыз:',
-      { parse_mode: 'Markdown' }
-    );
+    // Ескі пернетақта: алдымен мәзірді жаңартамыз, сосын Mini App батырмасы
+    await bot.sendMessage(chatId, '🔄 Мәзір жаңартылды.', MAIN_KEYBOARD).catch(() => {});
+    return sendMiniAppHint(chatId);
   }
 
   if (text === '💰 Кредит сатып алу') {
-    waitingForTopic.delete(chatId); // eki rejim bir mezgilde bolmauy ushin
     const user = await getUser(chatId);
     if (user.total === 0) {
       return bot.sendMessage(
@@ -662,7 +721,7 @@ bot.on('message', async (msg) => {
 
   if (!text) return;
 
-  if (/^\s*(plus|плюс|\+)\s*$/i.test(text) && !waitingForTopic.has(chatId)) {
+  if (/^\s*(plus|плюс|\+)\s*$/i.test(text)) {
     waitingForCount.delete(chatId);
     return bot.sendMessage(
       chatId,
@@ -690,205 +749,17 @@ bot.on('message', async (msg) => {
     );
   }
 
-  if (waitingForTopic.has(chatId)) {
-    waitingForTopic.delete(chatId);
-
-    const user = await getUser(chatId);
-
-    if (user.credits > 0) return makePresentaton(chatId, text);
-
-    waitingForCount.add(chatId);
-    if (user.total === 0) {
-      return bot.sendMessage(
-        chatId,
-        `🎁 Бірінші презентация — *${FIRST_PRICE}₸* (әдепкі баға ${PRICE}₸)!\n${plusLine}\n\n` +
-        `💳 Kaspi арқылы төлеңіз:\n📱 *${KASPI_PHONE}*\n👤 ${KASPI_NAME}\n\n` +
-        `Сомасы: *${FIRST_PRICE}₸*\n\nТөлегеннен кейін *чекті (PDF)* осы ботқа жіберіңіз ✅`,
-        { parse_mode: 'Markdown' }
-      );
-    }
-    return bot.sendMessage(
-      chatId,
-      `💳 Сізде презентация кредиті жоқ.\n\n💰 Баға: *${PRICE}₸* — 1 презентация\n${plusLine}\n\nНеше презентация керек? Санын жазыңыз (немесе plus):`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  // Ешбір режимде тұрмаса — бос мәтінді тікелей тақырып деп қабылдамай,
-  // батырманы басуды сұраймыз. Осы арқылы "1" сияқты жаңылыс жазылған
-  // мәтін де кездейсоқ сан/тақырып болып қате түсінілмейді.
-  return bot.sendMessage(
-    chatId,
-    'Презентация жасау үшін «📝 Тақырып жазу» батырмасын басыңыз.',
-    MAIN_KEYBOARD
-  );
+  // Чатта презентация жасалмайды: кез келген басқа мәтінге — Mini App батырмасы
+  return sendMiniAppHint(chatId);
 });
 
-// ─── Concurrent generation hard cap (process-wide) ───────────────────────
-// Per-chat `processing` prevents one user spamming; this caps total parallel
-// decks so a burst of different users cannot exhaust RAM/CPU/API budget.
-const MAX_CONCURRENT_GENERATIONS = Math.max(1, parseInt(process.env.MAX_CONCURRENT_GENERATIONS || '3', 10) || 3);
-const MAX_TOPIC_CHARS = Math.max(200, parseInt(process.env.MAX_TOPIC_CHARS || '8000', 10) || 8000);
-let activeGenerations = 0;
-
-// ─── Презентация жасау ────────────────────────────────────────────────────
-async function makePresentaton(chatId, topic) {
-  if (processing.has(chatId)) {
-    return bot.sendMessage(chatId, '⏳ Презентацияңыз жасалып жатыр, күтіңіз...');
-  }
-
-  // Reject pathological briefs early — protects token budget and prompt size.
-  const topicStr = String(topic || '').trim();
-  if (!topicStr || topicStr.length < 2) {
-    return bot.sendMessage(chatId, '❗ Тақырып тым қысқа. Нақтырақ жазыңыз.');
-  }
-  if (topicStr.length > MAX_TOPIC_CHARS) {
-    return bot.sendMessage(
-      chatId,
-      `❗ Тақырып тым ұзын (макс. ${MAX_TOPIC_CHARS} таңба). Қысқартып жіберіңіз.`
-    );
-  }
-
-  if (activeGenerations >= MAX_CONCURRENT_GENERATIONS) {
-    return bot.sendMessage(
-      chatId,
-      '⏳ Қазір сервер толы. 1–2 минуттан кейін қайта жіберіңіз.'
-    );
-  }
-
-  // Persisted rate limits (cooldown + daily) — before charging credit.
-  const rate = await checkRateLimits(chatId);
-  if (!rate.allowed) {
-    return bot.sendMessage(chatId, `⏳ ${rate.message}`, MAIN_KEYBOARD);
-  }
-
-  processing.add(chatId);
-  activeGenerations += 1;
-
-  // Atomic credit take — must succeed before any work or referral side-effects.
-  const charged = await useCredit(chatId);
-  if (!charged) {
-    processing.delete(chatId);
-    activeGenerations = Math.max(0, activeGenerations - 1);
-    return bot.sendMessage(
-      chatId,
-      '💳 Кредит жеткіліксіз.\n\n«💰 Кредит сатып алу» батырмасын басыңыз.',
-      MAIN_KEYBOARD
-    );
-  }
-
-  // Start cooldown window even if generation later fails (anti-spam).
-  // Daily quota is only incremented on success.
-  await markGenerationAttempt(chatId);
-
-  const userAfter = await getUser(chatId);
-  const remaining = userAfter.credits;
-  let statusMsg;
-
-  try {
-    const header =
-      `📌 Тақырып: *${escapeMarkdown(topicStr.slice(0, 120))}*\n` +
-      `💳 Қалған кредит: ${remaining}\n\n`;
-
-    statusMsg = await bot.sendMessage(
-      chatId,
-      `⏳ Презентация жасалуда...\n\n${header}_1–3 минут күтіңіз..._`,
-      { parse_mode: 'Markdown' }
-    );
-
-    const updateStatus = async (detail) => {
-      if (!statusMsg) return;
-      try {
-        await bot.editMessageText(
-          `⏳ *${detail}*\n\n${header}_Күте тұрыңыз..._`,
-          { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
-        );
-      } catch {
-        // Telegram ignores identical edits / rate-limits — non-fatal
-      }
-    };
-
-    const { pptxPath, htmlPath, title, qualityScore, expensiveVisuals } = await generatePresentation(topicStr, {
-      onProgress: async (_phase, detail) => { await updateStatus(detail || 'Жұмыс істелуде...'); },
-    });
-
-    await bot.editMessageText('✅ Дайын! Жіберілуде...', {
-      chat_id: chatId, message_id: statusMsg.message_id,
-    }).catch(() => {});
-
-    const scoreNote = (qualityScore != null && qualityScore >= 0)
-      ? `\n✨ Сапа: *${Math.round(qualityScore)}/100*`
-      : '';
-
-    await bot.sendDocument(
-      chatId,
-      pptxPath,
-      {
-        caption:
-          `📊 *${escapeMarkdown(title)}*\n\n` +
-          `💳 Қалған презентация: *${remaining}*` +
-          scoreNote,
-        parse_mode: 'Markdown',
-      }
-    );
-
-    await bot.sendDocument(
-      chatId,
-      htmlPath,
-      {
-        caption: '🌐 *HTML нұсқасы*\n\nФайлды жүктеп алып, браузерде ашыңыз. Пернетақтадағы ← → пернелерімен ауыстырыңыз, F — толық экран.',
-        parse_mode: 'Markdown',
-      }
-    );
-
-    try { fs.unlinkSync(pptxPath); } catch {}
-    try { fs.unlinkSync(htmlPath); } catch {}
-
-    // Daily quota only on success (failed runs refund credit and do not burn quota).
-    await markGenerationSuccess(chatId, { expensive: !!expensiveVisuals });
-
-    // Referral counted ONLY after successful delivery — failed runs must not
-    // inflate refEarnings or grant free bonus credits.
-    const u = await getUser(chatId);
-    if (u.referredBy) {
-      const { newCount, bonusGiven } = await incrementRefCount(u.referredBy);
-      const need = REFERRALS_PER_BONUS - (newCount % REFERRALS_PER_BONUS);
-      if (bonusGiven) {
-        bot.sendMessage(
-          u.referredBy,
-          `🎉 *+1 кредит!* Сенің реферал сілтемең арқылы ${newCount} адам презентация жасатты!\n\nКелесі кредит үшін тағы *${REFERRALS_PER_BONUS} адам* қажет.`,
-          { parse_mode: 'Markdown' }
-        ).catch(() => {});
-      } else {
-        bot.sendMessage(
-          u.referredBy,
-          `👥 Сенің реферал сілтемең арқылы жаңа адам презентация жасатты!\n\nКредит алу үшін тағы *${need} адам* керек.`,
-          { parse_mode: 'Markdown' }
-        ).catch(() => {});
-      }
-    }
-
-  } catch (err) {
-    console.error('[Bot] Error:', err.message);
-
-    await refundCredit(chatId);
-
-    const errText = err.isQualityGate
-      ? '❌ Сапа шегінен өтпеді, кредитіңіз қайтарылды.\n\nТақырыпты сәл өзгертіп қайта жіберіп көріңіз.'
-      : '❌ Қате орын алды, кредитіңіз қайтарылды.\n\nТақырыпты қайта жіберіп көріңіз.';
-
-    if (statusMsg) {
-      await bot.editMessageText(errText, {
-        chat_id: chatId, message_id: statusMsg.message_id,
-      }).catch(() => bot.sendMessage(chatId, errText));
-    } else {
-      await bot.sendMessage(chatId, errText);
-    }
-
-  } finally {
-    processing.delete(chatId);
-    activeGenerations = Math.max(0, activeGenerations - 1);
-  }
+function sendMiniAppHint(chatId) {
+  const kb = webAppKeyboard();
+  return bot.sendMessage(
+    chatId,
+    '📱 Презентация мен реферат енді тек *Mini App* ішінде жасалады. Төмендегі батырманы басыңыз 👇',
+    kb ? { parse_mode: 'Markdown', reply_markup: kb } : { ...MAIN_KEYBOARD }
+  );
 }
 
 // ─── Іске қосу ───────────────────────────────────────────────────────────

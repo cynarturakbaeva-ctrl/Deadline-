@@ -6,7 +6,7 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
-const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch } = require('./gemini');
+const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch, applyCoverCredits } = require('./gemini');
 const { findImage, fallbackQueries, isLatinQuery } = require('./images');
 const { limitTables, applyDeckTheme } = require('./deckPolish');
 const { analyzeReference, referenceItems } = require('../../design-dna');
@@ -128,6 +128,12 @@ async function generatePresentation(userInput, options = {}) {
   if (coverMeta && (coverMeta.checkedBy || coverMeta.performedBy || coverMeta.group)) {
     console.log(`[Pipeline] id=${genId} Cover meta:`, coverMeta);
   }
+  // Титул деректері (университет, факультет, кафедра, орындаған, тексерген, топ) ТОЛЫҚ шығуы керек:
+  // review/quality/narrative/composition кезеңдері 1-слайдтың буллеттерін қысқартуы мүмкін → рендер/толтыру алдында қайта қоямыз.
+  const restoreCover = (arr) => {
+    if (coverMeta && Array.isArray(arr) && arr[0] && applyCoverCredits(arr[0], coverMeta, language)) return true;
+    return false;
+  };
 
   // 0a. Промттағы талаптар (мұғалім/клиент жазған мәтін) → RequirementSet. Қате болса талапсыз жалғасады.
   let reqSet = null; let reqNote = null; let reqBrief = '';
@@ -403,6 +409,7 @@ async function generatePresentation(userInput, options = {}) {
   cost.setQuality(qualityMeta.iterations || 0, (qualityMeta.repairedSlides || []).length);
 
   const isTemplateFill = mode === 'template' && referencePptxBuf && refAnalysis && refAnalysis.outline;
+  let fitInfo = null; let layoutPlanned = null;
   if (isTemplateFill) {
     // Толтырудан бұрын: мәтін шаблон қораптарының лимитіне сәйкес пе? Сәйкес емес слайдтарды LLM ақау бойынша қайта жазады (≤3 айналым)
     try {
@@ -410,15 +417,18 @@ async function generatePresentation(userInput, options = {}) {
       const rep = await repairTemplateSlides({ templateBuf: referencePptxBuf, slides, topic, language });
       slides = rep.slides;
       slides.forEach((slide, i) => { slide.index = i + 1; });
+      fitInfo = { before: rep.before, after: rep.after, rounds: rep.rounds, remaining: [...new Set((rep.remaining || []).flatMap((a) => a.issues.map((i) => i.code)))] };
       console.log(`[Pipeline] Template layout check: issues ${rep.before} → ${rep.after}, rounds=${rep.rounds}, fixedSlides=[${rep.fixedSlides.join(',')}]${rep.remaining.length ? ' remaining=' + rep.remaining.map((a) => a.index + ':' + a.issues.map((i) => i.code).join('/')).join(' ') : ''}`);
     } catch (err) {
       console.warn(`[Pipeline] Template layout check failed (continuing): ${err.message}`);
     }
+    restoreCover(slides);
     // LLM орналасу жоспары: қай мәтін қай қорапқа, кегль, кедергіні жылжыту. Қате болса — детерминді толтыру (layout = null).
     let layout = null;
     try {
       await onProgress('template', 'Мәтін орналасуын жоспарлау...');
       layout = await planLayout({ templateBuf: referencePptxBuf, slides, topic, language });
+      layoutPlanned = layout.filter(Boolean).length;
       console.log(`[Pipeline] Template layout plan: ${layout.filter(Boolean).length}/${layout.length} slides planned by LLM`);
     } catch (err) {
       console.warn(`[Pipeline] Template layout plan failed (continuing): ${err.message}`);
@@ -496,6 +506,7 @@ async function generatePresentation(userInput, options = {}) {
 
   const buildAndRender = async (attempt) => {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
+    restoreCover(slides);
     fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis ? refAnalysis.outline.roles : null }), 'utf8');
     await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Рендер және PPTX...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
@@ -718,6 +729,8 @@ async function generatePresentation(userInput, options = {}) {
 
   setActiveCostTracker(null);
   return {
+    // Үйрену жүйесі үшін толтыру нәтижесі (шаблонның өзін server.js оқиды — тек клиент келіскенде)
+    templateLearn: isTemplateFill ? { fit: fitInfo, layoutPlanned } : null,
     requirementsReport,
     templateReport,
     mode,

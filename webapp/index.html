@@ -116,9 +116,10 @@
           <li>Төмендегі батырманы басып, сол файлды таңдаңыз.</li>
           <li>Бот дизайнды (түс, шрифт, суреттер) сақтап, ішіндегі мәтінді сіздің тақырыбыңызға ауыстырады.</li>
         </ol>
-        <label for="refFile" class="tpl-upload">📎 .pptx шаблонды таңдау</label>
+        <button type="button" class="tpl-upload" id="refBtn">📎 .pptx шаблонды таңдау</button>
         <input id="refFile" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" />
         <div class="hint" id="refInfo">Тек .pptx файл қабылданады (PDF, Word емес).</div>
+        <div class="hint">Жүктелген шаблонның дизайн деректері (мәтінсіз, суретсіз) бот үйренуі үшін сақталады.</div>
       </div>
 
       <div class="card compact ai-req">
@@ -151,6 +152,45 @@
       </div>
     </div>
 
+    <!-- LEARN NOTICE: шаблон жүктеу алдындағы ескерту -->
+    <div id="learnNotice" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="learnTitle">
+      <div class="result-card notice-card">
+        <div class="result-icon">🧠</div>
+        <h2 id="learnTitle">Шаблон жүктеу туралы</h2>
+        <p class="notice-text">Біз жүктелген шаблонның <b>дизайн деректерін</b> жинаймыз: элементтердің орны мен өлшемі, түстер, шрифттер, слайд құрылымы және қай тақырыпқа қолданылғаны. Бот осыдан жақсы презентация жасауды үйренеді.</p>
+        <p class="notice-text">Шаблонның <b>мәтіні, суреттері және файлдың өзі сақталмайды.</b></p>
+        <p class="notice-text muted">Қаламасаңыз, бұл функцияны қолданбаңыз.</p>
+        <div class="result-actions">
+          <label for="refFile" class="btn primary" id="learnAccept">Түсіндім, жүктеймін</label>
+          <button type="button" id="learnCancel" class="btn ghost">Бас тарту</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RATE: тарихтан бағалау (клиент нәтижені қарап шыққан соң) -->
+    <div id="rateCard" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="rateJobTitle">
+      <div class="result-card">
+        <h2 id="rateJobTitle">Бағалау</h2>
+        <div id="rateBox" class="rate-box">
+          <div class="rate-title" id="rateTitle">Ұнады ма? Жұлдызша қойыңыз</div>
+          <div class="stars" id="stars" role="radiogroup" aria-label="Баға">
+            <button type="button" class="star" data-v="1" aria-label="1 жұлдыз">★</button>
+            <button type="button" class="star" data-v="2" aria-label="2 жұлдыз">★</button>
+            <button type="button" class="star" data-v="3" aria-label="3 жұлдыз">★</button>
+            <button type="button" class="star" data-v="4" aria-label="4 жұлдыз">★</button>
+            <button type="button" class="star" data-v="5" aria-label="5 жұлдыз">★</button>
+          </div>
+          <div id="rateMore" class="rate-more hidden">
+            <textarea id="rateComment" rows="2" maxlength="1000" placeholder="Пікіріңіз (міндетті емес): не ұнады, не жетпеді?"></textarea>
+            <button type="button" id="rateSend" class="btn secondary small">Пікірді жіберу</button>
+          </div>
+        </div>
+        <div class="result-actions">
+          <button type="button" id="rateClose" class="btn ghost">Жабу</button>
+        </div>
+      </div>
+    </div>
+
     <!-- RESULT -->
     <div id="resultCard" class="overlay hidden">
       <div class="result-card">
@@ -158,6 +198,7 @@
         <h2 id="resultTitle">Дайын!</h2>
         <p id="resultScore" class="muted"></p>
         <div id="reqReport" class="req-report hidden"></div>
+        <p class="hint rate-later">Қарап шыққан соң «Тарих» бөлімінде бағалай аласыз ⭐</p>
         <div class="result-actions">
           <button id="btnDlPptx" class="btn primary">📤 PPTX-ты чатқа жіберу</button>
           <button id="btnDlHtml" class="btn secondary">📤 HTML-ды чатқа жіберу</button>

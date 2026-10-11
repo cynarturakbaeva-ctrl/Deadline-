@@ -163,6 +163,23 @@
 
   // ── Reference PPTX ────────────────────────────────────────────────────
   state.refId = null;
+  // Үйрену туралы ескерту: бір рет қабылданса, осы құрылғыда есте сақталады (сақтау қолжетімсіз болса — әр жолы сұралады)
+  const LEARN_KEY = 'dl_learn_notice_v1';
+  state.learnConsent = (() => { try { return localStorage.getItem(LEARN_KEY) === '1'; } catch { return false; } })();
+  $('#refBtn').addEventListener('click', () => {
+    if (state.learnConsent) { $('#refFile').click(); return; }
+    $('#learnNotice').classList.remove('hidden');
+    haptic('light');
+  });
+  // «Түсіндім» — <label for="refFile">: файл таңдау терезесі тікелей басу арқылы ашылады (Telegram WebView-да сенімді)
+  $('#learnAccept').addEventListener('click', () => {
+    state.learnConsent = true;
+    try { localStorage.setItem(LEARN_KEY, '1'); } catch { /* жеке режим — келесі жолы қайта сұралады */ }
+    $('#learnNotice').classList.add('hidden');
+  });
+  $('#learnCancel').addEventListener('click', () => {
+    $('#learnNotice').classList.add('hidden');
+  });
   $('#refFile').addEventListener('change', async (ev) => {
     const f = ev.target.files && ev.target.files[0];
     state.refId = null;
@@ -248,6 +265,7 @@
           requirements: state.mode === 'referat' ? undefined : (($('#requirements').value || '').trim() || undefined),
           materialIds: state.mode === 'template' ? state.materialIds : undefined,
           refId: state.mode === 'template' ? (state.refId || undefined) : undefined,
+          learnConsent: state.mode === 'template' && state.refId ? !!state.learnConsent : undefined,
           sampleId: state.mode === 'referat' ? (state.sampleId || undefined) : undefined,
           pages: state.mode === 'referat' ? state.slideCount : undefined,
           university: ($('#university').value || '').trim() || undefined,
@@ -420,6 +438,65 @@
     $('#btnDlDocx').onclick = () => download(job.id, 'docx');
   }
 
+  // ── Баға (1–5) және пікір ─────────────────────────────────────────────
+  function paintStars(n) {
+    document.querySelectorAll('#stars .star').forEach((b) => b.classList.toggle('on', +b.dataset.v <= n));
+  }
+  function setupRating(job) {
+    const fb = job.feedback || null;
+    state.rating = fb ? fb.rating : 0;
+    paintStars(state.rating);
+    $('#rateComment').value = fb && fb.comment ? fb.comment : '';
+    $('#rateMore').classList.toggle('hidden', !state.rating);
+    $('#rateTitle').textContent = state.rating ? 'Бағаңыз сақталды. Өзгертуге болады' : 'Ұнады ма? Жұлдызша қойыңыз';
+  }
+  async function sendFeedback(body) {
+    if (!state.rateJobId) return null;
+    return api(`/api/job/${state.rateJobId}/feedback`, { method: 'POST', body: JSON.stringify(body) });
+  }
+  // Тарихтан ашылады: клиент файлды қарап шыққан соң бағалайды
+  async function openRate(jobId, title) {
+    try {
+      const job = await api(`/api/job/${jobId}`);
+      if (job.status !== 'done') return showToast('Бұл жұмыс аяқталмаған');
+      state.rateJobId = jobId;
+      $('#rateJobTitle').textContent = title || job.title || 'Бағалау';
+      setupRating(job);
+      $('#rateCard').classList.remove('hidden');
+      haptic('light');
+    } catch (e) {
+      showToast(e.status === 404 ? 'Жұмыстың мерзімі өтті' : 'Ашылмады');
+    }
+  }
+  $('#rateClose').addEventListener('click', () => {
+    $('#rateCard').classList.add('hidden');
+    state.rateJobId = null;
+    loadHistory();
+  });
+  document.querySelectorAll('#stars .star').forEach((b) => b.addEventListener('click', async () => {
+    const v = +b.dataset.v;
+    const prev = state.rating;
+    state.rating = v; paintStars(v); haptic('light');
+    try {
+      await sendFeedback({ rating: v });
+      $('#rateMore').classList.remove('hidden');
+      $('#rateTitle').textContent = 'Рахмет! Пікір қалдырсаңыз, бот осыдан үйренеді';
+    } catch (e) {
+      state.rating = prev; paintStars(prev);
+      showToast(e.status === 404 ? 'Жұмыстың мерзімі өтті' : 'Баға сақталмады');
+    }
+  }));
+  $('#rateSend').addEventListener('click', async () => {
+    const comment = ($('#rateComment').value || '').trim();
+    if (!comment) return showToast('Пікір бос');
+    try {
+      await sendFeedback({ comment });
+      showToast('Пікіріңіз сақталды 🙏'); haptic('success');
+    } catch (e) {
+      showToast(e.data && e.data.message ? e.data.message : 'Пікір сақталмады');
+    }
+  });
+
   $('#btnNew').addEventListener('click', () => {
     $('#resultCard').classList.add('hidden');
     state.currentJobId = null;
@@ -459,20 +536,24 @@
         const date = new Date(h.createdAt).toLocaleString('kk-KZ', {
           day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
         });
-        const score = h.qualityScore != null ? `⭐ ${Math.round(h.qualityScore)}` : '';
+        const score = h.qualityScore != null ? `Сапа ${Math.round(h.qualityScore)}/100` : '';
         return `<div class="hist-item">
           <div class="hist-title">${esc(h.title || h.topic || (h.mode === 'referat' ? 'Реферат' : 'Презентация'))}</div>
           <div class="hist-meta"><span>${date}</span><span>${score}</span></div>
           <div class="hist-actions">
+            ${h.canRate ? `<button class="btn ghost small rate-btn" data-rate="${h.id}" data-title="${esc(h.title || h.topic || '')}">${h.rating ? '⭐ ' + h.rating : '☆ Бағалау'}</button>` : ''}
             ${h.mode === 'referat'
               ? `<button class="btn secondary small" data-dl="${h.id}" data-type="docx">Word</button>`
               : `<button class="btn secondary small" data-dl="${h.id}" data-type="pptx">PPTX</button>
-            <button class="btn secondary small" data-dl="${h.id}" data-type="html">HTML</button>`}
+            ${h.mode === 'template' ? '' : `<button class="btn secondary small" data-dl="${h.id}" data-type="html">HTML</button>`}`}
           </div>
         </div>`;
       }).join('');
       list.querySelectorAll('[data-dl]').forEach((btn) => {
         btn.addEventListener('click', () => download(btn.dataset.dl, btn.dataset.type));
+      });
+      list.querySelectorAll('[data-rate]').forEach((btn) => {
+        btn.addEventListener('click', () => openRate(btn.dataset.rate, btn.dataset.title));
       });
     } catch (e) {
       console.error(e);

@@ -285,6 +285,42 @@ function creditLabels(language) {
   return /rus|рус|орыс/.test(l) ? CREDIT_LABELS.ru : /eng|анг|ағыл/.test(l) ? CREDIT_LABELS.en : CREDIT_LABELS.kk;
 }
 
+/** Титул жолдары: университет, факультет, кафедра, орындаған, тексерген, топ (бос өрістер өткізіледі). */
+function coverCreditLines(m, language) {
+  if (!m) return [];
+  const lb = creditLabels(language);
+  const lines = [];
+  if (m.university) lines.push(m.university);
+  if (m.faculty) lines.push(lb.faculty + ': ' + m.faculty);
+  if (m.department) lines.push(lb.department + ': ' + m.department);
+  if (m.performedBy) lines.push(lb.performed + ': ' + m.performedBy);
+  if (m.checkedBy) lines.push(lb.checked + ': ' + m.checkedBy);
+  if (m.group) lines.push(lb.group + ': ' + m.group);
+  return lines;
+}
+
+/**
+ * Клиент толтырған титул деректерін 1-слайдқа ТОЛЫҚ қояды. Кейінгі LLM/композиция кезеңдері
+ * буллеттерді қысқартуы мүмкін, сондықтан pipeline оны рендер/толтыру алдында қайта шақырады.
+ */
+function applyCoverCredits(cover, m, language) {
+  const lines = coverCreditLines(m, language);
+  if (!cover || !lines.length) return false;
+  cover.bullets = lines;
+  cover.body = null;
+  cover.coverCredits = true;
+  if (!cover.subtitle || cover.subtitle.length > 80 || lines.some((l) => cover.subtitle.includes(l))) {
+    cover.subtitle = null;
+  }
+  cover.composition = Object.assign({}, cover.composition || {}, {
+    image: (cover.composition && cover.composition.image) || 'full_background',
+    overlay: (cover.composition && cover.composition.overlay) || 'dark_gradient_bottom',
+    layout: 'single_column',
+    elements: ['title', 'subtitle', 'bullets'],
+  });
+  return true;
+}
+
 /**
  * Кіріспе слайды болуы КЕПІЛДІ: модель жазбаса, 2-слайдтың атауы "Кіріспе" болады,
  * ал бұрынғы атауы қосымша тақырыпқа ауысады (мазмұн жоғалмайды).
@@ -706,32 +742,7 @@ async function generateSlides(topic, options = {}) {
   allSlides.sort((a, b) => (a.index || 0) - (b.index || 0));
 
   // Force cover credits from client brief (never rely on model memory alone)
-  if (options.coverMeta && allSlides.length) {
-    const m = options.coverMeta;
-    const cover = allSlides[0];
-    const lines = [];
-    const lb = creditLabels(language);
-    if (m.university) lines.push(m.university);
-    if (m.faculty) lines.push(lb.faculty + ': ' + m.faculty);
-    if (m.department) lines.push(lb.department + ': ' + m.department);
-    if (m.performedBy) lines.push(lb.performed + ': ' + m.performedBy);
-    if (m.checkedBy) lines.push(lb.checked + ': ' + m.checkedBy);
-    if (m.group) lines.push(lb.group + ': ' + m.group);
-    if (lines.length) {
-      cover.bullets = lines;
-      cover.body = null;
-      if (!cover.subtitle || cover.subtitle.length > 80) {
-        cover.subtitle = lines.join(' · ');
-      }
-      // Keep academic minimal look on cover
-      cover.composition = Object.assign({}, cover.composition || {}, {
-        image: (cover.composition && cover.composition.image) || 'full_background',
-        overlay: (cover.composition && cover.composition.overlay) || 'dark_gradient_bottom',
-        layout: 'single_column',
-        elements: ['title', 'subtitle', 'bullets'],
-      });
-    }
-  }
+  if (options.coverMeta && allSlides.length) applyCoverCredits(allSlides[0], options.coverMeta, language);
 
   return { title: presentationTitle, slides: allSlides };
 
@@ -810,5 +821,5 @@ async function reviewAndImproveSlides(presentation) {
   return { ...presentation, slides: allReviewed };
 }
 
-module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, ensureIntroSlide, introTitleFor, languageMismatch };
+module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, ensureIntroSlide, introTitleFor, languageMismatch };
                                                                                                                                        

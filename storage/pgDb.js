@@ -132,6 +132,43 @@ const SCHEMA = {
     )`,
     cols: { job_id: 'TEXT', chat_id: 'TEXT', rating: 'INTEGER', comment: 'TEXT', created_at: 'BIGINT' },
   },
+  learn_templates: {
+    create: `CREATE TABLE IF NOT EXISTS learn_templates (
+      fingerprint TEXT PRIMARY KEY,
+      created_at BIGINT,
+      updated_at BIGINT,
+      reader_version INTEGER DEFAULT 0,
+      uses INTEGER DEFAULT 1,
+      data JSONB
+    )`,
+    cols: { created_at: 'BIGINT', updated_at: 'BIGINT', reader_version: 'INTEGER DEFAULT 0', uses: 'INTEGER DEFAULT 1', data: 'JSONB' },
+    unique: 'fingerprint',
+  },
+  rate_prompts: {
+    create: `CREATE TABLE IF NOT EXISTS rate_prompts (
+      job_id TEXT PRIMARY KEY,
+      chat_id TEXT,
+      kind TEXT,
+      due_at BIGINT,
+      sent BOOLEAN DEFAULT FALSE,
+      created_at BIGINT
+    )`,
+    cols: { chat_id: 'TEXT', kind: 'TEXT', due_at: 'BIGINT', sent: 'BOOLEAN DEFAULT FALSE', created_at: 'BIGINT' },
+    unique: 'job_id',
+  },
+  learn_uses: {
+    create: `CREATE TABLE IF NOT EXISTS learn_uses (
+      id TEXT PRIMARY KEY,
+      created_at BIGINT,
+      fingerprint TEXT,
+      job_id TEXT,
+      topic TEXT,
+      language TEXT,
+      outcome TEXT,
+      data JSONB
+    )`,
+    cols: { created_at: 'BIGINT', fingerprint: 'TEXT', job_id: 'TEXT', topic: 'TEXT', language: 'TEXT', outcome: 'TEXT', data: 'JSONB' },
+  },
   partner_log: {
     create: `CREATE TABLE IF NOT EXISTS partner_log (
       ref TEXT PRIMARY KEY,
@@ -248,6 +285,15 @@ async function getUser(chatId) {
 
 async function registerUser(chatId, referredBy = null) {
   await ensureUser(chatId, referredBy);
+  // Адам базада бұрын болса (мыс. Mini App-ты алдымен ашқан) — реферал белгісі жоғалмасын.
+  // Тек әлі презентация жасамаған және белгісі жоқ болса ғана жазамыз.
+  if (referredBy && String(referredBy) !== String(chatId)) {
+    await q(
+      `UPDATE users SET referred_by = $2::text
+       WHERE chat_id = $1::text AND referred_by IS NULL AND COALESCE(total, 0) = 0`,
+      [String(chatId), String(referredBy)]
+    );
+  }
 }
 
 async function addCredits(chatId, amount) {
@@ -379,6 +425,87 @@ async function payoutPartner(chatId, amount) {
 async function listPartners() {
   const r = await q("SELECT chat_id FROM users WHERE partner_status = 'active'");
   return Promise.all(r.rows.map(async (x) => ({ chatId: String(x.chat_id), ...(await getPartner(x.chat_id)) })));
+}
+
+
+// ─── Үйрену жүйесі: шаблонның оқылған дизайн-деректері (файлсыз, мәтінсіз) және әр қолдану ──────────
+// cleanupOldJobs бұларды өшірмейді: клиентке байланбаған (chat_id жоқ), тек дизайн туралы дерек.
+async function saveLearnedTemplate(read) {
+  if (!read || !read.fingerprint) return null;
+  const now = Date.now();
+  const r = await q(
+    `INSERT INTO learn_templates (fingerprint, created_at, updated_at, reader_version, uses, data)
+     VALUES ($1, $2::bigint, $2::bigint, $3::int, 1, $4::jsonb)
+     ON CONFLICT (fingerprint) DO UPDATE SET
+       uses = COALESCE(learn_templates.uses, 1) + 1,
+       updated_at = EXCLUDED.updated_at,
+       data = CASE WHEN EXCLUDED.reader_version > COALESCE(learn_templates.reader_version, 0) THEN EXCLUDED.data ELSE learn_templates.data END,
+       reader_version = GREATEST(EXCLUDED.reader_version, COALESCE(learn_templates.reader_version, 0))
+     RETURNING (xmax = 0) AS inserted`,
+    [String(read.fingerprint), now, Number(read.readerVersion) || 0, jsonParam(read)]
+  );
+  const row = r.rows[0] || {};
+  return { fingerprint: read.fingerprint, isNew: row.inserted === true || row.inserted === 't' };
+}
+
+async function addLearnUse(use) {
+  if (!use || !use.fingerprint) return null;
+  const id = makeJobId();
+  await q(
+    `INSERT INTO learn_uses (id, created_at, fingerprint, job_id, topic, language, outcome, data)
+     VALUES ($1, $2::bigint, $3, $4, $5, $6, $7, $8::jsonb)`,
+    [id, Date.now(), String(use.fingerprint), use.jobId ? String(use.jobId) : null, String(use.topic || '').slice(0, 200),
+      use.language || null, use.outcome || null, jsonParam(use)]
+  );
+  return id;
+}
+
+async function listLearnedTemplates(limit = 500) {
+  const r = await q(
+    `SELECT fingerprint, uses, created_at, updated_at, reader_version, data FROM learn_templates
+     ORDER BY updated_at DESC LIMIT $1`, [Math.max(1, Math.min(5000, Number(limit) || 500))]);
+  return r.rows.map((x) => ({
+    fingerprint: x.fingerprint, uses: num(x.uses, 1), createdAt: num(x.created_at), updatedAt: num(x.updated_at),
+    readerVersion: num(x.reader_version), data: typeof x.data === 'string' ? JSON.parse(x.data) : x.data,
+  }));
+}
+
+/** Қолданулар + клиент бағасы (feedback, job_id бойынша соңғысы). */
+async function listLearnUses(limit = 2000) {
+  const r = await q(
+    `SELECT u.id, u.created_at, u.data, f.rating, f.comment
+     FROM learn_uses u
+     LEFT JOIN LATERAL (
+       SELECT rating, comment FROM feedback WHERE job_id = u.job_id ORDER BY created_at DESC LIMIT 1
+     ) f ON TRUE
+     ORDER BY u.created_at DESC LIMIT $1`, [Math.max(1, Math.min(20000, Number(limit) || 2000))]);
+  return r.rows.map((x) => ({
+    ...(typeof x.data === 'string' ? JSON.parse(x.data) : x.data), id: x.id, createdAt: num(x.created_at),
+    rating: x.rating == null ? null : num(x.rating), comment: x.comment == null ? null : x.comment,
+  }));
+}
+
+// ─── Кешіктірілген баға сұрауы (клиент нәтижені қарап үлгерсін) ─────────────
+async function scheduleRatePrompt({ jobId, chatId, kind, dueAt }) {
+  const r = await q(
+    `INSERT INTO rate_prompts (job_id, chat_id, kind, due_at, sent, created_at)
+     VALUES ($1, $2, $3, $4::bigint, FALSE, $5::bigint) ON CONFLICT (job_id) DO NOTHING RETURNING job_id`,
+    [String(jobId), String(chatId), kind || 'presentation', Number(dueAt) || Date.now(), Date.now()]
+  );
+  return r.rows.length > 0;
+}
+/** Мерзімі жеткен сұрауларды атомарлы алады (бірнеше процесс болса да екі рет жіберілмейді). */
+async function takeDueRatePrompts(now = Date.now(), limit = 20) {
+  const r = await q(
+    `UPDATE rate_prompts SET sent = TRUE
+     WHERE job_id IN (
+       SELECT job_id FROM rate_prompts WHERE sent = FALSE AND due_at <= $1::bigint
+       ORDER BY due_at LIMIT $2::int FOR UPDATE SKIP LOCKED
+     )
+     RETURNING job_id, chat_id, kind, due_at`,
+    [Number(now), Math.max(1, Number(limit) || 20)]
+  );
+  return r.rows.map((x) => ({ jobId: x.job_id, chatId: String(x.chat_id), kind: x.kind, dueAt: num(x.due_at) }));
 }
 
 async function useCredit(chatId) {
@@ -622,6 +749,21 @@ async function addFeedback(jobId, chatId, rating, comment) {
   return { id, jobId: String(jobId), chatId: String(chatId), rating: clampedRating, comment: comment || '', createdAt };
 }
 
+/** Баға/пікірді жаңарту немесе қосу (бір клиент — бір жұмысқа бір жазба). rating/comment — қайсысы берілсе, сол өзгереді. */
+async function setFeedback(jobId, chatId, { rating, comment } = {}) {
+  const r = rating == null ? null : Math.min(Math.max(parseInt(rating, 10) || 0, 1), 5);
+  const sets = []; const vals = [String(jobId), String(chatId)];
+  if (r != null) { vals.push(r); sets.push(`rating = $${vals.length}::int`); }
+  if (comment != null) { vals.push(String(comment).slice(0, 1000)); sets.push(`comment = $${vals.length}`); }
+  vals.push(Date.now()); sets.push(`created_at = ${tw('feedback', 'created_at', `$${vals.length}::bigint`)}`);
+  const up = await q(
+    `UPDATE feedback SET ${sets.join(', ')} WHERE job_id = $1 AND chat_id = $2 RETURNING job_id, rating, comment`, vals);
+  if (up.rows.length) return { jobId: String(jobId), rating: num(up.rows[0].rating), comment: up.rows[0].comment };
+  if (r == null) return null; // пікір бағадан кейін ғана
+  const f = await addFeedback(jobId, chatId, r, comment || '');
+  return { jobId: f.jobId, rating: f.rating, comment: f.comment };
+}
+
 async function getFeedbackForJob(jobId) {
   const r = await q(
     `SELECT id::text AS id, job_id, chat_id, rating, comment, ${tr('feedback', 'created_at')}
@@ -649,6 +791,7 @@ async function cleanupOldJobs(maxAgeMs = 2 * 24 * 3600 * 1000) {
     [cutoff, cutoff]
   );
   await q(`DELETE FROM history WHERE created_at < ${tw('history', 'created_at', '$1')}`, [cutoff]);
+  await q('DELETE FROM rate_prompts WHERE created_at < $1::bigint', [cutoff]);
   return r.rowCount || 0;
 }
 
@@ -674,6 +817,13 @@ module.exports = {
   creditPartnerCommission,
   payoutPartner,
   listPartners,
+  saveLearnedTemplate,
+  addLearnUse,
+  listLearnedTemplates,
+  listLearnUses,
+  setFeedback,
+  scheduleRatePrompt,
+  takeDueRatePrompts,
   useCredit,
   refundCredit,
   getAllChatIds,

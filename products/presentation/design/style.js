@@ -174,6 +174,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .meta-i{display:flex;flex-direction:column;gap:6px;min-width:0}
 .meta-k{font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);font-weight:600}
 .meta-v{font-size:28px;line-height:1.3;color:var(--text)}
+.meta-row.is-dense{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s4) var(--s6)}
+.meta-row.is-dense .meta-v{font-size:24px}.meta-row.is-dense .meta-k{font-size:18px}
+.cover-org{font-size:24px;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);font-weight:600;line-height:1.3}
 
 /* ── section ── */
 .sect{display:flex;flex-direction:column;justify-content:space-between}
