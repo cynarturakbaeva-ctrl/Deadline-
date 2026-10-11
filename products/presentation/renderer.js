@@ -8,6 +8,62 @@ const { pathToFileURL } = require('url');
 const SLIDE_W = 1920;
 const SLIDE_H = 1080;
 
+const LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
+
+/** Chrome-ды табу: env → puppeteer өз жолы → екі кэш папкасы (жоба/.cache және ~/.cache) → жүйелік Chromium. */
+function findChrome(puppeteer) {
+  const out = [];
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) out.push(process.env.PUPPETEER_EXECUTABLE_PATH);
+  try { out.push(puppeteer.executablePath()); } catch {}
+  const roots = [
+    path.join(__dirname, '..', '..', '.cache', 'puppeteer'),
+    path.join(os.homedir(), '.cache', 'puppeteer'),
+    '/root/.cache/puppeteer', '/app/.cache/puppeteer',
+  ];
+  for (const r of roots) {
+    for (const kind of ['chrome', 'chrome-headless-shell']) {
+      const dir = path.join(r, kind);
+      let vers = [];
+      try { vers = fs.readdirSync(dir).sort().reverse(); } catch { continue; }
+      for (const v of vers) {
+        for (const bin of ['chrome-linux64/chrome', 'chrome-headless-shell-linux64/chrome-headless-shell']) out.push(path.join(dir, v, bin));
+      }
+    }
+  }
+  out.push('/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable');
+  return [...new Set(out)].filter((p) => { try { return p && fs.statSync(p).isFile(); } catch { return false; } });
+}
+
+let installTried = false;
+async function launchBrowser(puppeteer) {
+  const errors = [];
+  const tryLaunch = async (executablePath) => {
+    try { return await puppeteer.launch({ headless: 'new', executablePath, args: LAUNCH_ARGS }); }
+    catch (e) { errors.push(`${executablePath || 'default'}: ${String(e.message).split('\n')[0]}`); return null; }
+  };
+  for (const p of findChrome(puppeteer)) {
+    const b = await tryLaunch(p);
+    if (b) return b;
+  }
+  // Chrome мүлде жоқ — бір рет өзіміз жүктеп көреміз (Railway-де желі бар)
+  if (!installTried) {
+    installTried = true;
+    console.log('[Render] Chrome табылмады — жүктеп жатырмыз (npx puppeteer browsers install chrome)...');
+    try {
+      require('child_process').execSync('npx --yes puppeteer browsers install chrome', {
+        cwd: path.join(__dirname, '..', '..'), stdio: 'pipe', timeout: 300000,
+      });
+      for (const p of findChrome(puppeteer)) {
+        const b = await tryLaunch(p);
+        if (b) return b;
+      }
+    } catch (e) { errors.push('install: ' + String(e.message).split('\n')[0]); }
+  }
+  const msg = 'Chrome іске қосылмады: ' + errors.join(' | ');
+  console.log('[Render] ❌ ' + msg); // info деңгейінде де көрінсін
+  throw new Error(msg);
+}
+
 /**
  * Дайын HTML презентацияны (html3DBuilder) ашып, әр слайдты PNG-ге түсіреді.
  * PPTX осы PNG-лерден жасалады, сондықтан PPTX мен HTML бірдей болады.
@@ -22,21 +78,7 @@ async function renderHtmlToPngs(htmlPath) {
   const pngPaths = [];
   const overflowWarnings = [];
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    // Termux/Android-да Puppeteer-дің өз Chromium жүктемесі көбіне сәтсіз
-    // болады немесе мүлде жұмыс істемейді (ARM/Android binary шектеуі).
-    // PUPPETEER_EXECUTABLE_PATH қойылса (мыс. termux-chromium немесе
-    // жүйедегі Chrome жолы), соны қолданады; қойылмаса — бұрынғыдай
-    // Puppeteer-дің өз бумаланған Chromium-ын іздейді (мінез-құлық өзгермейді).
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-  });
+  const browser = await launchBrowser(puppeteer);
 
   try {
     const page = await browser.newPage();

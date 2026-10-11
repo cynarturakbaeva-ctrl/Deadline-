@@ -48,8 +48,29 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: '1mb' }));
 
 // Static Mini App
-app.use('/webapp', express.static(path.join(__dirname, 'webapp'), {
-  maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+// Кэш: index.html ешқашан кэштелмейді, ал app.js/styles.css сілтемесіне нұсқа (?v=…) қосылады —
+// әр деплойдан кейін Telegram WebView ескі файлды көрсетпейді (бұрын 1 сағат ескі app.js қалатын).
+const WEBAPP_DIR = path.join(__dirname, 'webapp');
+const assetVersion = (() => {
+  try {
+    const h = require('crypto').createHash('sha1');
+    for (const f of ['app.js', 'styles.css', 'index.html']) h.update(fs.readFileSync(path.join(WEBAPP_DIR, f)));
+    return h.digest('hex').slice(0, 10);
+  } catch { return String(Date.now()); }
+})();
+const sendIndex = (req, res) => {
+  try {
+    const html = fs.readFileSync(path.join(WEBAPP_DIR, 'index.html'), 'utf8')
+      .replace(/(src|href)="(app\.js|styles\.css)"/g, `$1="$2?v=${assetVersion}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('X-Frame-Options', 'ALLOWALL');
+    res.type('html').send(html);
+  } catch (e) { res.status(500).send('webapp error'); }
+};
+app.get(['/webapp', '/webapp/', '/webapp/index.html'], sendIndex);
+app.use('/webapp', express.static(WEBAPP_DIR, {
+  index: false,
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,   // ?v=… өзгергенде жаңа файл жүктеледі
   setHeaders(res) {
     res.setHeader('X-Frame-Options', 'ALLOWALL'); // Telegram WebView
   },
@@ -816,6 +837,7 @@ async function executeJob(jobId) {
     console.log(`[Job] ${jobId} done — ${result.title}`);
   } catch (err) {
     console.error(`[Job] ${jobId} failed:`, err.message);
+    console.log(`[Job] ${jobId} FAILED: ${String(err.stack || err.message).slice(0, 1500)}`);
     scheduleLearn(job, 'failed', { error: String(err.message || 'unknown').slice(0, 80) });
     await refundCredit(chatId);
     await updateJob(jobId, {
