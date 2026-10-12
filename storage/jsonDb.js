@@ -8,8 +8,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+// DB_FILE (README-де аталған) — басқа жол беруге болады (тесттер уақытша файл қолданады)
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'db.json');
+const DATA_DIR = path.dirname(DB_FILE);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -77,14 +78,16 @@ function todayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
-function ensureUser(chatId, referredBy = null) {
+function ensureUser(chatId, referredBy = null, source = null) {
   const id = String(chatId);
   if (!db.users[id]) {
     db.users[id] = {
       chat_id: id,
+      source: source ? String(source).slice(0, 40) : null,
       credits: 0,
       total: 0,
       free_used: false,
+      free_used_at: 0,
       referred_by: referredBy ? String(referredBy) : null,
       ref_earnings: 0,
       last_attempt_at: 0,
@@ -107,17 +110,50 @@ async function initDB() {
 // ─── Users ──────────────────────────────────────────────────────────────
 async function getUser(chatId) {
   const u = db.users[String(chatId)];
-  if (!u) return { credits: 0, total: 0, referredBy: null, refEarnings: 0 };
+  if (!u) return { credits: 0, total: 0, referredBy: null, refEarnings: 0, freeUsed: false };
   return {
     credits: Number(u.credits) || 0,
     total: Number(u.total) || 0,
     referredBy: u.referred_by || null,
-    refEarnings: Number(u.ref_earnings) || 0
+    refEarnings: Number(u.ref_earnings) || 0,
+    freeUsed: !!u.free_used,
   };
 }
 
-async function registerUser(chatId, referredBy = null) {
-  ensureUser(chatId, referredBy);
+// ─── Бірінші презентация тегін (бір аккаунтқа бір рет) ─────────────────────
+async function claimFreeDeck(chatId) {
+  const u = ensureUser(chatId);
+  if (u.free_used || (Number(u.total) || 0) > 0) return false;
+  u.free_used = true; u.free_used_at = Date.now();
+  saveDB(db);
+  return true;
+}
+async function releaseFreeDeck(chatId) {
+  const u = ensureUser(chatId);
+  u.free_used = false; u.free_used_at = 0;
+  saveDB(db);
+}
+async function countFreeDecksSince(ts) {
+  return Object.values(db.users).filter((u) => u.free_used && (Number(u.free_used_at) || 0) >= (Number(ts) || 0)).length;
+}
+async function freeFunnel() {
+  const all = Object.values(db.users);
+  const isFree = (u) => u.free_used && (Number(u.free_used_at) || 0) > 0;
+  const free = all.filter(isFree);
+  const by = {};
+  all.forEach((u) => {
+    const k = u.source || (u.referred_by ? 'ref' : 'direct');
+    const b = by[k] || (by[k] = { source: k, users: 0, free: 0, paid: 0 });
+    b.users += 1; if (isFree(u)) b.free += 1; if ((Number(u.total) || 0) > 0) b.paid += 1;
+  });
+  return {
+    freeUsers: free.length, paidAfter: free.filter((u) => (Number(u.total) || 0) > 0).length,
+    sources: Object.values(by).sort((a, b) => b.users - a.users).slice(0, 12),
+  };
+}
+
+async function registerUser(chatId, referredBy = null, source = null) {
+  ensureUser(chatId, referredBy, source);
   saveDB(db);
 }
 
@@ -641,6 +677,10 @@ module.exports = {
   takeDueRatePrompts,
   useCredit,
   refundCredit,
+  claimFreeDeck,
+  releaseFreeDeck,
+  countFreeDecksSince,
+  freeFunnel,
   getAllChatIds,
   checkRateLimits,
   markGenerationAttempt,

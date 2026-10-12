@@ -32,6 +32,7 @@ const { runVisionCritic } = require('./visionCritic');
 const { uniqueId } = require('../../core/tmpFiles');
 const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
 const { validateInfographic } = require('./design/infographics');
+const { planPhotoSlides } = require('./photoPlan');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
@@ -55,7 +56,9 @@ function shortTopicKeyword(topic) {
 
 // Бір слайдқа сурет: сұраныстарды кезекпен сынап, табылған суретті жүктеп, data: URI ретінде қайтарады.
 // Ешбір сурет алынбаса — null (builder әдемі fallback фонға түседі). Осы функция ЕШҚАШАН лақтырмайды.
-async function fetchImageWithFallback(query, topic, used, deckQueries = []) {
+async function fetchImageWithFallback(query, topic, used, deckQueries = [], opts = {}) {
+  // бір фотоға ең көбі 5 нақты API іздеу (кэштен алынғандары есептелмейді) — лимитті қорғау
+  const budget = { left: Number(process.env.IMAGE_SEARCHES_PER_PHOTO) || 5 };
   const attempts = [];
   for (const q of fallbackQueries(query, topic, deckQueries)) {
     attempts.push(q);
@@ -67,7 +70,8 @@ async function fetchImageWithFallback(query, topic, used, deckQueries = []) {
     if (!q || !q.trim()) continue;
     try {
       // findImage: табады + жүктейді; жүктелмесе келесі кандидатқа/провайдерге өзі өтеді
-      const hit = await findImage(q, { used });
+      if (budget.left <= 0) break;
+      const hit = await findImage(q, { used, free: !!opts.free, budget });
       if (hit && hit.dataUri) return hit.dataUri;
     } catch (err) {
       console.warn(`[Image] "${q}" failed: ${err.message}`);
@@ -153,6 +157,13 @@ async function generatePresentation(userInput, options = {}) {
         console.log(`[Pipeline] id=${genId} Requirements: ${reqSet.items.length} item(s) (llm=${pr.llm})${reqNote ? ' · ' + reqNote : ''}`);
       }
     } catch (e) { console.warn(`[Pipeline] id=${genId} Requirements ignored: ${e.message}`); }
+  }
+
+  // Тегін колода: слайд саны қатаң шектеледі (тақырып мәтіні немесе талап көбірек сұраса да)
+  const maxSlides = Number(options.maxSlides) || null;
+  if (maxSlides && (!slideCount || slideCount > maxSlides)) {
+    console.log(`[Pipeline] id=${genId} Slides capped: ${slideCount || 'auto'} → ${maxSlides} (free deck)`);
+    slideCount = maxSlides;
   }
 
   // 0. Референс PPTX → Design DNA + құрылым (тек PPTX; ақысыз, XML талдау). Референс промттан басым.
@@ -501,6 +512,16 @@ async function generatePresentation(userInput, options = {}) {
   }
 
   if (!pptxPath) {
+  // Тегін колода: кіріспе/әдебиет слайдтары қосылып шекті асса — ортадағы артығын алып тастаймыз (мұқаба мен соңы қалады)
+  if (maxSlides && slides.length > maxSlides) {
+    while (slides.length > maxSlides) slides.splice(slides.length - 2, 1);
+    slides.forEach((slide, i) => { slide.index = i + 1; });
+  }
+  // «Made in DeadLine» карточкасы (тек тегін колода): PPTX-те бөлек, өшірілетін нысан; HTML бұрышты бос қалдырады
+  const badge = options.badgeUrl !== undefined && options.free
+    ? { url: options.badgeUrl || null, dark: !(slides[0] && slides[0].composition && require('./design/tokens').isLightMood(slides[0].composition.mood)) }
+    : null;
+
   // 3. Суреттер мен визуалдар (SVG диаграмма/инфографика) — бір мезгілде, бірін-бірі күтпейді.
   //    Екеуі де ЕШҚАШАН лақтырмайды: сәтсіз болса, слайд қалыпты күйінде қалады.
   // Баяндамашы мәтіні + оқу көмекшісі: мазмұн енді түпкілікті → суреттермен ҚАТАР жазылады (күту уақыты қосылмайды)
@@ -512,7 +533,12 @@ async function generatePresentation(userInput, options = {}) {
   console.log('[Pipeline] Fetching images + drawing visuals...');
   const usedImages = new Set(); // бір сурет екі слайдқа түспесін
   const deckQueries = slides.map((sl) => (typeof sl.imageQuery === 'string' ? sl.imageQuery.trim() : '')).filter(isLatinQuery);
-  const imagesTask = mapLimit(slides, 3, async (slide) => {
+  // Фото тек макеті шынымен фото КӨРСЕТЕТІН слайдтарға ізделеді (бұрын әр слайдқа → API лимиті тез бітетін)
+  const photoBudget = options.free ? (Number(process.env.PHOTO_BUDGET_FREE) || 3) : (Number(process.env.PHOTO_BUDGET) || 4);
+  const photoPlan = planPhotoSlides(slides, { budget: photoBudget });
+  console.log(`[Pipeline] Photo plan: ${photoPlan.indexes.size}/${slides.length} slides → [${[...photoPlan.indexes].map((i) => i + 1).join(',')}]`);
+  const imagesTask = mapLimit(slides, 3, async (slide, idx) => {
+    if (!photoPlan.indexes.has(idx)) return null;
     // Сурет іздеу тек ағылшынша (латын) сұранысқа. Қазақша/орысша сұраныс ЕШҚАШАН жіберілмейді.
     const raw = typeof slide.imageQuery === 'string' ? slide.imageQuery.trim() : '';
     const query = isLatinQuery(raw) ? raw : '';
@@ -523,7 +549,7 @@ async function generatePresentation(userInput, options = {}) {
     if (validateInfographic(slide.infographic)) return null;
     console.log(`[Image] query="${query}"`);
     try {
-      return await fetchImageWithFallback(query, topic, usedImages, deckQueries);
+      return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free });
     } catch (err) {
       // Бір слайдтың суреті ешқашан бүкіл презентацияны құлатпауы керек
       console.warn(`[Image] slide failed, using fallback background: ${err.message}`);
@@ -571,7 +597,7 @@ async function generatePresentation(userInput, options = {}) {
   const buildAndRender = async (attempt) => {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
     restoreCover(slides);
-    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
+    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, badge: !!badge, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
     await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Өңделетін PPTX жасалуда...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
     cost.addRenderAttempt();
@@ -738,7 +764,7 @@ async function generatePresentation(userInput, options = {}) {
       console.log(`[Pipeline] Speaker notes: ${notesMeta.ok}/${slides.length} slides, study guide=${notesMeta.study}`);
     }
     // Өңделетін PPTX: мәтінсіз фон + нативті мәтін қораптары (HTML тек ішкі «сурет салушы»)
-    pptxPath = await exportToPptx(pngPaths, title, slides, { bgPaths, textLayers, language });
+    pptxPath = await exportToPptx(pngPaths, title, slides, { bgPaths, textLayers, language, badge });
   } catch (err) {
     try { if (htmlPath) fs.unlinkSync(htmlPath); } catch {}
     try { if (speechPath) fs.unlinkSync(speechPath); } catch {}

@@ -168,6 +168,7 @@
         $('#plusPrice').textContent = me.plus.amount;
         $('#plusEach').textContent = `(≈ ${Math.round(me.plus.amount / me.plus.credits)}₸ / дана)`;
       }
+      $('#freeBanner').classList.toggle('hidden', !me.freeAvailable);
       $('#kaspiPhone').textContent = me.kaspi?.phone || '';
       $('#kaspiName').textContent = me.kaspi?.name || '';
     } catch (e) {
@@ -263,10 +264,14 @@
       haptic('error');
       return showToast('Алдымен шаблон (.pptx) жүктеңіз');
     }
-    if (state.me && state.me.credits <= 0) {
+    const freeNow = !!(state.me && state.me.freeAvailable && state.mode === 'presentation');
+    if (state.me && state.me.credits <= 0 && !freeNow) {
       haptic('error');
-      showToast('Кредит жоқ — Аккаунт бөліміне өтіңіз');
+      showToast(state.me.freeAvailable ? 'Тегін презентация тек AI Presentation режимінде' : 'Кредит жоқ — Аккаунт бөліміне өтіңіз');
       return;
+    }
+    if (freeNow && state.me.credits <= 0 && state.slideCount > (state.me.freeMaxSlides || 10)) {
+      showToast(`Тегін презентация — ${state.me.freeMaxSlides || 10} слайдқа дейін`);
     }
 
     $('#btnGenerate').disabled = true;
@@ -296,6 +301,7 @@
         }),
       });
       state.currentJobId = res.jobId;
+      if (res.free && state.me) { state.me.freeAvailable = false; $('#freeBanner').classList.add('hidden'); }
       if (state.me) {
         state.me.credits = res.creditsLeft;
         $('#creditsVal').textContent = res.creditsLeft;

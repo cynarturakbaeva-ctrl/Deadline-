@@ -14,7 +14,7 @@ const { generateReferat } = require('./products/referat/index');
 const { analyzeMaterialFile, materialsToText } = require('./core/materials');
 const { ratingKeyboard, ratePromptText, rateDueAt } = require('./core/feedbackUi');
 const {
-  initDB, getUser, registerUser, useCredit, refundCredit,
+  initDB, getUser, registerUser, useCredit, refundCredit, claimFreeDeck, releaseFreeDeck, countFreeDecksSince, freeFunnel,
   checkRateLimits, markGenerationAttempt, markGenerationSuccess,
   createJob, updateJob, getJob, getUserJobs, addHistory, getHistory,
   cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
@@ -38,7 +38,7 @@ async function nudgeTemplate(chatId) {
 }
 const MAX_CONCURRENT = Math.max(1, parseInt(process.env.MAX_CONCURRENT_GENERATIONS || '3', 10) || 3);
 const MAX_TOPIC_CHARS = Math.max(200, parseInt(process.env.MAX_TOPIC_CHARS || '8000', 10) || 8000);
-const { PRICE, PLUS } = require('./core/pricing');
+const { PRICE, FIRST_PRICE, PLUS } = require('./core/pricing');
 const { formatReport } = require('./requirements');
 const KASPI_PHONE = process.env.KASPI_PHONE || '+77713436592';
 const KASPI_NAME = process.env.KASPI_NAME || 'Мурзабек Н';
@@ -89,6 +89,11 @@ app.use('/webapp', express.static(WEBAPP_DIR, {
 // Jobs output dir (PPTX/HTML served securely)
 // Railway-де файлдар жүйесі уақытша: сақтау керек болса Volume қосып, JOBS_DIR=/data/jobs сияқты беріңіз
 const JOBS_DIR = process.env.JOBS_DIR || path.join(__dirname, 'jobs');
+// ─── Тегін бірінші презентация ───
+const FREE_DAILY_LIMIT = Number(process.env.FREE_DAILY_LIMIT) || 100;
+const FREE_MAX_SLIDES = 10;
+const startOfDayMs = () => { const H5 = 5 * 3600e3; const t = Date.now() + H5; return t - (t % 86400e3) - H5; }; // Алматы (UTC+5) тәулігінің басы
+const madeInUrl = () => (process.env.BOT_USERNAME ? `https://t.me/${process.env.BOT_USERNAME}?start=madein` : null);
 const speechFile = (jobId) => path.join(JOBS_DIR, String(jobId).replace(/[^\w-]/g, ''), 'speech.docx');
 fs.mkdirSync(JOBS_DIR, { recursive: true });
 
@@ -167,6 +172,9 @@ app.get('/api/me', authMiddleware, async (req, res) => {
       plus: { amount: PLUS.amount, credits: PLUS.credits },
       kaspi: { phone: KASPI_PHONE, name: KASPI_NAME },
       referralsPerBonus: REFERRALS_PER_BONUS,
+      // бірінші презентация тегін (≤10 слайд, тек AI режимі) — Mini App батырмасы мен баннері үшін
+      freeAvailable: !user.freeUsed && !user.total && (user.credits || 0) <= 0,
+      freeMaxSlides: FREE_MAX_SLIDES,
     });
   } catch (err) {
     console.error('[API] /me', err);
@@ -376,17 +384,26 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       await registerUser(chatId, null);
       user = await getUser(chatId);
     }
+    // Бірінші презентация тегін: кредиті жоқ, ешқашан сатып алмаған адамға — тек AI режимі, ≤10 слайд, тәуліктік шек
+    let isFree = false;
     if (!user || user.credits <= 0) {
-      return res.status(402).json({
-        error: 'no_credits',
-        message: 'Кредит жеткіліксіз. Сатып алыңыз немесе реферал шақырыңыз.',
-        credits: user?.credits || 0,
-      });
+      const freeOk = genMode === 'presentation' && user && !user.freeUsed && !user.total
+        && (await countFreeDecksSince(startOfDayMs())) < FREE_DAILY_LIMIT
+        && (await claimFreeDeck(chatId));
+      if (!freeOk) {
+        return res.status(402).json({
+          error: 'no_credits',
+          message: 'Кредит жеткіліксіз. Сатып алыңыз немесе реферал шақырыңыз.',
+          credits: user?.credits || 0,
+        });
+      }
+      isFree = true;
     }
+    const effSlides = isFree ? Math.min(parseInt(slideCount, 10) || FREE_MAX_SLIDES, FREE_MAX_SLIDES) : slideCount;
 
     // Build free-text input compatible with existing parseUserInput
     const parts = [topicStr];
-    if (slideCount) parts.push(`${slideCount} слайд`);
+    if (effSlides) parts.push(`${effSlides} слайд`);
     if (language) parts.push(language === 'en' ? 'ағылшынша' : language === 'ru' ? 'орысша' : 'қазақша');
     if (style) parts.push(style);
     if (audience) parts.push(`аудитория: ${audience}`);
@@ -404,7 +421,7 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       group: clean(group), city: clean(city), performedBy: clean(performedBy), checkedBy: clean(checkedBy),
     };
 
-    const charged = await useCredit(chatId);
+    const charged = isFree || await useCredit(chatId);
     if (!charged) {
       return res.status(402).json({ error: 'no_credits', message: 'Кредит жеткіліксіз' });
     }
@@ -452,10 +469,11 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     const typedRequirements = !isReferat && genMode === 'presentation' ? String(requirements || '').trim() : '';
     const requirementsSource = typedRequirements.slice(0, 2000);
 
-    console.log(`[API] generate: mode=${genMode} language=${language || '(жоқ → kk)'} slides=${slideCount || '-'} pages=${pages || '-'} materials=${materialMeta.length}${sampleName ? ' sample=' + sampleName : ''} chat=${chatId}`);
+    console.log(`[API] generate: mode=${genMode}${isFree ? ' FREE' : ''} language=${language || '(жоқ → kk)'} slides=${effSlides || '-'} pages=${pages || '-'} materials=${materialMeta.length}${sampleName ? ' sample=' + sampleName : ''} chat=${chatId}`);
     const job = await createJob(chatId, {
       topic: topicStr,
-      slideCount: slideCount || null,
+      slideCount: effSlides || null,
+      free: isFree,
       language: language || 'kk',
       style: style || null,
       audience: audience || null,
@@ -481,7 +499,8 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     res.status(202).json({
       jobId: job.id,
       status: 'queued',
-      creditsLeft: (user.credits || 1) - 1,
+      creditsLeft: isFree ? (user.credits || 0) : (user.credits || 1) - 1,
+      free: isFree,
     });
   } catch (err) {
     console.error('[API] /generate', err);
@@ -722,6 +741,9 @@ async function executeJob(jobId) {
       materialText: job.payload?.materialText || null,
       referencePptx,
       requirements: job.payload?.requirements || null,
+      free: !!job.payload?.free,
+      maxSlides: job.payload?.free ? FREE_MAX_SLIDES : null,
+      badgeUrl: job.payload?.free ? madeInUrl() : null,
       onProgress: async (phase, detail) => {
         const progressMap = {
           content: 15,
@@ -828,7 +850,7 @@ async function executeJob(jobId) {
           // Telegram боты 50 МБ-тан үлкен файлды жібере алмайды (шаблон 50 МБ-қа жақын болса, нәтиже де сондай)
           const mb = Math.round(fs.statSync(pptxPath).size / 1024 / 1024);
           console.warn(`[Job] ${jobId} pptx ${mb}MB > Telegram 50MB limit`);
-          await refundCredit(chatId);
+          if (job.payload?.free) await releaseFreeDeck(chatId); else await refundCredit(chatId);
           await global.__deadlineBot.sendMessage(chatId, `⚠️ Дайын файл ${mb} МБ — Telegram 50 МБ-тан үлкен файлды жібере алмайды. Кредитіңіз қайтарылды.\nШаблондағы суреттерді кішірейтіп (сығып) қайта жүктеңіз.`).catch(() => {});
         } else if (pptxPath && fs.existsSync(pptxPath)) {
           const pptxName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.pptx`;
@@ -851,6 +873,17 @@ async function executeJob(jobId) {
       console.warn('[Job] file send failed', e.message);
     }
 
+    // Тегін колодадан кейін: келесі қадамды бір хабармен ұсынамыз (баға, Plus, реферал)
+    if (job.payload?.free && global.__deadlineBot) {
+      const ref = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}?start=ref_${chatId}` : '';
+      global.__deadlineBot.sendMessage(chatId,
+        '🎁 Бұл — сіздің *тегін* презентацияңыз (оң жақ бұрыштағы «Made in DeadLine» белгісін PowerPoint-та өшіре аласыз).\n\n' +
+        `Келесі презентация: *${FIRST_PRICE}₸* (бірінші сатып алу), кейін ${PRICE}₸ · Plus: ${PLUS.credits} презентация — ${PLUS.amount}₸.\n` +
+        'Ақылы презентацияда белгі болмайды, слайд саны шектелмейді, шаблон режимі де ашылады.' +
+        (ref ? `\n\n👥 Досыңызға сілтеме жіберіңіз — ол презентация жасатса, сізге бонус кредит: ${ref}` : ''),
+        { parse_mode: 'Markdown', disable_web_page_preview: true }).catch(() => {});
+    }
+
     // Шаблон режимін әлі қолданбағандарға бір рет еске саламыз (процесс ішінде бір рет)
     if (job.mode !== 'template' && job.payload?.mode !== 'template') nudgeTemplate(chatId).catch(() => {});
 
@@ -859,7 +892,7 @@ async function executeJob(jobId) {
     console.error(`[Job] ${jobId} failed:`, err.message);
     console.log(`[Job] ${jobId} FAILED: ${String(err.stack || err.message).slice(0, 1500)}`);
     scheduleLearn(job, 'failed', { error: String(err.message || 'unknown').slice(0, 80) });
-    await refundCredit(chatId);
+    if (job.payload?.free) await releaseFreeDeck(chatId); else await refundCredit(chatId);
     await updateJob(jobId, {
       status: 'failed',
       phase: 'failed',
