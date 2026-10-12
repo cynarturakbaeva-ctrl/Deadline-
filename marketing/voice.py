@@ -20,8 +20,8 @@ LINES = {
   (3.1, 2.8, "Опять сидишь над слайдами всю ночь?"),
   (6.15, 2.75, "Дэдлайн. Напиши тему — получи презентацию."),
   (9.25, 4.4, "Вводишь тему и жмёшь «Создать»."),
-  (13.95, 3.0, "Минута — и слайды, графики и дизайн готовы."),
-  (17.15, 4.7, "Редактируешь в Пауэрпойнте, а текст доклада уже готов."),
+  (13.95, 3.4, "Минута — и слайды, графики и дизайн готовы."),
+  (17.4, 4.6, "Редактируешь в Пауэрпойнте, а текст доклада уже готов."),
   (22.15, 3.6, "Первая презентация — бесплатно. Открывай в Телеграме!"),
  ],
  'kk': [
@@ -29,8 +29,8 @@ LINES = {
   (3.1, 2.8, "Түнімен слайд жасап отырмай-ақ қой."),
   (6.15, 2.75, "Дедлайн: тақырып жаз, презентация дайын."),
   (9.25, 4.4, "Тақырыпты жазып, «Жасау» батырмасын бас."),
-  (13.95, 3.0, "Бір минутта слайдтар мен дизайн дайын."),
-  (17.15, 4.7, "Өзің өңдейсің, баяндама мәтіні бар, өз шаблоның да болады."),
+  (13.95, 3.4, "Бір минутта слайдтар мен дизайн дайын."),
+  (17.4, 4.6, "Өзің өңдейсің, баяндама мәтіні бар, өз шаблоның да болады."),
   (22.15, 3.6, "Бірінші презентация тегін! Телеграмнан тауып ал!"),
  ],
 }[a.lang]
@@ -52,8 +52,8 @@ for i,(st,p) in enumerate(files):
 mix=''.join(f'[v{i}]' for i in range(len(files)))
 flt.append(f'{mix}amix=inputs={len(files)}:normalize=0,asplit=2[vo][sc]')
 flt.append('[1:a]volume=0.75[bg]')
-flt.append('[bg][sc]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=250[duck]')
-flt.append('[duck][vo]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[aout]')
+flt.append('[bg][sc]sidechaincompress=threshold=0.05:ratio=3:attack=10:release=200[duck]')
+flt.append('[duck][vo]amix=inputs=2:normalize=0:duration=first,loudnorm=I=-14:TP=-1.2:LRA=9,aresample=44100[aout]')
 dst=os.path.join(out,a.out or f'deadline-promo-{a.lang}-voice.mp4')
 subprocess.run(['ffmpeg','-y','-loglevel','error','-i',os.path.join(out,f'deadline-promo-{a.lang}.mp4'),'-i',os.path.join(out,'music.wav'),*inputs,
   '-filter_complex',';'.join(flt),'-map','0:v','-map','[aout]','-c:v','copy','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',dst],check=True)

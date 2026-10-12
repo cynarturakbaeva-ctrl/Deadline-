@@ -5,3 +5,4 @@ data/
 *.bak
 .cache/
 marketing/out/vo/
+marketing/.promo.tmp.html
