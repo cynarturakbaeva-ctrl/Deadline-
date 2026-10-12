@@ -4,8 +4,8 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince } = require('./db');
-const { ratingKeyboard, commentPromptText, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked } = require('./db');
+const { ratingKeyboard, commentPromptText, commentKeyboard, parseCommentCallback, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -86,6 +86,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const source = payload && !payload.startsWith('ref_') && /^[\w-]{2,40}$/.test(payload) ? payload.toLowerCase() : null;
 
   await registerUser(chatId, referredBy, source);
+  setBlocked(chatId, false).catch(() => {}); // бұрын бұғаттап, қайта оралған адам рассылкаға қайта кіреді
   const me = await getUser(chatId).catch(() => null);
   const freeLine = me && !me.freeUsed && !me.total && !(me.credits > 0)
     ? '🎁 *Бірінші презентация — ТЕГІН* (10 слайдқа дейін, өңделетін PPTX + баяндама мәтіні).\n\n'
@@ -536,7 +537,48 @@ bot.on('callback_query', async (cq) => {
 });
 
 // ─── Клиент бағасы: ⭐ батырмалары (fb:<jobId>:<1-5>) ─────────────────────
+// Пікір жазуды күтіп тұрған чаттар: chatId → { jobId, until }. Мәзір батырмасы басылса — бас тартылады.
+const pendingComment = new Map();
+const COMMENT_WAIT_MS = 15 * 60 * 1000;
+const MENU_TEXTS = new Set(MAIN_KEYBOARD.reply_markup.keyboard.flat().map((b) => b.text));
+
+/** Админге: кім, қандай жұмысқа, қандай баға/пікір (төмен бағада — жазуға сілтеме). Ешқашан лақтырмайды. */
+async function notifyAdminFeedback(job, from, { rating, comment } = {}) {
+  if (!ADMIN_ID || !job) return;
+  try {
+    const who = [from && from.first_name, from && from.last_name].filter(Boolean).join(' ') || 'Клиент';
+    const user = from && from.username ? ` (@${from.username})` : '';
+    const topic = String(job.title || (job.payload && job.payload.topic) || '').slice(0, 80);
+    const meta = [job.payload && job.payload.slideCount ? job.payload.slideCount + ' слайд' : '', job.payload && job.payload.free ? 'тегін' : '', job.payload && job.payload.mode === 'template' ? 'шаблон' : job.payload && job.payload.mode === 'referat' ? 'реферат' : ''].filter(Boolean).join(' · ');
+    const head = rating ? `${'⭐'.repeat(rating)}${'☆'.repeat(5 - rating)} ${rating}/5` : '💬 Пікір';
+    const low = rating && rating <= 3 ? `\n✉️ Жазу: tg://user?id=${job.chatId}` : '';
+    await bot.sendMessage(ADMIN_ID,
+      `${head} — ${who}${user}\n📊 ${topic}${meta ? '\n' + meta : ''}` + (comment ? `\n\n«${String(comment).slice(0, 1500)}»` : '') + low + `\n🆔 ${job.chatId}`,
+      { disable_web_page_preview: true });
+  } catch (e) { console.warn('[Feedback] admin notify failed:', e.message); }
+}
+
 bot.on('callback_query', async (cq) => {
+  // «Пікір жазу» / «Өткізу»
+  const cc = parseCommentCallback(cq.data);
+  if (cc) {
+    const chatId = cq.message.chat.id;
+    try {
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: cq.message.message_id }).catch(() => {});
+      if (cc.action === 'skip') {
+        pendingComment.delete(String(chatId));
+        await bot.answerCallbackQuery(cq.id, { text: 'Жақсы 👍' });
+        return;
+      }
+      pendingComment.set(String(chatId), { jobId: cc.jobId, until: Date.now() + COMMENT_WAIT_MS });
+      await bot.answerCallbackQuery(cq.id);
+      await bot.sendMessage(chatId, '✍️ Пікіріңізді бір хабарламамен жазыңыз.\nОйыңыз өзгерсе — төмендегі мәзірдің кез келген батырмасын басыңыз.', MAIN_KEYBOARD);
+    } catch (e) {
+      console.error('[Feedback] comment button error:', e.message);
+      bot.answerCallbackQuery(cq.id).catch(() => {});
+    }
+    return;
+  }
   const fb = parseFeedbackCallback(cq.data);
   if (!fb) return;
   try {
@@ -548,9 +590,9 @@ bot.on('callback_query', async (cq) => {
     await bot.answerCallbackQuery(cq.id, { text: `Бағаңыз: ${fb.rating}/5` });
     // Жұлдыздарды жаңартамыз (қайта басып өзгертуге болады)
     await bot.editMessageReplyMarkup(ratingKeyboard(fb.jobId, fb.rating), { chat_id: cq.message.chat.id, message_id: cq.message.message_id }).catch(() => {});
-    await bot.sendMessage(cq.message.chat.id, commentPromptText(fb.jobId, fb.rating), {
-      reply_markup: { force_reply: true, input_field_placeholder: 'Пікіріңіз...' },
-    });
+    // force_reply ЖОҚ: ол төменгі мәзірді жасырып, адамды жазуға мәжбүрлейтін. Енді — «Пікір жазу / Өткізу» батырмалары.
+    await bot.sendMessage(cq.message.chat.id, commentPromptText(fb.jobId, fb.rating), { reply_markup: commentKeyboard(fb.jobId) });
+    notifyAdminFeedback(job, cq.from, { rating: fb.rating });
   } catch (e) {
     console.error('[Feedback] callback error:', e.message);
     bot.answerCallbackQuery(cq.id, { text: 'Қате, қайта көріңіз' }).catch(() => {});
@@ -575,6 +617,7 @@ bot.onText(/\/broadcast ([\s\S]+)/, async (msg, match) => {
 
   let sent = 0;
   let failed = 0;
+  let blocked = 0;
 
   // Telegram-нің rate limit-і секундына ~30 хабарлама шамасында —
   // сол шектен аспау үшін әр хабардан кейін ~40мс кідіріс қоямыз
@@ -588,14 +631,16 @@ bot.onText(/\/broadcast ([\s\S]+)/, async (msg, match) => {
       sent++;
     } catch (err) {
       failed++;
-      console.warn(`[Broadcast] failed for ${chatId}: ${err.message}`);
+      // бұғаттаған / өшірілген аккаунт → келесі рассылкаға кірмейді (қайта /start басса — қосылады)
+      if (/403|blocked|deactivated|chat not found/i.test(String(err.message))) { blocked++; setBlocked(chatId, true).catch(() => {}); }
+      else console.warn(`[Broadcast] failed for ${chatId}: ${err.message}`);
     }
     await new Promise(r => setTimeout(r, 40));
   }
 
   bot.sendMessage(
     msg.chat.id,
-    `✅ Broadcast аяқталды!\n\n📨 Жеткізілді: *${sent}*\n❌ Сәтсіз (блок/дилит): *${failed}*`,
+    `✅ Broadcast аяқталды!\n\n📨 Жеткізілді: *${sent}*\n❌ Сәтсіз: *${failed}* (оның ішінде бұғаттаған/өшірілген: *${blocked}* — келесі рассылкаға кірмейді)`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -615,10 +660,28 @@ bot.on('message', async (msg) => {
       const job = await getJob(jobId);
       if (!job || String(job.chatId) !== String(chatId)) return bot.sendMessage(chatId, 'Бұл жұмыстың мерзімі өтті, пікір сақталмады.');
       const saved = await setFeedback(jobId, chatId, { comment: text });
+      pendingComment.delete(String(chatId));
+      if (saved) notifyAdminFeedback(job, msg.from, { comment: text });
       return bot.sendMessage(chatId, saved ? '🙏 Рахмет! Пікіріңіз сақталды — бот осыдан үйренеді.' : 'Алдымен жұлдызша қойыңыз ⭐', MAIN_KEYBOARD);
     } catch (e) {
       console.error('[Feedback] comment error:', e.message);
       return bot.sendMessage(chatId, 'Пікір сақталмады, кейінірек қайта көріңіз.');
+    }
+  }
+
+  // «✍️ Пікір жазу» басылғаннан кейінгі бірінші мәтін — пікір; мәзір батырмасы басылса — пікірден бас тартамыз
+  const pend = pendingComment.get(String(chatId));
+  if (pend) {
+    pendingComment.delete(String(chatId));
+    if (text && !MENU_TEXTS.has(text) && Date.now() < pend.until) {
+      try {
+        const job = await getJob(pend.jobId);
+        if (job && String(job.chatId) === String(chatId)) {
+          const saved = await setFeedback(pend.jobId, chatId, { comment: text });
+          if (saved) notifyAdminFeedback(job, msg.from, { comment: text });
+          return bot.sendMessage(chatId, saved ? '🙏 Рахмет! Пікіріңіз сақталды — бот осыдан үйренеді.' : 'Пікір сақталмады.', MAIN_KEYBOARD);
+        }
+      } catch (e) { console.error('[Feedback] pending comment error:', e.message); }
     }
   }
 

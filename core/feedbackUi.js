@@ -19,7 +19,20 @@ const ratePromptText = (jobId, kind = 'presentation') =>
   `${kind === 'referat' ? '📄 Реферат' : '📊 Презентация'} ұнады ма? Жұлдызша қойыңыз:\n#${jobId}`;
 
 const commentPromptText = (jobId, rating) =>
-  `${'⭐'.repeat(rating)} Рахмет! Пікір қалдырғыңыз келсе, осы хабарламаға жауап (Reply) ретінде жазыңыз — міндетті емес.\n#${jobId}`;
+  `${'⭐'.repeat(rating)} Рахмет! Пікір қалдырғыңыз келе ме? Міндетті емес — «Өткізу» басыңыз немесе жай мәзірді қолдана беріңіз.\n#${jobId}`;
+
+/** Пікір сұрауының батырмалары: жазу / өткізу. force_reply ҚОЛДАНЫЛМАЙДЫ — ол төменгі мәзірді жасырып тастайтын. */
+function commentKeyboard(jobId) {
+  return { inline_keyboard: [[
+    { text: '✍️ Пікір жазу', callback_data: `fbc:${jobId}` },
+    { text: '✖ Өткізу', callback_data: `fbs:${jobId}` },
+  ]] };
+}
+/** fbc:<jobId> → жазу, fbs:<jobId> → өткізу */
+function parseCommentCallback(data) {
+  const m = String(data || '').match(/^fb([cs]):(j[0-9a-z]{6,20})$/);
+  return m ? { action: m[1] === 'c' ? 'write' : 'skip', jobId: m[2] } : null;
+}
 
 function parseFeedbackCallback(data) {
   const m = String(data || '').match(/^fb:(j[0-9a-z]{6,20}):([1-5])$/);
@@ -47,4 +60,4 @@ function rateDueAt(doneAt, { delayMin = 60, tzOffsetMin = 300, quietFrom = 23, q
   return morning.getTime() - tzOffsetMin * 60000;
 }
 
-module.exports = { rateDueAt, ratingKeyboard, ratePromptText, commentPromptText, parseFeedbackCallback, jobTagOf };
+module.exports = { rateDueAt, ratingKeyboard, ratePromptText, commentPromptText, commentKeyboard, parseCommentCallback, parseFeedbackCallback, jobTagOf };

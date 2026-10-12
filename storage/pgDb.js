@@ -60,6 +60,7 @@ const SCHEMA = {
       free_used BOOLEAN DEFAULT FALSE,
       free_used_at BIGINT DEFAULT 0,
       source TEXT,
+      blocked BOOLEAN DEFAULT FALSE,
       referred_by TEXT,
       ref_earnings INTEGER NOT NULL DEFAULT 0,
       last_attempt_at BIGINT DEFAULT 0,
@@ -75,7 +76,7 @@ const SCHEMA = {
     )`,
     cols: {
       partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
-      credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT',
+      credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT', blocked: 'BOOLEAN DEFAULT FALSE',
       referred_by: 'TEXT', ref_earnings: 'INTEGER DEFAULT 0', last_attempt_at: 'BIGINT DEFAULT 0',
       last_success_at: 'BIGINT DEFAULT 0', daily_date: 'TEXT', daily_gens: 'INTEGER DEFAULT 0',
       daily_expensive: 'INTEGER DEFAULT 0', created_at: 'BIGINT',
@@ -552,8 +553,13 @@ async function refundCredit(chatId) {
 }
 
 async function getAllChatIds() {
-  const r = await q('SELECT chat_id FROM users');
+  // ботты бұғаттаған / аккаунтын өшірген адамдар рассылкаға кірмейді
+  const r = await q('SELECT chat_id FROM users WHERE COALESCE(blocked, FALSE) = FALSE');
   return r.rows.map((x) => String(x.chat_id));
+}
+/** Telegram 403 (бот бұғатталды / аккаунт өшірілді) → true; адам /start басса → false. */
+async function setBlocked(chatId, blocked) {
+  await q('UPDATE users SET blocked = $2 WHERE chat_id = $1', [String(chatId), !!blocked]);
 }
 
 // ─── Rate limits ────────────────────────────────────────────────────────
@@ -857,6 +863,7 @@ module.exports = {
   countFreeDecksSince,
   freeFunnel,
   getAllChatIds,
+  setBlocked,
   checkRateLimits,
   markGenerationAttempt,
   markGenerationSuccess,
