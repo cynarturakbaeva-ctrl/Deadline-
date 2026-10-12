@@ -27,10 +27,89 @@ const MIN_W = Number(process.env.IMAGE_MIN_WIDTH) || 900;
 const UA = 'DeadLinePresentationBot/3.1 (educational project)';
 const DEFAULT_ORDER = ['pexels', 'unsplash', 'pixabay', 'wikimedia'];
 
-function providerOrder() {
+function staticOrder() {
   const fromEnv = String(process.env.IMAGE_PROVIDER_ORDER || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter((s) => DEFAULT_ORDER.includes(s));
   return fromEnv.length ? fromEnv : DEFAULT_ORDER;
+}
+
+// ── Quota-aware provider queue ─────────────────────────────────────────────
+// Pexels (~200 search/hour) and Unsplash (50/hour on a demo key) both report the remaining quota in response
+// headers. We always ask the provider with MORE quota left, pause a provider for a while when it says "limit
+// reached" (429/403), and keep the last few calls for paying users (free decks fall back to cache/Wikimedia).
+const DEFAULT_LIMIT = { pexels: Number(process.env.PEXELS_HOURLY_LIMIT) || 200, unsplash: Number(process.env.UNSPLASH_HOURLY_LIMIT) || 50 };
+const RESERVE = { pexels: 20, unsplash: 6 };      // calls kept for paid decks
+const KEYED = { pexels: 'PEXELS_API_KEY', unsplash: 'UNSPLASH_ACCESS_KEY', pixabay: 'PIXABAY_API_KEY' };
+const quota = {};
+const stats = { calls: {}, cacheHits: 0, limited: {}, since: Date.now() };
+function q0(name) { return quota[name] || (quota[name] = { remaining: null, resetAt: 0, coolUntil: 0 }); }
+function noteHeaders(name, headers) {
+  const st = q0(name); const h = headers || {};
+  const rem = Number(h['x-ratelimit-remaining']);
+  if (Number.isFinite(rem)) st.remaining = rem;
+  const reset = Number(h['x-ratelimit-reset']);  // Pexels: unix seconds
+  if (Number.isFinite(reset) && reset > 1e9) st.resetAt = reset * 1000;
+  else if (!st.resetAt || st.resetAt < Date.now()) st.resetAt = Date.now() + 60 * 60 * 1000; // Unsplash: hourly window
+}
+function noteLimited(name, headers) {
+  const st = q0(name);
+  noteHeaders(name, headers);
+  st.remaining = 0;
+  st.coolUntil = Math.max(Date.now() + 15 * 60 * 1000, st.resetAt || 0);
+  stats.limited[name] = (stats.limited[name] || 0) + 1;
+  console.warn(`[Image:${name}] limit reached — paused until ${new Date(st.coolUntil).toISOString().slice(11, 16)} UTC`);
+}
+function left(name) {
+  const st = q0(name);
+  if (st.resetAt && Date.now() > st.resetAt) { st.remaining = null; st.resetAt = 0; } // new window
+  return st.remaining == null ? (DEFAULT_LIMIT[name] || 100) : st.remaining;
+}
+/** Providers to ask, best first. `free` decks never spend the reserve of the keyed providers. */
+function providerOrder(opts = {}) {
+  const now = Date.now();
+  const base = staticOrder().filter((n) => !KEYED[n] || process.env[KEYED[n]]);
+  const ok = base.filter((n) => !(q0(n).coolUntil > now) && !(opts.free && RESERVE[n] != null && left(n) <= RESERVE[n]));
+  const keyed = ok.filter((n) => DEFAULT_LIMIT[n] != null).sort((a, b) => left(b) - left(a));
+  return keyed.concat(ok.filter((n) => DEFAULT_LIMIT[n] == null));
+}
+
+// ── Caches: the same school topics come back all day, so most searches/downloads repeat ──
+const SEARCH_TTL = 24 * 60 * 60 * 1000; const EMPTY_TTL = 60 * 60 * 1000; const SEARCH_MAX = 800;
+const searchCache = new Map();
+const DL_MAX_BYTES = (Number(process.env.IMAGE_CACHE_MB) || 80) * 1024 * 1024;
+const dlCache = new Map(); let dlBytes = 0;
+function cacheGet(map, key) { const v = map.get(key); if (v === undefined) return undefined; map.delete(key); map.set(key, v); return v; }
+async function searchProvider(name, query, budget) {
+  const key = name + '|' + query.toLowerCase();
+  const hit = cacheGet(searchCache, key);
+  if (hit && Date.now() - hit.at < (hit.cands.length ? SEARCH_TTL : EMPTY_TTL)) { stats.cacheHits += 1; return hit.cands; }
+  if (budget && budget.left <= 0) return [];
+  if (budget) budget.left -= 1;
+  stats.calls[name] = (stats.calls[name] || 0) + 1;
+  const cands = await PROVIDERS[name](query);
+  searchCache.set(key, { at: Date.now(), cands });
+  if (searchCache.size > SEARCH_MAX) searchCache.delete(searchCache.keys().next().value);
+  return cands;
+}
+async function downloadCached(url) {
+  const hit = cacheGet(dlCache, url);
+  if (hit) { stats.cacheHits += 1; return hit; }
+  const data = await downloadAsDataUri(url);
+  if (data) {
+    dlCache.set(url, data); dlBytes += data.length;
+    while (dlBytes > DL_MAX_BYTES && dlCache.size) { const k = dlCache.keys().next().value; dlBytes -= dlCache.get(k).length; dlCache.delete(k); }
+  }
+  return data;
+}
+/** For /stats: provider quota and usage since start. */
+function imageStats() {
+  const out = { since: stats.since, cacheHits: stats.cacheHits, searchCacheSize: searchCache.size, imageCacheMB: Math.round(dlBytes / 1048576), providers: {} };
+  for (const n of Object.keys(KEYED).concat(['wikimedia'])) {
+    if (KEYED[n] && !process.env[KEYED[n]]) continue;
+    const st = q0(n);
+    out.providers[n] = { calls: stats.calls[n] || 0, remaining: DEFAULT_LIMIT[n] != null ? left(n) : null, paused: st.coolUntil > Date.now() ? new Date(st.coolUntil).toISOString() : null, limited: stats.limited[n] || 0 };
+  }
+  return out;
 }
 
 function queryVariants(query) {
@@ -115,11 +194,18 @@ async function pexelsCandidates(query) {
   const key = process.env.PEXELS_API_KEY;
   const q = clip(query);
   if (!key || !q) return [];
-  const response = await axios.get('https://api.pexels.com/v1/search', {
-    params: { query: q, per_page: PER_PROVIDER, orientation: 'landscape' },
-    headers: { Authorization: key },
-    timeout: 10000,
-  });
+  let response;
+  try {
+    response = await axios.get('https://api.pexels.com/v1/search', {
+      params: { query: q, per_page: PER_PROVIDER, orientation: 'landscape' },
+      headers: { Authorization: key },
+      timeout: 10000,
+    });
+  } catch (err) {
+    if (err.response && err.response.status === 429) noteLimited('pexels', err.response.headers);
+    throw err;
+  }
+  noteHeaders('pexels', response.headers);
   return (response.data?.photos || [])
     .map((p) => ({
       url: p.src?.large2x || p.src?.large,
@@ -135,11 +221,19 @@ async function unsplashCandidates(query) {
   const key = process.env.UNSPLASH_ACCESS_KEY;
   const q = clip(query);
   if (!key || !q) return [];
-  const response = await axios.get('https://api.unsplash.com/search/photos', {
-    params: { query: q, per_page: PER_PROVIDER, orientation: 'landscape', content_filter: 'high' },
-    headers: { Authorization: `Client-ID ${key}` },
-    timeout: 10000,
-  });
+  let response;
+  try {
+    response = await axios.get('https://api.unsplash.com/search/photos', {
+      params: { query: q, per_page: PER_PROVIDER, orientation: 'landscape', content_filter: 'high' },
+      headers: { Authorization: `Client-ID ${key}` },
+      timeout: 10000,
+    });
+  } catch (err) {
+    const st = err.response && err.response.status;
+    if (st === 429 || (st === 403 && Number(err.response.headers['x-ratelimit-remaining']) === 0)) noteLimited('unsplash', err.response.headers);
+    throw err;
+  }
+  noteHeaders('unsplash', response.headers);
   return (response.data?.results || [])
     .map((r) => ({
       url: r.urls?.regular,
@@ -179,7 +273,9 @@ const PROVIDERS = {
 /**
  * Суретті табады ЖӘНЕ жүктейді. Жүктеу сәтсіз болса — келесі кандидатқа/провайдерге/сұраныс нұсқасына өтеді.
  * @param {string} query
- * @param {{used?: Set<string>}} [opts] used — осы презентацияда алынған URL-дер (қайталанбау үшін)
+ * @param {{used?: Set<string>, free?: boolean, budget?: {left:number}}} [opts]
+ *   used — осы презентацияда алынған URL-дер (қайталанбау үшін); free — тегін колода (резервті жемейді);
+ *   budget — осы фотоға рұқсат етілген API іздеу саны (кэш тегін), бірнеше шақыру арасында ортақ
  * @returns {Promise<{dataUri:string,url:string,credit:string,source:string}|null>}
  */
 async function findImage(query, opts = {}) {
@@ -190,14 +286,16 @@ async function findImage(query, opts = {}) {
   const used = opts.used instanceof Set ? opts.used : new Set();
   const variants = queryVariants(query);
   if (!variants.length) return null;
-  const order = providerOrder();
+  const order = providerOrder({ free: !!opts.free });
+  const budget = opts.budget || { left: 4 };
   let attempts = 0;
 
   for (const q of variants) {
+    if (budget.left <= 0 && ![...order].some((n) => searchCache.has(n + '|' + q.toLowerCase()))) break;
     for (const name of order) {
       let cands = [];
       try {
-        cands = await PROVIDERS[name](q);
+        cands = await searchProvider(name, q, budget);
       } catch (err) {
         console.warn(`[Image:${name}] search failed (${err.response?.status || err.code || err.message}) q="${q.slice(0, 40)}"`);
         continue;
@@ -212,7 +310,7 @@ async function findImage(query, opts = {}) {
         }
         attempts += 1;
         used.add(c.url); // параллель тапсырмалар бір URL-ді алмауы үшін — жүктемес бұрын белгілейміз
-        const dataUri = await downloadAsDataUri(c.url);
+        const dataUri = await downloadCached(c.url);
         if (dataUri) {
           console.log(`[Image] ok source=${c.source} q="${q.slice(0, 50)}"`);
           return { dataUri, url: c.url, credit: c.credit, source: c.source };
@@ -274,6 +372,8 @@ function fallbackQueries(query, topic, deckQueries = []) {
 }
 
 module.exports = {
+  imageStats,
+  providerOrder,
   isLatinQuery,
   fallbackQueries,
   findImage,

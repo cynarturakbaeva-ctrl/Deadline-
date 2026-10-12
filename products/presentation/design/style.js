@@ -535,6 +535,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .ig-mile.on{background:var(--accent);box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 22%,transparent),0 0 30px color-mix(in srgb,var(--accent) 60%,transparent)}
 .ig .ic{display:block}
 
+/* free decks: the bottom-right corner is kept for the "Made in DeadLine" card (a native PPTX object) */
+.has-badge .folio{right:calc(var(--mx) + 300px)}
+
 /* slides that carry their own hero graphic stay clean */
 .sect-slide .deco,.quote-slide .deco,.numb-slide .deco,.stmt-slide .deco,.ig-slide .deco{display:none}
 /* client reference skins keep their own flat design */

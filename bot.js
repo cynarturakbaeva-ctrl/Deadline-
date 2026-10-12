@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince } = require('./db');
 const { ratingKeyboard, commentPromptText, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -82,14 +82,21 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     referredBy = payload.replace('ref_', '');
     if (referredBy === String(chatId)) referredBy = null; // өзін жіберген болса — есептемей
   }
+  // Арна белгісі: t.me/<bot>?start=madein | tiktok | knu_aidos … — қай арна клиент әкелетінін /stats көрсетеді
+  const source = payload && !payload.startsWith('ref_') && /^[\w-]{2,40}$/.test(payload) ? payload.toLowerCase() : null;
 
-  await registerUser(chatId, referredBy);
+  await registerUser(chatId, referredBy, source);
+  const me = await getUser(chatId).catch(() => null);
+  const freeLine = me && !me.freeUsed && !me.total && !(me.credits > 0)
+    ? '🎁 *Бірінші презентация — ТЕГІН* (10 слайдқа дейін, өңделетін PPTX + баяндама мәтіні).\n\n'
+    : '';
 
   // Реферал санауы презентация жасатқанда өседі — тіркелуде емес
 
   bot.sendMessage(
     chatId,
     '👋 *Сәлем!* DeadLine — кәсіби AI презентация студиясы.\n\n' +
+    freeLine +
     `💳 *Баға:* ${PRICE}₸ — 1 презентация\n${plusLine}\n\n` +
     '🆕 *Жаңа:* ұнаған шаблоныңызды (.pptx) жүктеңіз — бот дизайнын сақтап, мәтінді сіздің тақырыбыңызға жазады.\n\n' +
     '📱 Презентация мен реферат *Mini App* ішінде жасалады: шаблон, тіл, слайд саны, прогресс және тарих бір жерде.',
@@ -119,6 +126,25 @@ async function showBalance(chatId) {
     { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
   );
 }
+
+// ─── /stats (тек админ): сурет лимиттері, тегін колодалар, арналар ─────────
+bot.onText(/\/stats/, async (msg) => {
+  if (!ADMIN_ID || String(msg.chat.id) !== String(ADMIN_ID)) return;
+  try {
+    const img = require('./products/presentation/images').imageStats();
+    const H5 = 5 * 3600e3; const t = Date.now() + H5; const today = t - (t % 86400e3) - H5;
+    const [ff, freeToday] = await Promise.all([freeFunnel(), countFreeDecksSince(today)]);
+    const prov = Object.entries(img.providers).map(([n, p]) => `• ${n}: ${p.calls} сұраныс` + (p.remaining != null ? `, қалды ≈${p.remaining}/сағ` : '') + (p.paused ? ` ⏸ ${p.paused.slice(11, 16)} UTC-ге дейін` : '') + (p.limited ? `, лимит ${p.limited} рет` : '')).join('\n');
+    const conv = ff.freeUsers ? Math.round((ff.paidAfter / ff.freeUsers) * 100) : 0;
+    const src = (ff.sources || []).map((x) => `• ${x.source}: ${x.users} адам · тегін ${x.free} · төлеген ${x.paid}`).join('\n');
+    await bot.sendMessage(msg.chat.id,
+      `📊 Статистика\n\n🖼 Суреттер (сервер іске қосылғаннан бері):\n${prov || '—'}\n• кэштен алынды: ${img.cacheHits} · кэш ${img.imageCacheMB} МБ\n\n` +
+      `🎁 Тегін презентация: бүгін ${freeToday} · барлығы ${ff.freeUsers} · кейін төлегендер ${ff.paidAfter} (${conv}%)\n\n` +
+      `🔗 Арналар:\n${src || '—'}`);
+  } catch (e) {
+    await bot.sendMessage(msg.chat.id, 'stats error: ' + e.message).catch(() => {});
+  }
+});
 
 // ─── /referral & "Реферал сілтемем" ───────────────────────────────────────
 bot.onText(/\/referral/, (msg) => showReferral(msg.chat.id));

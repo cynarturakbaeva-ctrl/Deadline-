@@ -58,6 +58,8 @@ const SCHEMA = {
       credits INTEGER NOT NULL DEFAULT 0,
       total INTEGER NOT NULL DEFAULT 0,
       free_used BOOLEAN DEFAULT FALSE,
+      free_used_at BIGINT DEFAULT 0,
+      source TEXT,
       referred_by TEXT,
       ref_earnings INTEGER NOT NULL DEFAULT 0,
       last_attempt_at BIGINT DEFAULT 0,
@@ -73,7 +75,7 @@ const SCHEMA = {
     )`,
     cols: {
       partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
-      credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE',
+      credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT',
       referred_by: 'TEXT', ref_earnings: 'INTEGER DEFAULT 0', last_attempt_at: 'BIGINT DEFAULT 0',
       last_success_at: 'BIGINT DEFAULT 0', daily_date: 'TEXT', daily_gens: 'INTEGER DEFAULT 0',
       daily_expensive: 'INTEGER DEFAULT 0', created_at: 'BIGINT',
@@ -262,29 +264,62 @@ async function initDB() {
 }
 
 // ─── Users ──────────────────────────────────────────────────────────────
-async function ensureUser(chatId, referredBy = null) {
+async function ensureUser(chatId, referredBy = null, source = null) {
   await q(
-    `INSERT INTO users (chat_id, credits, total, referred_by, ref_earnings, created_at)
-     VALUES ($1, 0, 0, $2, 0, ${tw('users', 'created_at', '$3')})
+    `INSERT INTO users (chat_id, credits, total, referred_by, ref_earnings, created_at, source)
+     VALUES ($1, 0, 0, $2, 0, ${tw('users', 'created_at', '$3')}, $4)
      ON CONFLICT (chat_id) DO NOTHING`,
-    [String(chatId), referredBy ? String(referredBy) : null, Date.now()]
+    [String(chatId), referredBy ? String(referredBy) : null, Date.now(), source ? String(source).slice(0, 40) : null]
   );
 }
 
 async function getUser(chatId) {
-  const r = await q('SELECT credits, total, referred_by, ref_earnings FROM users WHERE chat_id = $1', [String(chatId)]);
+  const r = await q('SELECT credits, total, referred_by, ref_earnings, free_used FROM users WHERE chat_id = $1', [String(chatId)]);
   const u = r.rows[0];
-  if (!u) return { credits: 0, total: 0, referredBy: null, refEarnings: 0 };
+  if (!u) return { credits: 0, total: 0, referredBy: null, refEarnings: 0, freeUsed: false };
   return {
     credits: num(u.credits),
     total: num(u.total),
     referredBy: u.referred_by || null,
     refEarnings: num(u.ref_earnings),
+    freeUsed: !!u.free_used,
   };
 }
 
-async function registerUser(chatId, referredBy = null) {
-  await ensureUser(chatId, referredBy);
+// ─── Бірінші презентация тегін (бір аккаунтқа бір рет) ─────────────────────
+/** Атомарлы: тегін колоданы алу (бұрын алмаған, ешқашан сатып алмаған адам). true → берілді. */
+async function claimFreeDeck(chatId) {
+  await ensureUser(chatId);
+  const r = await q(
+    'UPDATE users SET free_used = TRUE, free_used_at = $2 WHERE chat_id = $1 AND COALESCE(free_used, FALSE) = FALSE AND COALESCE(total, 0) = 0 RETURNING chat_id',
+    [String(chatId), Date.now()]
+  );
+  return r.rowCount > 0;
+}
+/** Генерация сәтсіз болса — тегін мүмкіндікті қайтару. */
+async function releaseFreeDeck(chatId) {
+  await q('UPDATE users SET free_used = FALSE, free_used_at = 0 WHERE chat_id = $1', [String(chatId)]);
+}
+/** ts-тен бері берілген тегін колодалар саны (тәуліктік шек үшін). */
+async function countFreeDecksSince(ts) {
+  const r = await q('SELECT COUNT(*)::int AS n FROM users WHERE free_used = TRUE AND COALESCE(free_used_at, 0) >= $1', [Number(ts) || 0]);
+  return num(r.rows[0] && r.rows[0].n);
+}
+/** /stats: тегін алғандар және олардың ішінде кейін сатып алғандар. */
+async function freeFunnel() {
+  const r = await q('SELECT COUNT(*)::int AS free_users, COUNT(*) FILTER (WHERE COALESCE(total, 0) > 0)::int AS paid_after FROM users WHERE free_used = TRUE AND COALESCE(free_used_at, 0) > 0');
+  const s = await q(`SELECT COALESCE(source, CASE WHEN referred_by IS NOT NULL THEN 'ref' ELSE 'direct' END) AS src,
+      COUNT(*)::int AS users, COUNT(*) FILTER (WHERE free_used = TRUE AND COALESCE(free_used_at, 0) > 0)::int AS free,
+      COUNT(*) FILTER (WHERE COALESCE(total, 0) > 0)::int AS paid
+    FROM users GROUP BY 1 ORDER BY 2 DESC LIMIT 12`);
+  return {
+    freeUsers: num(r.rows[0].free_users), paidAfter: num(r.rows[0].paid_after),
+    sources: s.rows.map((x) => ({ source: x.src, users: num(x.users), free: num(x.free), paid: num(x.paid) })),
+  };
+}
+
+async function registerUser(chatId, referredBy = null, source = null) {
+  await ensureUser(chatId, referredBy, source);
 }
 
 async function addCredits(chatId, amount) {
@@ -817,6 +852,10 @@ module.exports = {
   takeDueRatePrompts,
   useCredit,
   refundCredit,
+  claimFreeDeck,
+  releaseFreeDeck,
+  countFreeDecksSince,
+  freeFunnel,
   getAllChatIds,
   checkRateLimits,
   markGenerationAttempt,

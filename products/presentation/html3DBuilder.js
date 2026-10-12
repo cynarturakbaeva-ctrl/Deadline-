@@ -177,9 +177,11 @@ function renderSlide(slide, index, plan, ctxDeck) {
     '</div><div class="layer layer-mid" data-depth="0.4">' + out.fg + '</div></article>';
 }
 
-function skinStage(skin, palette) {
-  if (!skin) return '';
+function skinStage(skin, palette, badge) {
+  // «Made in DeadLine» карточкасы PPTX-те оң жақ төменгі бұрышқа қойылады → бет нөмірі сол жерден ығысады
+  if (!skin) return badge ? ' class="has-badge"' : '';
   const cls = ['ref-skin'];
+  if (badge) cls.push('has-badge');
   if (skin.flat) cls.push('ref-flat');
   if (skin.decor) cls.push('ref-decor');
   if (skin.photoShape === 'circle') cls.push('ref-circle');
@@ -227,7 +229,7 @@ function buildNew(slides, presentationTitle, opts) {
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
   return '<!DOCTYPE html><html lang="kk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + mt.css + '</style></head><body>' +
-    '<div id="frame"><div id="stage"' + skinStage(skin, palette) + '>' + slidesHTML +
+    '<div id="frame"><div id="stage"' + skinStage(skin, palette, opts.badge) + '>' + slidesHTML +
     '<div id="topbar" hidden><span id="cur">01</span><span id="total">' + total + '</span></div>' +
     '<div id="dots"></div><div id="controls"><button class="ctrl" id="prev" type="button">‹</button><button class="ctrl" id="next" type="button">›</button><button class="ctrl" id="full" type="button">⛶</button></div>' +
     '<div id="hint">← → · swipe · wheel</div><div id="progress"></div></div></div>' +

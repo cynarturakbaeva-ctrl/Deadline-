@@ -131,10 +131,29 @@ function addTextBlock(pgSlide, block, deckLang) {
 }
 
 /**
+ * "Made in DeadLine" card (free decks): one picture with a link in the bottom-right corner — a real PowerPoint
+ * object the client can move or delete (like Gamma's badge); clicking it brings classmates to the bot.
+ * A picture (not a text run) so PowerPoint does not underline/recolour it as a hyperlink.
+ */
+const BADGE = { w: 268, h: 48, right: 128, bottom: 32 };
+const BADGE_PNG = { dark: path.join(__dirname, 'assets', 'badge-dark.png'), light: path.join(__dirname, 'assets', 'badge-light.png') };
+function addBadge(pgSlide, badge) {
+  const file = badge.dark === false ? BADGE_PNG.light : BADGE_PNG.dark;
+  if (!fs.existsSync(file)) return;
+  const img = {
+    path: file,
+    x: inch(1920 - BADGE.right - BADGE.w), y: inch(1080 - BADGE.bottom - BADGE.h), w: inch(BADGE.w), h: inch(BADGE.h),
+    altText: 'Made in DeadLine',
+  };
+  if (badge.url) img.hyperlink = { url: badge.url, tooltip: 'DeadLine — презентация 3 минутта' };
+  pgSlide.addImage(img);
+}
+
+/**
  * @param {string[]} pngPaths — full rendered slides (fallback per slide)
  * @param {string} presentationTitle
  * @param {object[]} [slides] — speaker notes
- * @param {{ bgPaths?: (string|null)[], textLayers?: (object[]|null)[], language?: string }} [layers] — editable text layer from renderer
+ * @param {{ bgPaths?: (string|null)[], textLayers?: (object[]|null)[], language?: string, badge?: {url?:string|null, dark?:boolean}|null }} [layers] — editable text layer from renderer
  * @returns {Promise<string>} pptx file path
  */
 async function exportToPptx(pngPaths, presentationTitle, slides = [], layers = {}) {
@@ -171,6 +190,7 @@ async function exportToPptx(pngPaths, presentationTitle, slides = [], layers = {
       layer.forEach((block) => addTextBlock(pgSlide, block, deckLang));
       editable += 1;
     }
+    if (layers && layers.badge) addBadge(pgSlide, layers.badge);
   }
   if (bgPaths.length) console.log(`[PPTX] editable text on ${editable}/${pngPaths.length} slide(s)`);
 
