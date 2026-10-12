@@ -134,7 +134,7 @@ bot.onText(/\/stats/, async (msg) => {
     const img = require('./products/presentation/images').imageStats();
     const H5 = 5 * 3600e3; const t = Date.now() + H5; const today = t - (t % 86400e3) - H5;
     const [ff, freeToday] = await Promise.all([freeFunnel(), countFreeDecksSince(today)]);
-    const prov = Object.entries(img.providers).map(([n, p]) => `• ${n}: ${p.calls} сұраныс` + (p.remaining != null ? `, қалды ≈${p.remaining}/сағ` : '') + (p.paused ? ` ⏸ ${p.paused.slice(11, 16)} UTC-ге дейін` : '') + (p.limited ? `, лимит ${p.limited} рет` : '')).join('\n');
+    const prov = Object.entries(img.providers).map(([n, p]) => `• ${n}: ${p.calls} сұраныс` + (p.hourLeft != null ? `, осы сағатта қалды ≈${p.hourLeft}` : '') + (p.monthLeft != null ? `, айына қалды ${p.monthLeft}` : '') + (p.paused ? ` ⏸ ${p.paused.slice(0, 16).replace('T', ' ')} UTC-ге дейін` : '') + (p.limited ? `, лимит ${p.limited} рет` : '')).join('\n');
     const conv = ff.freeUsers ? Math.round((ff.paidAfter / ff.freeUsers) * 100) : 0;
     const src = (ff.sources || []).map((x) => `• ${x.source}: ${x.users} адам · тегін ${x.free} · төлеген ${x.paid}`).join('\n');
     await bot.sendMessage(msg.chat.id,

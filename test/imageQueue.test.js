@@ -65,3 +65,4 @@ test('repeated topics are served from the cache, and the per-photo budget caps A
   assert.strictEqual(apiCalls(/api\./), n1);
   assert.ok(I.imageStats().cacheHits >= 1);
 });
+
