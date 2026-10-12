@@ -26,27 +26,28 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:#0a1224;font-fam
 </style></head><body>
 <div id="stage">
  <div id="grid" class="abs"></div>
+ <div id="flash" class="abs" style="inset:0;background:radial-gradient(circle at 50% 45%,rgba(34,227,232,.55),transparent 60%);opacity:0;z-index:5;pointer-events:none"></div>
  <div id="o1" class="abs orb" style="width:900px;height:900px;background:#2d6bff;opacity:.35;left:-300px;top:-200px"></div>
  <div id="o2" class="abs orb" style="width:800px;height:800px;background:#22e3e8;opacity:.22;right:-300px;bottom:-100px"></div>
 
  <!-- A: hook -->
  <div id="sA" class="abs scene">
-  <div id="a1" class="abs h1 center" style="top:520px">Ертең<br><span class="red">дедлайн.</span></div>
-  <div id="a2" class="abs center" style="top:1000px;font-size:76px;font-weight:700">Презентация —<br>әлі <span class="cy">0 слайд</span></div>
+  <div id="a1" class="abs h1 center" style="top:520px" data-i="a1"></div>
+  <div id="a2" class="abs center" style="top:1000px;font-size:76px;font-weight:700" data-i="a2"></div>
  </div>
 
  <!-- B: countdown -->
  <div id="sB" class="abs scene">
-  <div id="b0" class="abs center" style="top:430px;font-size:54px;color:#9fb0cf">Дедлайнға дейін</div>
+  <div id="b0" class="abs center" style="top:430px;font-size:54px;color:#9fb0cf" data-i="b0"></div>
   <div id="b1" class="abs center mono red" style="top:540px;font-size:230px;font-weight:700;letter-spacing:-4px">23:59:59</div>
-  <div id="b2" class="abs center" style="top:1000px;font-size:80px;font-weight:700;line-height:1.15">Түнімен слайд<br>жасап отырасың ба?</div>
+  <div id="b2" class="abs center" style="top:1000px;font-size:80px;font-weight:700;line-height:1.15" data-i="b2"></div>
  </div>
 
  <!-- C: logo -->
  <div id="sC" class="abs scene">
   <img id="c1" src="logo.png" class="abs" style="width:520px;left:280px;top:520px">
   <div id="c2" class="abs center" style="top:900px;font-size:150px;font-weight:700;letter-spacing:-3px">Dead<span class="cy">Line</span></div>
-  <div id="c3" class="abs center" style="top:1130px;font-size:72px;line-height:1.2;color:#cdd8ee">Тақырып жаз —<br><b class="cy">презентация дайын</b></div>
+  <div id="c3" class="abs center" style="top:1130px;font-size:72px;line-height:1.2;color:#cdd8ee" data-i="c3"></div>
  </div>
 
  <!-- D: demo -->
@@ -54,15 +55,15 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:#0a1224;font-fam
   <div id="phone" class="abs">
    <div class="abs" style="left:50px;top:40px;font-size:38px;color:#9fb0cf">DeadLine · AI Presentation</div>
    <div class="abs in"><span id="typed"></span><span id="caret" style="width:4px;height:56px;background:#22e3e8;margin-left:6px"></span></div>
-   <div id="dbtn" class="abs btn">Жасау</div>
+   <div id="dbtn" class="abs btn" data-i="btn"></div>
    <div id="prog" class="abs" style="left:50px;right:50px;top:490px;opacity:0">
-     <div id="pstep" style="font-size:42px;color:#cdd8ee;margin-bottom:26px">Мазмұн жазылуда…</div>
+     <div id="pstep" style="font-size:42px;color:#cdd8ee;margin-bottom:26px"></div>
      <div style="height:26px;border-radius:13px;background:#16233f;overflow:hidden"><div id="pbar" style="height:100%;width:0;background:linear-gradient(90deg,#22e3e8,#5aa9ff);border-radius:13px"></div></div>
    </div>
    <div id="cards" class="abs" style="left:50px;top:480px;width:680px;height:760px"></div>
    <div id="file" class="abs" style="left:50px;right:50px;bottom:60px;height:160px;border-radius:40px;background:#16233f;border:2px solid #22e3e8;display:flex;align-items:center;padding:0 40px;gap:30px;opacity:0">
      <div style="width:84px;height:84px;border-radius:20px;background:#ff7a3d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:34px;color:#fff">P</div>
-     <div><b style="font-size:46px;display:block">presentation.pptx</b><span style="font-size:32px;color:#22e3e8">Дайын · өңдеуге болады</span></div>
+     <div><b style="font-size:46px;display:block">presentation.pptx</b><span style="font-size:32px;color:#22e3e8" data-i="ready"></span></div>
    </div>
   </div>
   <div id="dcap" class="abs center" style="top:1740px;font-size:60px;font-weight:700"></div>
@@ -70,49 +71,68 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:#0a1224;font-fam
 
  <!-- E: features -->
  <div id="sE" class="abs scene">
-  <div id="e0" class="abs h1 center" style="top:170px;font-size:96px">Бәрі <span class="cy">бір жерде</span></div>
+  <div id="e0" class="abs h1 center" style="top:170px;font-size:96px" data-i="e0"></div>
   <div id="feats"></div>
  </div>
 
  <!-- F: CTA -->
  <div id="sF" class="abs scene">
   <img id="f1" src="logo.png" class="abs" style="width:300px;left:390px;top:300px">
-  <div id="f2" class="abs h1 center" style="top:620px;font-size:120px">Бірінші<br>презентация<br><span class="cy">ТЕГІН</span></div>
-  <div id="f3" class="abs center" style="top:1180px;font-size:56px;color:#cdd8ee;line-height:1.25">10 слайдқа дейін · карта керек емес</div>
+  <div id="f2" class="abs h1 center" style="top:620px;font-size:120px" data-i="f2"></div>
+  <div id="f3" class="abs center" style="top:1180px;font-size:56px;color:#cdd8ee;line-height:1.25" data-i="f3"></div>
   <div id="f4" class="abs" style="left:140px;right:140px;top:1400px;height:170px;border-radius:85px;background:linear-gradient(90deg,#22e3e8,#5aa9ff);color:#06101f;font-weight:700;font-size:62px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 90px rgba(34,227,232,.5)">__CTA__</div>
   <div id="f5" class="abs center" style="top:1640px;font-size:44px;color:#9fb0cf">Telegram Mini App</div>
  </div>
 </div>
 <script>
+const I18N={
+kk:{a1:'Ертең<br><span class="red">дедлайн.</span>',a2:'Презентация —<br>әлі <span class="cy">0 слайд</span>',b0:'Дедлайнға дейін',b2:'Түнімен слайд<br>жасап отырасың ба?',c3:'Тақырып жаз —<br><b class="cy">презентация дайын</b>',btn:'Жасау',ready:'Дайын · өңдеуге болады',e0:'Бәрі <span class="cy">бір жерде</span>',f2:'Бірінші<br>презентация<br><span class="cy">ТЕГІН</span>',f3:'10 слайдқа дейін · карта керек емес',
+ typed:'Қазақстан экономикасы, 12 слайд',steps:['Мазмұн жазылуда…','Дизайн таңдалуда…','PPTX жиналуда…'],cap:['Тақырыпты жазасың','AI жұмыс істеп жатыр','Дайын — 1 минутта'],
+ sl:['Қазақстан<br>экономикасы','ЖІӨ өсімі','Экспорт үлесі','Жол картасы','слайд · 1 минут'],
+ feats:[['Өңделетін PPTX','PowerPoint-та өзің өзгертесің'],['Баяндама мәтіні','әр слайдқа айтатын сөз'],['14 инфографика','графиктер өздігінен салынады'],['Өз шаблоның бойынша','дизайның сақталады'],['Реферат .docx','титулымен, әдебиетімен']]},
+ru:{a1:'Завтра<br><span class="red">дедлайн.</span>',a2:'А в презентации —<br><span class="cy">0 слайдов</span>',b0:'До дедлайна',b2:'Опять сидишь<br>над слайдами всю ночь?',c3:'Напиши тему —<br><b class="cy">получи презентацию</b>',btn:'Создать',ready:'Готово · можно редактировать',e0:'Всё <span class="cy">в одном месте</span>',f2:'Первая<br>презентация<br><span class="cy">БЕСПЛАТНО</span>',f3:'до 10 слайдов · без привязки карты',
+ typed:'Экономика Казахстана, 12 слайдов',steps:['Пишем текст…','Подбираем дизайн…','Собираем PPTX…'],cap:['Пишешь тему','AI делает работу','Готово за минуту'],
+ sl:['Экономика<br>Казахстана','Рост ВВП','Доля экспорта','Дорожная карта','слайдов · 1 минута'],
+ feats:[['Редактируемый PPTX','меняешь всё в PowerPoint'],['Текст доклада','к каждому слайду'],['14 видов инфографики','графики рисуются сами'],['По твоему шаблону','дизайн сохраняется'],['Реферат .docx','с титулом и литературой']]}};
+const LANG=new URLSearchParams(location.search).get('lang')||'__LANG__';
+const S=I18N[LANG]||I18N.kk;
+document.querySelectorAll('[data-i]').forEach(e=>e.innerHTML=S[e.dataset.i]);
 const CLAMP=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 const P=(t,a,b)=>CLAMP((t-a)/(b-a));
 const outC=x=>1-Math.pow(1-x,3);
 const outB=x=>{const c=1.70158;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
 const $=id=>document.getElementById(id);
 const DUR=26;
-const SC={A:[0,3.4],B:[3.2,6.6],C:[6.4,9.8],D:[9.6,17.4],E:[17.2,22.4],F:[22.2,26]};
+const SC={A:[0,3.15],B:[2.85,6.15],C:[5.85,9.15],D:[8.85,17.15],E:[16.85,22.15],F:[21.85,26]};
+const BEAT=0.5;
 // mini slides
 const slideDefs=[
- `<div style="background:#0a1224;height:100%;padding:22px"><div style="font-size:15px;color:#22e3e8">01</div><div style="font-size:30px;font-weight:700;margin-top:30px;line-height:1.1">Қазақстан<br>экономикасы</div><div style="position:absolute;right:-30px;bottom:-30px;width:130px;height:130px;border-radius:50%;background:#5aa9ff;opacity:.5"></div></div>`,
- `<div style="background:#fbf1ee;color:#2a1519;height:100%;padding:22px"><div style="font-size:22px;font-weight:700">ЖІӨ өсімі</div><div style="display:flex;align-items:flex-end;gap:14px;height:110px;margin-top:20px">${[40,55,48,75,100].map((h,i)=>`<div style="flex:1;height:${h}%;background:${i==4?'#c2415a':'#e5c9c9'};border-radius:6px 6px 0 0"></div>`).join('')}</div></div>`,
- `<div style="background:#0a1224;height:100%;padding:22px;display:flex;gap:18px;align-items:center"><div style="width:110px;height:110px;border-radius:50%;background:conic-gradient(#22e3e8 0 62%,#1e2c4d 0)"><div style="margin:26px;width:58px;height:58px;border-radius:50%;background:#0a1224"></div></div><div><div style="font-size:38px;font-weight:700;color:#22e3e8">62%</div><div style="font-size:16px;color:#9fb0cf">Экспорт үлесі</div></div></div>`,
+ `<div style="background:#0a1224;height:100%;padding:22px"><div style="font-size:15px;color:#22e3e8">01</div><div style="font-size:30px;font-weight:700;margin-top:30px;line-height:1.1">${S.sl[0]}</div><div style="position:absolute;right:-30px;bottom:-30px;width:130px;height:130px;border-radius:50%;background:#5aa9ff;opacity:.5"></div></div>`,
+ `<div style="background:#fbf1ee;color:#2a1519;height:100%;padding:22px"><div style="font-size:22px;font-weight:700">${S.sl[1]}</div><div style="display:flex;align-items:flex-end;gap:14px;height:110px;margin-top:20px">${[40,55,48,75,100].map((h,i)=>`<div style="flex:1;height:${h}%;background:${i==4?'#c2415a':'#e5c9c9'};border-radius:6px 6px 0 0"></div>`).join('')}</div></div>`,
+ `<div style="background:#0a1224;height:100%;padding:22px;display:flex;gap:18px;align-items:center"><div style="width:110px;height:110px;border-radius:50%;background:conic-gradient(#22e3e8 0 62%,#1e2c4d 0)"><div style="margin:26px;width:58px;height:58px;border-radius:50%;background:#0a1224"></div></div><div><div style="font-size:38px;font-weight:700;color:#22e3e8">62%</div><div style="font-size:16px;color:#9fb0cf">${S.sl[2]}</div></div></div>`,
  `<div style="background:#f4f7fb;color:#10223f;height:100%;padding:22px"><div style="font-size:22px;font-weight:700">SWOT</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">${['#22b07d','#e5484d','#3b82f6','#f59e0b'].map(c=>`<div style="height:54px;border-radius:8px;background:${c};opacity:.85"></div>`).join('')}</div></div>`,
- `<div style="background:#1b1233;height:100%;padding:22px"><div style="font-size:22px;font-weight:700;color:#c9b6ff">Жол картасы</div><div style="margin-top:44px;height:6px;background:#4a3a7a;position:relative">${[0,33,66,100].map(l=>`<div style="position:absolute;left:${l}%;top:-11px;width:28px;height:28px;border-radius:50%;background:#9b7bff"></div>`).join('')}</div></div>`,
- `<div style="background:#0a1224;height:100%;padding:22px;text-align:center"><div style="font-size:70px;font-weight:700;margin-top:24px" class="cy">12</div><div style="font-size:22px;color:#cdd8ee">слайд · 1 минут</div></div>`
+ `<div style="background:#1b1233;height:100%;padding:22px"><div style="font-size:22px;font-weight:700;color:#c9b6ff">${S.sl[3]}</div><div style="margin-top:44px;height:6px;background:#4a3a7a;position:relative">${[0,33,66,100].map(l=>`<div style="position:absolute;left:${l}%;top:-11px;width:28px;height:28px;border-radius:50%;background:#9b7bff"></div>`).join('')}</div></div>`,
+ `<div style="background:#0a1224;height:100%;padding:22px;text-align:center"><div style="font-size:70px;font-weight:700;margin-top:24px" class="cy">12</div><div style="font-size:22px;color:#cdd8ee">${S.sl[4]}</div></div>`
 ];
 const cards=$('cards');
 slideDefs.forEach((h,i)=>{const d=document.createElement('div');d.className='card';d.style.left=(i%2)*350+'px';d.style.top=Math.floor(i/2)*230+'px';d.innerHTML=h;d.style.opacity=0;cards.appendChild(d)});
-const FEATS=[['Өңделетін PPTX','PowerPoint-та өзің өзгертесің'],['Баяндама мәтіні','әр слайдқа айтатын сөз'],['14 инфографика','графиктер өздігінен салынады'],['Өз шаблоның бойынша','дизайның сақталады'],['Реферат .docx','титулымен, әдебиетімен']];
+const FEATS=S.feats;
 const fe=$('feats');
 FEATS.forEach((f,i)=>{const d=document.createElement('div');d.className='abs feat';d.style.top=(420+i*250)+'px';d.innerHTML=`<div class="ck"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#06101f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>${f[0]}</b><span>${f[1]}</span></div>`;fe.appendChild(d)});
 const featEls=[...fe.children];
-const TXT='Қазақстан экономикасы, 12 слайд';
+const TXT=S.typed;
 function setO(el,o,y=0,s=1){el.style.opacity=o;el.style.transform=`translateY(${y}px) scale(${s})`}
 function sceneAlpha(k,t){const [a,b]=SC[k];if(t<a||t>b)return 0;return Math.min(P(t,a,a+.3),1-P(t,b-.3,b))}
 function seek(t){
  $('o1').style.transform=`translate(${Math.sin(t*.5)*80}px,${Math.cos(t*.4)*120}px)`;
  $('o2').style.transform=`translate(${Math.cos(t*.45)*-90}px,${Math.sin(t*.5)*100}px)`;
  $('grid').style.transform=`translateY(${(t*30)%90}px)`;
+ const kick=t>=6?Math.exp(-((t%BEAT)/BEAT)*6):Math.exp(-((t%BEAT)/BEAT)*9)*.5;
+ $('grid').style.opacity=.55+.45*kick;
+ $('o1').style.opacity=.28+.22*kick;$('o2').style.opacity=.16+.18*kick;
+ const drop=[6,17,22].reduce((m,d)=>Math.max(m,t>=d?Math.exp(-(t-d)*5):0),0);
+ $('stage').style.transform=`scale(${1+.025*drop+.006*kick})`;
+ $('flash').style.opacity=.55*drop;
  for(const k of Object.keys(SC)){const a=sceneAlpha(k,t);const s=$('s'+k);s.style.opacity=a;s.style.display=a>0?'block':'none'}
  // A
  let l=t-SC.A[0];
@@ -144,10 +164,10 @@ function seek(t){
  const pg=P(l,3,5.4);
  $('prog').style.opacity=l>=2.9&&l<5.6?1:0;
  $('pbar').style.width=(pg*100)+'%';
- $('pstep').textContent=pg<.33?'Мазмұн жазылуда…':pg<.66?'Дизайн таңдалуда…':'PPTX жиналуда…';
+ $('pstep').textContent=S.steps[pg<.33?0:pg<.66?1:2];
  [...cards.children].forEach((c,i)=>{const p=outB(P(l,5.2+i*.22,5.7+i*.22));c.style.opacity=P(l,5.2+i*.22,5.45+i*.22);c.style.transform=`scale(${.6+.4*p}) translateY(${(1-p)*40}px)`});
  $('file').style.opacity=outC(P(l,6.7,7.1));$('file').style.transform=`translateY(${(1-outC(P(l,6.7,7.1)))*60}px)`;
- $('dcap').textContent=l<2.6?'Тақырыпты жазасың':l<5.2?'AI жұмыс істеп жатыр':'Дайын — 1 минутта';
+ $('dcap').textContent=S.cap[l<2.6?0:l<5.2?1:2];
  $('dcap').style.color=l>=5.2?'#22e3e8':'#eaf0fb';
  // E
  l=t-SC.E[0];

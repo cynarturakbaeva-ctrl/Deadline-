@@ -4,3 +4,4 @@ jobs/
 data/
 *.bak
 .cache/
+marketing/out/vo/
