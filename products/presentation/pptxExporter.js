@@ -135,7 +135,7 @@ function addTextBlock(pgSlide, block, deckLang) {
  * object the client can move or delete (like Gamma's badge); clicking it brings classmates to the bot.
  * A picture (not a text run) so PowerPoint does not underline/recolour it as a hyperlink.
  */
-const BADGE = { w: 260, h: 48, right: 128, bottom: 32 };
+const BADGE = { w: 268, h: 48, right: 128, bottom: 32 };
 const BADGE_PNG = { dark: path.join(__dirname, 'assets', 'badge-dark.png'), light: path.join(__dirname, 'assets', 'badge-light.png') };
 function addBadge(pgSlide, badge) {
   const file = badge.dark === false ? BADGE_PNG.light : BADGE_PNG.dark;
