@@ -52,3 +52,20 @@ test('JSON база: баға сұрауы кезегі — мерзімі же�
   await db.cleanupOldJobs(-60000);
   assert.strictEqual(await db.scheduleRatePrompt({ jobId: 'jA', chatId: 1, dueAt: now }), true, 'cleanup ескі сұрауларды өшірді');
 });
+
+test('comment prompt is optional: inline "write / skip" buttons, never force_reply (the menu stays visible)', () => {
+  const { commentKeyboard, parseCommentCallback } = require('../core/feedbackUi');
+  const kb = commentKeyboard('jlx9k2ab3cd');
+  const btns = kb.inline_keyboard[0];
+  assert.strictEqual(btns.length, 2);
+  assert.deepStrictEqual(parseCommentCallback(btns[0].callback_data), { action: 'write', jobId: 'jlx9k2ab3cd' });
+  assert.deepStrictEqual(parseCommentCallback(btns[1].callback_data), { action: 'skip', jobId: 'jlx9k2ab3cd' });
+  assert.strictEqual(parseCommentCallback('fb:jlx9k2ab3cd:5'), null, 'rating callbacks are not comment callbacks');
+  assert.ok(!('force_reply' in kb));
+  assert.ok(/Өткізу/.test(commentPromptText('jlx9k2ab3cd', 5)));
+});
+
+test('the bot no longer asks for comments with force_reply', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'bot.js'), 'utf8');
+  assert.ok(!/force_reply:\s*true/.test(src));
+});

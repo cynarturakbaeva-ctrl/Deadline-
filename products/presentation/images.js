@@ -42,27 +42,43 @@ const RESERVE = { pexels: 20, unsplash: 6 };      // calls kept for paid decks
 const KEYED = { pexels: 'PEXELS_API_KEY', unsplash: 'UNSPLASH_ACCESS_KEY', pixabay: 'PIXABAY_API_KEY' };
 const quota = {};
 const stats = { calls: {}, cacheHits: 0, limited: {}, since: Date.now() };
-function q0(name) { return quota[name] || (quota[name] = { remaining: null, resetAt: 0, coolUntil: 0 }); }
+function q0(name) { return quota[name] || (quota[name] = { calls: [], hourLeft: null, hourAt: 0, monthLeft: null, monthResetAt: 0, coolUntil: 0 }); }
+const HOUR = 60 * 60 * 1000;
+function recentCalls(name) { const st = q0(name); const t = Date.now() - HOUR; st.calls = st.calls.filter((x) => x > t); return st.calls; }
+function noteCall(name) { q0(name).calls.push(Date.now()); }
+/**
+ * Pexels headers describe the MONTHLY quota (X-Ratelimit-Remaining ≈ 25 000, Reset = month end); its hourly
+ * limit (~200) is not reported, so we count our own calls of the last hour. Unsplash headers are hourly.
+ */
 function noteHeaders(name, headers) {
   const st = q0(name); const h = headers || {};
   const rem = Number(h['x-ratelimit-remaining']);
-  if (Number.isFinite(rem)) st.remaining = rem;
-  const reset = Number(h['x-ratelimit-reset']);  // Pexels: unix seconds
-  if (Number.isFinite(reset) && reset > 1e9) st.resetAt = reset * 1000;
-  else if (!st.resetAt || st.resetAt < Date.now()) st.resetAt = Date.now() + 60 * 60 * 1000; // Unsplash: hourly window
+  if (!Number.isFinite(rem)) return;
+  if (name === 'pexels') {
+    st.monthLeft = rem;
+    const reset = Number(h['x-ratelimit-reset']);
+    if (Number.isFinite(reset) && reset > 1e9) st.monthResetAt = reset * 1000;
+  } else {
+    st.hourLeft = rem; st.hourAt = Date.now();
+  }
 }
 function noteLimited(name, headers) {
   const st = q0(name);
   noteHeaders(name, headers);
-  st.remaining = 0;
-  st.coolUntil = Math.max(Date.now() + 15 * 60 * 1000, st.resetAt || 0);
+  const oldest = recentCalls(name)[0] || Date.now();
+  if (name === 'pexels' && st.monthLeft === 0 && st.monthResetAt > Date.now()) st.coolUntil = st.monthResetAt; // month used up
+  else st.coolUntil = Math.max(Date.now() + 10 * 60 * 1000, oldest + HOUR);                               // hourly limit
+  if (name !== 'pexels') st.hourLeft = 0;
   stats.limited[name] = (stats.limited[name] || 0) + 1;
-  console.warn(`[Image:${name}] limit reached — paused until ${new Date(st.coolUntil).toISOString().slice(11, 16)} UTC`);
+  console.warn(`[Image:${name}] limit reached — paused until ${new Date(st.coolUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`);
 }
+/** Searches we can still make this hour (and this month, when known). */
 function left(name) {
   const st = q0(name);
-  if (st.resetAt && Date.now() > st.resetAt) { st.remaining = null; st.resetAt = 0; } // new window
-  return st.remaining == null ? (DEFAULT_LIMIT[name] || 100) : st.remaining;
+  const used = recentCalls(name).length;
+  let hour = (DEFAULT_LIMIT[name] || 100) - used;
+  if (st.hourLeft != null && Date.now() - st.hourAt < HOUR) hour = Math.min(hour, st.hourLeft);
+  return Math.max(0, st.monthLeft != null ? Math.min(hour, st.monthLeft) : hour);
 }
 /** Providers to ask, best first. `free` decks never spend the reserve of the keyed providers. */
 function providerOrder(opts = {}) {
@@ -86,6 +102,7 @@ async function searchProvider(name, query, budget) {
   if (budget && budget.left <= 0) return [];
   if (budget) budget.left -= 1;
   stats.calls[name] = (stats.calls[name] || 0) + 1;
+  noteCall(name);
   const cands = await PROVIDERS[name](query);
   searchCache.set(key, { at: Date.now(), cands });
   if (searchCache.size > SEARCH_MAX) searchCache.delete(searchCache.keys().next().value);
@@ -107,7 +124,13 @@ function imageStats() {
   for (const n of Object.keys(KEYED).concat(['wikimedia'])) {
     if (KEYED[n] && !process.env[KEYED[n]]) continue;
     const st = q0(n);
-    out.providers[n] = { calls: stats.calls[n] || 0, remaining: DEFAULT_LIMIT[n] != null ? left(n) : null, paused: st.coolUntil > Date.now() ? new Date(st.coolUntil).toISOString() : null, limited: stats.limited[n] || 0 };
+    out.providers[n] = {
+      calls: stats.calls[n] || 0,
+      hourLeft: DEFAULT_LIMIT[n] != null ? left(n) : null,
+      monthLeft: st.monthLeft,
+      paused: st.coolUntil > Date.now() ? new Date(st.coolUntil).toISOString() : null,
+      limited: stats.limited[n] || 0,
+    };
   }
   return out;
 }

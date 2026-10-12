@@ -374,7 +374,13 @@ async function refundCredit(chatId) {
 }
 
 async function getAllChatIds() {
-  return Object.keys(db.users);
+  return Object.keys(db.users).filter((id) => !db.users[id].blocked);
+}
+async function setBlocked(chatId, blocked) {
+  const u = db.users[String(chatId)];
+  if (!u) return;
+  u.blocked = !!blocked;
+  saveDB(db);
 }
 
 // ─── Rate limits ────────────────────────────────────────────────────────
@@ -682,6 +688,7 @@ module.exports = {
   countFreeDecksSince,
   freeFunnel,
   getAllChatIds,
+  setBlocked,
   checkRateLimits,
   markGenerationAttempt,
   markGenerationSuccess,
