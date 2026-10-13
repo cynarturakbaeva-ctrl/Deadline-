@@ -36,7 +36,8 @@ function emptyDB() {
     partner_log: {},
     learn_templates: {},
     learn_uses: [],
-    rate_prompts: {}
+    rate_prompts: {},
+    events: {}
   };
 }
 
@@ -58,7 +59,8 @@ function loadDB() {
       partner_log: db.partner_log || {},
       learn_templates: db.learn_templates || {},
       learn_uses: Array.isArray(db.learn_uses) ? db.learn_uses : [],
-      rate_prompts: db.rate_prompts || {}
+      rate_prompts: db.rate_prompts || {},
+      events: db.events || {}
     };
   } catch (err) {
     console.error('[DB] Local read error:', err.message);
@@ -78,9 +80,11 @@ function todayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+let lastEnsureCreated = false;
 function ensureUser(chatId, referredBy = null, source = null) {
   const id = String(chatId);
   if (!db.users[id]) {
+    lastEnsureCreated = true;
     db.users[id] = {
       chat_id: id,
       source: source ? String(source).slice(0, 40) : null,
@@ -152,9 +156,42 @@ async function freeFunnel() {
   };
 }
 
+/** true → жаңа адам (бұрын болмаған) */
 async function registerUser(chatId, referredBy = null, source = null) {
+  lastEnsureCreated = false;
   ensureUser(chatId, referredBy, source);
+  const created = lastEnsureCreated;
   saveDB(db);
+  return created;
+}
+
+// ─── Воронка ────────────────────────────────────────────────────────────
+const funnelDay = (t = Date.now()) => new Date(t + 5 * 3600e3).toISOString().slice(0, 10);
+const FUNNEL_KEEP_DAYS = 90;
+
+async function logEvent(chatId, kind, source = null, t = Date.now()) {
+  const id = String(chatId); const day = funnelDay(t);
+  const ev = db.events || (db.events = {});
+  const key = id + '|' + kind + '|' + day;
+  if (ev[key]) return;
+  const start = ev[id + '|start|' + day];
+  const u = db.users[id];
+  const src = (source && String(source).slice(0, 40)) || (start && start.source)
+    || (u && (u.source || (u.referred_by ? 'ref' : null))) || 'direct';
+  ev[key] = { chat_id: id, kind: String(kind), day, source: src, created_at: t };
+  const oldest = funnelDay(t - FUNNEL_KEEP_DAYS * 86400e3);
+  for (const k of Object.keys(ev)) if (ev[k].day < oldest) delete ev[k];
+  saveDB(db);
+}
+
+async function funnelStats(day) {
+  const agg = {};
+  Object.values(db.events || {}).forEach((e) => {
+    if (e.day !== day) return;
+    const k = e.source + '|' + e.kind; agg[k] = (agg[k] || 0) + 1;
+  });
+  const { foldFunnel } = require('../core/funnel'); // lazy: тесттер бұл файлды бөлек көшіріп жүктейді
+  return foldFunnel(day, Object.entries(agg).map(([k, n]) => { const i = k.lastIndexOf('|'); return { source: k.slice(0, i), kind: k.slice(i + 1), n }; }));
 }
 
 async function addCredits(chatId, amount) {
@@ -687,6 +724,9 @@ module.exports = {
   releaseFreeDeck,
   countFreeDecksSince,
   freeFunnel,
+  logEvent,
+  funnelStats,
+  funnelDay,
   getAllChatIds,
   setBlocked,
   checkRateLimits,

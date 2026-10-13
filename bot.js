@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked, logEvent, funnelStats, funnelDay } = require('./db');
 const { ratingKeyboard, commentPromptText, commentKeyboard, parseCommentCallback, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -85,7 +85,11 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   // Арна белгісі: t.me/<bot>?start=madein | tiktok | knu_aidos … — қай арна клиент әкелетінін /stats көрсетеді
   const source = payload && !payload.startsWith('ref_') && /^[\w-]{2,40}$/.test(payload) ? payload.toLowerCase() : null;
 
-  await registerUser(chatId, referredBy, source);
+  const isNew = await registerUser(chatId, referredBy, source);
+  // воронка: осы /start қай арнадан (сілтеме белгісі; реферал → ref; белгісіз → тіркелген арнасы)
+  const evSource = source || (referredBy ? 'ref' : null);
+  logEvent(chatId, 'start', evSource).catch(() => {});
+  if (isNew) logEvent(chatId, 'new', evSource).catch(() => {});
   setBlocked(chatId, false).catch(() => {}); // бұрын бұғаттап, қайта оралған адам рассылкаға қайта кіреді
   const me = await getUser(chatId).catch(() => null);
   const freeLine = me && !me.freeUsed && !me.total && !(me.credits > 0)
@@ -137,11 +141,13 @@ bot.onText(/\/stats/, async (msg) => {
     const [ff, freeToday] = await Promise.all([freeFunnel(), countFreeDecksSince(today)]);
     const prov = Object.entries(img.providers).map(([n, p]) => `• ${n}: ${p.calls} сұраныс` + (p.hourLeft != null ? `, осы сағатта қалды ≈${p.hourLeft}` : '') + (p.monthLeft != null ? `, айына қалды ${p.monthLeft}` : '') + (p.paused ? ` ⏸ ${p.paused.slice(0, 16).replace('T', ' ')} UTC-ге дейін` : '') + (p.limited ? `, лимит ${p.limited} рет` : '')).join('\n');
     const conv = ff.freeUsers ? Math.round((ff.paidAfter / ff.freeUsers) * 100) : 0;
+    const [fToday, fYest] = await Promise.all([funnelStats(funnelDay()), funnelStats(funnelDay(Date.now() - 86400e3))]);
     const src = (ff.sources || []).map((x) => `• ${x.source}: ${x.users} адам · тегін ${x.free} · төлеген ${x.paid}`).join('\n');
     await bot.sendMessage(msg.chat.id,
       `📊 Статистика\n\n🖼 Суреттер (сервер іске қосылғаннан бері):\n${prov || '—'}\n• кэштен алынды: ${img.cacheHits} · кэш ${img.imageCacheMB} МБ\n\n` +
       `🎁 Тегін презентация: бүгін ${freeToday} · барлығы ${ff.freeUsers} · кейін төлегендер ${ff.paidAfter} (${conv}%)\n\n` +
-      `🔗 Арналар:\n${src || '—'}`);
+      `🔗 Арналар (барлық уақыт):\n${src || '—'}\n\n` +
+      require('./core/funnel').funnelText(fToday, fYest));
   } catch (e) {
     await bot.sendMessage(msg.chat.id, 'stats error: ' + e.message).catch(() => {});
   }
@@ -390,6 +396,7 @@ async function tryAutoConfirm(chatId, msg) {
     await bot.sendMessage(chatId, '⚠️ Бұл чек бұрын қолданылған.');
     return { handled: true };
   }
+  logEvent(chatId, 'paid').catch(() => {});
 
   await bot.sendMessage(
     chatId,
@@ -424,6 +431,7 @@ async function confirmPendingReceipt(chatId, credits, source) {
 
   const before = await getUser(chatId);
   const user = await addCredits(chatId, credits);
+  logEvent(chatId, 'paid').catch(() => {});
   // Қолмен растауда сома белгісіз — кредит санынан бағамен есептейміз (Plus / бірінші баға / әдепкі)
   const paid = credits === PLUS.credits ? PLUS.amount
     : (before.total === 0 && credits === 1 ? FIRST_PRICE : credits * PRICE);
