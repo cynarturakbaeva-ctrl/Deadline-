@@ -483,7 +483,7 @@ const VISUAL_RULES = `SEMANTIC VISUAL FIELD (diagram only when it teaches faster
 - Slide with visual still needs title, subtitle, 2-4 short bullets as text fallback.`;
 
 const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram library — the code draws it beautifully, you only give the data):
-- Use it whenever a slide's meaning is numbers or a clear structure: aim for 2-4 infographic slides per 10 slides, each a DIFFERENT kind; never on the cover or the references slide; never two in a row.
+- Use it only where a slide's meaning really IS numbers or a clear structure: at most 3 infographic slides per 10 slides (2 for 6-8 slides), each a DIFFERENT kind (not two line/column trend charts); never on the cover or the references slide; never two in a row. The other slides are text + photo — a deck of only charts looks monotonous.
 - Shape: {"kind":"...","items":[{"label":"...","value":"...","detail":"...","icon":"...","group":"..."}],"unit":"","center":"","source":"","headers":[]}
 - kinds and their data:
   • bar — 3-8 categories compared by one number (ranking, shares). value required.
@@ -592,6 +592,7 @@ STEP 2 — Generate exactly ${slideCount} slides. ${languageRule}
 Slide 1 must be the cover slide. ${slideCount >= 5 ? 'Slide 2 MUST be the introduction slide titled exactly "' + introTitleFor(language) + '" (why the topic matters, what the audience will learn). ' : ''}The last slide must be a closing/summary slide${style === 'academic' ? ' (or references list — see STEP 3)' : ''}.
 - If STRUCTURED MATERIAL: map the existing weeks/chapters/sections onto the middle slides in their original order. If there are more sections than available slides, group adjacent sections together rather than dropping content. Keep original section names/numbers (e.g. "Апта 3: ...", "Тарау 2: ...") where present.
 - If SHORT TOPIC: design a sensible flow (intro → concepts → details → applications → conclusion, or similar).
+- Every slide covers a DIFFERENT aspect. Never plan two slides about the same thing seen twice (e.g. "growth 1920–2024" and "boom 1927–1999" are ONE slide: show the trend once, then move to causes, consequences, regions, examples).
 ${academicStructureRule ? `
 STEP 3 — Academic structure applies (style=academic):${academicStructureRule}` : ''}
 

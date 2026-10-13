@@ -165,9 +165,17 @@ def('line', {
       if (i % every && i !== last) return;
       svg += txt('ig-lab center', esc(truncate(it.label, 16)), box(clamp(X(i) - 80, 0, W - 160), padT + ph + 14, 160, labH - 14, 'font-size:22px'));
     });
-    const tag = (i, cls) => txt('ig-val center ' + cls, esc(showValue(d.items[i], d)), box(clamp(pts[i][0] - 110, 0, W - 220), pts[i][1] - 62, 220, 44, 'font-size:30px'));
-    svg += tag(last, 'on'); if (hi !== last) svg += tag(hi, '');
-    if (0 !== hi && 0 !== last) svg += tag(0, 'muted');
+    // every point carries its value (a trend without numbers reads as decoration); long series: every k-th + key points
+    const gap = n > 1 ? pw / (n - 1) : pw;
+    const tw = clamp(gap - 8, 120, 220);
+    const tag = (i, cls, fs) => txt('ig-val center ' + cls, esc(showValue(d.items[i], d)), box(clamp(pts[i][0] - tw / 2, 0, W - tw), pts[i][1] - (fs + 32), tw, fs + 14, 'font-size:' + fs + 'px'));
+    const fsMuted = gap >= 190 ? 24 : 21;
+    d.items.forEach((it, i) => {
+      if (i === last || i === hi) return;
+      if ((i % every && i !== 0) || (every > 1 && (i === last - 1 || Math.abs(i - hi) === 1))) return;
+      svg += tag(i, 'muted', fsMuted);
+    });
+    svg += tag(last, 'on', 30); if (hi !== last) svg += tag(hi, '', 28);
     return svg;
   },
 });

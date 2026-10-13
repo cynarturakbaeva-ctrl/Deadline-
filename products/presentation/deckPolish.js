@@ -4,6 +4,7 @@
  * The model copies whatever its prompt example shows, so look & variety must not depend on it.
  */
 const T = require('./design/tokens');
+const IG = require('./design/infographics');
 
 const norm = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 const hasTable = (s) => !!(s && s.table && ((s.table.headers || []).length || (s.table.rows || []).length));
@@ -48,6 +49,87 @@ function limitTables(slides) {
   return converted;
 }
 
+/**
+ * Infographic families: two charts of one family read as "the same slide twice" (two line charts of growth).
+ * line + column are both a trend over time; donut + pictogram both a share of a whole.
+ */
+const IG_FAMILY = { line: 'trend', column: 'trend', donut: 'share', pictogram: 'share', funnel: 'flow', cycle: 'flow' };
+const igFamily = (kind) => IG_FAMILY[kind] || kind;
+const REFS_RE = /әдебиет|reference|пайдаланылған|библиограф|литератур|источник|sources/i;
+
+/** Drawn infographic of a slide: the LLM's field, else what the layout engine would detect from its content. */
+function slideInfographic(s) {
+  if (!s || s.noInfographic) return null;
+  return IG.validateInfographic(s.infographic) || IG.autoInfographic(s);
+}
+
+/** "Label: detail" line of an infographic item. */
+function itemLine(it, d) {
+  const v = it.display ? (d.unit && !/[^\d\s.,+\-]/.test(it.display) ? it.display + (d.unit === '%' ? '%' : ' ' + d.unit) : it.display) : '';
+  const head = [it.label, v].filter(Boolean).join(' — ');
+  const line = it.detail ? (head ? head + ': ' + it.detail : it.detail) : head;
+  return line.length > 160 ? line.slice(0, 157).trimEnd() + '…' : line;
+}
+
+/**
+ * A dropped infographic keeps its meaning as ordinary slide content: one or two headline numbers become stat
+ * cards, everything else short "label — value: detail" bullets. Bullets on purpose: such a slide gets a
+ * text + photo layout, which is exactly what a chart-heavy deck lacks.
+ */
+function infographicToContent(s, d) {
+  const items = d.items.filter((it) => it.label || it.display);
+  const existing = (Array.isArray(s.bullets) ? s.bullets : []).filter((b) => norm(b));
+  const hasText = existing.length >= 2 || norm(s.body).split(' ').length >= 12;
+  const numeric = items.filter((it) => it.display && it.value != null);
+  if (!hasText) {
+    if (['compare', 'pictogram'].includes(d.kind) && numeric.length >= 1 && numeric.length <= 2) {
+      s.stats = numeric.map((it) => ({ value: itemLine({ display: it.display }, d), label: it.label + (it.detail ? ' — ' + it.detail : '') }));
+    } else {
+      s.bullets = items.slice(0, 5).map((it) => itemLine(it, d));
+    }
+  }
+  if (d.source && !norm(s.body) && hasText) s.body = d.source;
+  s.infographic = null;
+  s.noInfographic = true;
+  const c = s.composition || (s.composition = {});
+  if (c.image === 'none') c.image = null; // the slide may carry a photo now
+}
+
+/**
+ * Data slides (infographics + tables) are the strongest element of a deck only when they are rare:
+ *   • at most ~30% of slides are infographics, and together with tables at most ~40%;
+ *   • never two data slides in a row; never two infographics of one family (two growth charts);
+ *   • the LLM's own infographics win over auto-detected ones, then earlier slides.
+ * The rest keep their content as stats / steps / bullets, so they get text + photo layouts.
+ * Run AFTER limitTables. Returns how many slides were converted.
+ */
+function limitInfographics(slides) {
+  const list = Array.isArray(slides) ? slides : [];
+  const n = list.length;
+  const tables = list.map((s, i) => i > 0 && hasTable(s));
+  const tableCount = tables.filter(Boolean).length;
+  const cap = n < 4 ? 1 : Math.max(1, Math.min(Math.round(n * 0.3), Math.round(n * 0.4) - tableCount));
+  const cands = [];
+  list.forEach((s, i) => {
+    const d = i > 0 && !REFS_RE.test(norm(s && s.title)) ? slideInfographic(s) : null;
+    if (d) cands.push({ i, d, explicit: !!IG.validateInfographic(s.infographic) });
+    else if (s && s.infographic && i === 0) s.infographic = null;
+  });
+  cands.sort((a, b) => (b.explicit - a.explicit) || (a.i - b.i));
+  const taken = new Set(); const families = new Set();
+  const busy = (i) => tables[i - 1] || tables[i + 1] || taken.has(i - 1) || taken.has(i + 1);
+  let converted = 0;
+  for (const c of cands) {
+    if (taken.size < cap && !busy(c.i) && !families.has(igFamily(c.d.kind))) {
+      taken.add(c.i); families.add(igFamily(c.d.kind));
+      continue;
+    }
+    infographicToContent(list[c.i], c.d);
+    converted += 1;
+  }
+  return converted;
+}
+
 let lastTheme = null;
 /** Pick the deck theme in code and stamp it on every slide (HTML builder + SVG visuals read it from there). */
 function applyDeckTheme(slides, opts) {
@@ -65,4 +147,4 @@ function applyDeckTheme(slides, opts) {
   return mood;
 }
 
-module.exports = { limitTables, applyDeckTheme, tableToBullets };
+module.exports = { limitTables, limitInfographics, infographicToContent, applyDeckTheme, tableToBullets };

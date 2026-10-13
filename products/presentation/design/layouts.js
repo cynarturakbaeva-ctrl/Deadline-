@@ -459,7 +459,9 @@ L.timeline = (ctx) => {
   const nodes = nodeList(a, 'timeline', 6);
   const n = nodes.length;
   const dateSize = n <= 3 ? 64 : n === 4 ? 54 : 44;
-  const dsz = n <= 4 ? 30 : 26;
+  // қысқа детал ("2 млрд", "Іске қосу") — ұсақ жазу емес, санға ұқсап ірі тұрады (слайд бос көрінбейді)
+  const shortDet = nodes.every((nd) => String(nd.detail || '').length <= 16);
+  const dsz = shortDet ? (n <= 4 ? 44 : 38) : n <= 4 ? 30 : 26;
   // Күн/жыл белгісі тек БАРЛЫҚ нүктеде қысқа (<=14 таңба) болса; әйтпесе нөмір + толық мәтін (қабаттасып кетпеу үшін)
   const allDates = nodes.length > 0 && nodes.every((nd) => nd.label && nd.detail && nd.label.length <= 14);
   const items = nodes.map((nd, i) => {
@@ -567,7 +569,7 @@ L.infographic = (ctx) => {
     fg = '<div class="canvas igk"><div class="igk-head g12"><div class="block" style="' + cols(1, 8) + '">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: GRID.span(8), maxLines: 2, scale: [80, 70, 62, 54, 48] }) + '</div>' +
-      '<div class="cell" style="' + cols(9, 12) + ';align-self:end">' + (support ? para(ctx, support, 24, { maxw: GRID.span(4) }) : '') + '</div></div>' +
+      '<div class="cell" style="' + cols(9, 12) + ';align-self:end">' + (support ? para(ctx, support, 28, { maxw: GRID.span(4) }) : '') + '</div></div>' +
       el(ctx, 'div', 'ig-wrap', IG.renderInfographic(d, W, H, p) + source, { role: 'figure-wrap' }) + '</div>';
   }
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: 'ig-slide' };
