@@ -557,7 +557,12 @@ async function generatePresentation(userInput, options = {}) {
     console.log(`[Image] query="${query}"`);
     try {
       // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
-      const judge = makePhotoJudge({ topic: title || topic, title: slide.title, query, cover: idx === 0 || idx === slides.length - 1 });
+      const layout = photoPlan.planned[idx];
+      const judge = makePhotoJudge({
+        topic: title || topic, title: slide.title, query,
+        cover: layout === 'cover' || layout === 'closing' || idx === 0 || idx === slides.length - 1,
+        background: layout === 'cover' || layout === 'closing' || layout === 'fullImage', // фото бүкіл слайдты жабады
+      });
       return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free, judge });
     } catch (err) {
       // Бір слайдтың суреті ешқашан бүкіл презентацияны құлатпауы керек

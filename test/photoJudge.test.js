@@ -106,6 +106,13 @@ test('makePhotoJudge: one model call per batch, answers cached, bad indexes igno
     assert.match(prompts[0], /2\) Balaclava battle map 1854/);
     assert.deepStrictEqual(await judge([cands[1], cands[2]]), [1], 'кэштен, қайта шақырусыз');
     assert.strictEqual(prompts.length, 1);
+    assert.match(prompts[0], /Placement: photo in a frame/);
+    // бүкіл слайдты жабатын фото — басқа шешім (медаль фонға жарамайды), кэш бөлек
+    const bg = makePhotoJudge({ topic: 'Қырым соғысы', title: 'Қорытынды', query: 'Crimea medal', cover: true, background: true });
+    await bg([cands[0]]);
+    assert.strictEqual(prompts.length, 2);
+    assert.match(prompts[1], /Placement: photo fills the whole slide/);
+    assert.match(prompts[1], /\(cover or closing\)/);
   } finally {
     global.fetch = origFetch;
     delete process.env.DEEPSEEK_API_KEY;
