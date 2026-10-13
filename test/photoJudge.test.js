@@ -87,22 +87,23 @@ test('judge unavailable → word-overlap check keeps only photos that mention th
   assert.deepStrictEqual(I.lexicalFit([{}, {}], 'anything'), [0, 1], 'сипаттама жоқ ескі провайдер — бұрынғыдай');
 });
 
-test('makePhotoJudge: one model call per batch, answers cached, bad indexes ignored, no key → null', async () => {
+test('makePhotoJudge: scores 0-10, below 7 dropped, best first, cached, judged against the slide text', async () => {
   const origFetch = global.fetch;
   const prompts = [];
   global.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     prompts.push(body.messages[1].content);
-    return { ok: true, json: async () => ({ usage: {}, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ fit: [2, 0, 9] }) } }] }) };
+    return { ok: true, json: async () => ({ usage: {}, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ scores: [8, 2, 10, 'x'] }) } }] }) };
   };
   try {
     delete process.env.DEEPSEEK_API_KEY;
     assert.strictEqual(await makePhotoJudge({ title: 'x' })([{ url: 'u', desc: 'd' }]), null);
     process.env.DEEPSEEK_API_KEY = 'test';
-    const judge = makePhotoJudge({ topic: 'Қырым соғысы', title: 'Балаклава шайқасы', query: 'Battle of Balaclava painting' });
+    const judge = makePhotoJudge({ topic: 'Қырым соғысы', title: 'Балаклава шайқасы', text: 'Жеңіл бригаданың шабуылы', query: 'Battle of Balaclava painting' });
     const cands = [{ url: 'u0', desc: 'Charge of the Light Brigade painting' }, { url: 'u1', desc: 'Man in office' }, { url: 'u2', desc: 'Balaclava battle map 1854' }];
     assert.deepStrictEqual(await judge(cands), [2, 0]);
     assert.match(prompts[0], /Балаклава шайқасы/);
+    assert.match(prompts[0], /Slide says: Жеңіл бригаданың шабуылы/);
     assert.match(prompts[0], /2\) Balaclava battle map 1854/);
     assert.deepStrictEqual(await judge([cands[1], cands[2]]), [1], 'кэштен, қайта шақырусыз');
     assert.strictEqual(prompts.length, 1);

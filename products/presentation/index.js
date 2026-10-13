@@ -560,6 +560,8 @@ async function generatePresentation(userInput, options = {}) {
       const layout = photoPlan.planned[idx];
       const judge = makePhotoJudge({
         topic: title || topic, title: slide.title, query,
+        text: [slide.subtitle, slide.body].concat(Array.isArray(slide.bullets) ? slide.bullets.slice(0, 3) : [])
+          .map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).filter(Boolean).join(' · '),
         cover: layout === 'cover' || layout === 'closing' || idx === 0 || idx === slides.length - 1,
         background: layout === 'cover' || layout === 'closing' || layout === 'fullImage', // фото бүкіл слайдты жабады
       });
