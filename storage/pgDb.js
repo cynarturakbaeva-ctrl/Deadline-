@@ -75,6 +75,7 @@ const SCHEMA = {
       partner_paid INTEGER NOT NULL DEFAULT 0
     )`,
     cols: {
+      name: 'TEXT', username: 'TEXT',
       partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
       credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT', blocked: 'BOOLEAN DEFAULT FALSE',
       referred_by: 'TEXT', ref_earnings: 'INTEGER DEFAULT 0', last_attempt_at: 'BIGINT DEFAULT 0',
@@ -122,6 +123,31 @@ const SCHEMA = {
     cols: {
       chat_id: 'TEXT', title: 'TEXT', topic: 'TEXT', quality_score: 'REAL', slide_count: 'INTEGER',
       language: 'TEXT', created_at: 'BIGINT', job_id: 'TEXT',
+    },
+  },
+  // Әр генерацияның тұрақты журналы (jobs 48 сағатта өшеді, бұл қалады) — админ панель үшін
+  gen_log: {
+    create: `CREATE TABLE IF NOT EXISTS gen_log (
+      job_id TEXT PRIMARY KEY,
+      chat_id TEXT,
+      mode TEXT,
+      topic TEXT,
+      title TEXT,
+      slides INTEGER,
+      language TEXT,
+      free BOOLEAN DEFAULT FALSE,
+      status TEXT,
+      error TEXT,
+      cost_tg REAL,
+      tokens INTEGER,
+      duration_ms INTEGER,
+      quality REAL,
+      created_at BIGINT,
+      finished_at BIGINT
+    )`,
+    cols: {
+      chat_id: 'TEXT', mode: 'TEXT', topic: 'TEXT', title: 'TEXT', slides: 'INTEGER', language: 'TEXT', free: 'BOOLEAN DEFAULT FALSE',
+      status: 'TEXT', error: 'TEXT', cost_tg: 'REAL', tokens: 'INTEGER', duration_ms: 'INTEGER', quality: 'REAL', created_at: 'BIGINT', finished_at: 'BIGINT',
     },
   },
   // Күнделікті воронка: бір адам · бір қадам · бір күн = бір жазба (start → app → gen → paid)
@@ -871,6 +897,58 @@ async function cleanupOldJobs(maxAgeMs = 2 * 24 * 3600 * 1000) {
   return r.rowCount || 0;
 }
 
+// ─── Админ панель ───────────────────────────────────────────────────────
+/** Telegram аты мен username (/start және Mini App ашылғанда жаңарады) */
+async function setUserProfile(chatId, { name = null, username = null } = {}) {
+  if (!name && !username) return;
+  await q('UPDATE users SET name = COALESCE($2, name), username = COALESCE($3, username) WHERE chat_id = $1',
+    [String(chatId), name ? String(name).slice(0, 80) : null, username ? String(username).slice(0, 40) : null]);
+}
+
+const GEN_COLS = ['chat_id', 'mode', 'topic', 'title', 'slides', 'language', 'free', 'status', 'error', 'cost_tg', 'tokens', 'duration_ms', 'quality', 'created_at', 'finished_at'];
+/** Генерация журналын жазу/жаңарту (тек берілген өрістер өзгереді) */
+async function logGen(jobId, fields = {}) {
+  const cols = GEN_COLS.filter((c) => fields[c] !== undefined);
+  const vals = cols.map((c) => (c === 'topic' || c === 'title' || c === 'error') && fields[c] != null ? String(fields[c]).slice(0, c === 'error' ? 300 : 500) : fields[c]);
+  const ph = cols.map((_, i) => `$${i + 2}`);
+  const upd = cols.length ? 'DO UPDATE SET ' + cols.map((c) => `${c} = EXCLUDED.${c}`).join(', ') : 'DO NOTHING';
+  await q(`INSERT INTO gen_log (job_id${cols.map((c) => ', ' + c).join('')}) VALUES ($1${ph.map((x) => ', ' + x).join('')})
+     ON CONFLICT (job_id) ${upd}`, [String(jobId), ...vals]);
+}
+
+/** Қолмен расталған төлемді де receipts-ке жазамыз (кредит қоспайды — тек есеп) */
+async function logPayment(chatId, amount, credits, ref) {
+  await q(`INSERT INTO receipts (receipt_no, chat_id, amount, credits, status, created_at)
+     VALUES ($1, $2, $3, $4, 'manual', ${tw('receipts', 'created_at', '$5')}) ON CONFLICT (receipt_no) DO NOTHING`,
+  [String(ref), String(chatId), Number(amount) || 0, Number(credits) || 0, Date.now()]);
+}
+
+/**
+ * Админ панельге шикі деректер (есептеу core/admin.js-те): барлық адам + since-тен бергі генерация, төлем, баға, воронка.
+ * chatId берілсе — тек сол адамның бүкіл тарихы.
+ */
+async function adminData({ since = 0, chatId = null } = {}) {
+  const who = chatId ? String(chatId) : null;
+  const [users, gens, receipts, feedback, events] = await Promise.all([
+    q(`SELECT chat_id, name, username, source, referred_by, credits, total, free_used, blocked, ${tr('users', 'created_at')}, last_success_at
+       FROM users ${who ? 'WHERE chat_id = $1' : ''}`, who ? [who] : []),
+    q(`SELECT * FROM gen_log WHERE ${who ? 'chat_id = $1' : 'COALESCE(created_at, 0) >= $1'} ORDER BY created_at DESC LIMIT 5000`, [who || since]),
+    q(`SELECT receipt_no, chat_id, amount, credits, status, ${tr('receipts', 'created_at')} FROM receipts
+       WHERE ${who ? 'chat_id = $1' : `created_at >= ${tw('receipts', 'created_at', '$1')}`} ORDER BY created_at DESC LIMIT 5000`, [who || since]),
+    q(`SELECT job_id, chat_id, rating, comment, ${tr('feedback', 'created_at')} FROM feedback
+       WHERE ${who ? 'chat_id = $1' : `created_at >= ${tw('feedback', 'created_at', '$1')}`} ORDER BY created_at DESC LIMIT 5000`, [who || since]),
+    q(`SELECT chat_id, kind, day, source FROM events WHERE ${who ? 'chat_id = $1' : 'COALESCE(created_at, 0) >= $1'} LIMIT 20000`, [who || since]),
+  ]);
+  const n = (v) => (v == null ? null : Number(v));
+  return {
+    users: users.rows.map((u) => ({ ...u, credits: num(u.credits), total: num(u.total), created_at: n(u.created_at), last_success_at: n(u.last_success_at) })),
+    gens: gens.rows.map((g) => ({ ...g, created_at: n(g.created_at), finished_at: n(g.finished_at), cost_tg: n(g.cost_tg), quality: n(g.quality) })),
+    receipts: receipts.rows.map((r) => ({ ...r, amount: num(r.amount), credits: num(r.credits), created_at: n(r.created_at) })),
+    feedback: feedback.rows.map((f) => ({ ...f, rating: n(f.rating), created_at: n(f.created_at) })),
+    events: events.rows,
+  };
+}
+
 async function closeDB() {
   if (pool && typeof pool.end === 'function') await pool.end().catch(() => {});
 }
@@ -906,6 +984,10 @@ module.exports = {
   releaseFreeDeck,
   countFreeDecksSince,
   freeFunnel,
+  setUserProfile,
+  logGen,
+  logPayment,
+  adminData,
   logEvent,
   funnelStats,
   funnelDay,

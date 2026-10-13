@@ -30,6 +30,7 @@
       <button class="tab active" data-tab="create">Жасау</button>
       <button class="tab" data-tab="history">Тарих</button>
       <button class="tab" data-tab="account">Аккаунт</button>
+      <button class="tab hidden" data-tab="admin" id="adminTabBtn">🛠 Админ</button>
     </nav>
 
     <!-- CREATE -->
@@ -218,6 +219,23 @@
     </div>
 
     <!-- HISTORY -->
+    <section id="tab-admin" class="panel">
+      <div class="chips adm-nav" id="admNav">
+        <button type="button" class="chip active" data-view="overview">Шолу</button>
+        <button type="button" class="chip" data-view="users">Клиенттер</button>
+        <button type="button" class="chip" data-view="gens">Жасалымдар</button>
+        <button type="button" class="chip" data-view="payments">Төлемдер</button>
+      </div>
+      <div id="admView" class="adm-view"><p class="hint">Жүктелуде…</p></div>
+    </section>
+
+    <div id="admUser" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="adm-sheet">
+        <div class="adm-sheet-head"><b id="admUserTitle">Клиент</b><button type="button" class="btn ghost small" id="admUserClose">✕</button></div>
+        <div id="admUserBody"></div>
+      </div>
+    </div>
+
     <section id="tab-history" class="panel">
       <div id="historyList" class="list"></div>
       <p id="historyEmpty" class="empty hidden">Әзірге презентация жоқ</p>
@@ -258,5 +276,6 @@
     </section>
   </div>
   <script src="app.js"></script>
+  <script src="admin.js"></script>
 </body>
 </html>

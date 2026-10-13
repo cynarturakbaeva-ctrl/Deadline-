@@ -68,3 +68,37 @@ test('pgDb: воронка — қадам бір адамға бір күнде 
     await pool.end();
   }
 });
+
+test('pgDb: админ — генерация журналы, қолмен төлем, аты-жөні → adminData', { skip }, async () => {
+  delete require.cache[require.resolve('../storage/pgDb')];
+  const db = require('../storage/pgDb');
+  const pool = new Pool({ connectionString: URL });
+  db._setPool(pool);
+  const id = 'adm' + Date.now();
+  try {
+    await db.initDB();
+    await db.registerUser(id, null, 'ad1');
+    await db.setUserProfile(id, { name: 'Тест Адам', username: 'tester' });
+    const t = Date.now();
+    await db.logGen('j' + id, { chat_id: id, mode: 'presentation', topic: 'Тақырып', slides: 8, free: true, status: 'queued', created_at: t });
+    await db.logGen('j' + id, { status: 'done', title: 'Дайын', quality: 95.5, cost_tg: 12.3, tokens: 40000, duration_ms: 70000, finished_at: t + 70000 });
+    await db.logPayment(id, 250, 1, 'm:' + id);
+    await db.logPayment(id, 250, 1, 'm:' + id);
+    await db.setFeedback('j' + id, id, { rating: 2, comment: 'нашар' });
+    const d = await db.adminData({ chatId: id });
+    assert.deepStrictEqual([d.users[0].name, d.users[0].username, d.users[0].credits], ['Тест Адам', 'tester', 0]);
+    assert.deepStrictEqual([d.gens[0].status, d.gens[0].topic, d.gens[0].title, d.gens[0].slides, d.gens[0].free, d.gens[0].cost_tg], ['done', 'Тақырып', 'Дайын', 8, true, 12.3]);
+    assert.strictEqual(d.receipts.length, 1);
+    assert.deepStrictEqual([d.receipts[0].amount, d.receipts[0].status], [250, 'manual']);
+    assert.strictEqual(d.feedback[0].rating, 2);
+    const all = await db.adminData({ since: t - 1000 });
+    assert.ok(all.gens.some((g) => g.job_id === 'j' + id));
+    assert.ok(all.users.length >= 1);
+    const calc = require('../core/admin');
+    assert.strictEqual(calc.gensList(all, { filter: 'low' }).items.find((g) => g.jobId === 'j' + id).comment, 'нашар');
+  } finally {
+    await pool.query('DELETE FROM gen_log WHERE chat_id = $1', [id]).catch(() => {});
+    await pool.query('DELETE FROM receipts WHERE chat_id = $1', [id]).catch(() => {});
+    await pool.end();
+  }
+});
