@@ -245,6 +245,7 @@ function buildPalette(mood, accent, styleKey) {
     scrim: m.scrim,
     tone: m.ref ? m.tone : (hint.tone || m.tone),
     radius: m.ref ? m.radius : (hint.radius || 'md'),
+    ref: !!m.ref, // client's template colours: its background is often a picture the accent was never checked against
   };
 }
 

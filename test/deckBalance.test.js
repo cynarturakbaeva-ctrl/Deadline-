@@ -124,3 +124,14 @@ test('vision heuristic does not "fix" chart or converted data slides', () => {
   assert.ok(codes({ title: 'Бос' }).includes('underfilled_slide'));
   assert.ok(codes({ title: 'Құжат', bullets: six.map((b) => b + ' сөз сөз сөз') }).includes('text_document_feel'));
 });
+
+test('client template colours: highlighted title words keep the title colour', () => {
+  const T = require('../products/presentation/design/tokens');
+  const { build3DPresentationHTML } = require('../products/presentation/html3DBuilder');
+  const mood = T.registerMood({ bg: '#ffffff', text: '#000000', accent: '#f79646' });
+  assert.strictEqual(T.buildPalette(mood).ref, true);
+  assert.strictEqual(T.buildPalette('midnight').ref, false);
+  const html = build3DPresentationHTML([{ title: 'Сыбайлас жемқорлыққа қарсы мәдениет', subtitle: 'x', composition: { mood } }, { title: 'Қорытынды', bullets: ['a', 'b'], composition: { mood } }], 'T', {});
+  assert.ok(html.includes(' ref-skin'));
+  assert.ok(/\.ref-skin \.title \.hl\{background:none/.test(html));
+});

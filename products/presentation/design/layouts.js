@@ -221,7 +221,7 @@ L.split = (ctx) => {
       titleH1(ctx, a.title, { width: tw, maxLines: 3, scale: [80, 70, 62, 54, 48] }) +
       (a.subtitle ? lead(ctx, a.subtitle, 32, { maxw: tw }) : '') +
       (body || hasBul ? rule(ctx, 48) : '') + body +
-      (hasBul ? listRows(ctx, a.bullets.slice(0, 4), { compact: true, labelSize: 30, detailSize: 24 }) : '') +
+      (hasBul ? listRows(ctx, a.bullets.slice(0, 4), { compact: true, labelSize: 32, detailSize: 26 }) : '') +
     '</div></div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
@@ -284,7 +284,7 @@ L.stackSplit = (ctx) => {
       '<div class="cell stack-txt" style="' + cols(...txtRange) + '">' +
         (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: tw }) : '') +
         (a.body ? para(ctx, a.body, bodySize(a.bodyWords, { large: 28, normal: 26 }), { maxw: tw }) : '') +
-        (hasBul ? listRows(ctx, a.bullets.slice(0, 4), { compact: true, labelSize: 30, detailSize: 24 }) : '') +
+        (hasBul ? listRows(ctx, a.bullets.slice(0, 4), { compact: true, labelSize: 32, detailSize: 26 }) : '') +
       '</div></div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
@@ -461,7 +461,7 @@ L.timeline = (ctx) => {
   const dateSize = n <= 3 ? 64 : n === 4 ? 54 : 44;
   // қысқа детал ("2 млрд", "Іске қосу") — ұсақ жазу емес, санға ұқсап ірі тұрады (слайд бос көрінбейді)
   const shortDet = nodes.every((nd) => String(nd.detail || '').length <= 16);
-  const dsz = shortDet ? (n <= 4 ? 44 : 38) : n <= 4 ? 30 : 26;
+  const dsz = shortDet ? (n <= 4 ? 44 : 38) : n <= 4 ? 30 : 28;
   // Күн/жыл белгісі тек БАРЛЫҚ нүктеде қысқа (<=14 таңба) болса; әйтпесе нөмір + толық мәтін (қабаттасып кетпеу үшін)
   const allDates = nodes.length > 0 && nodes.every((nd) => nd.label && nd.detail && nd.label.length <= 14);
   const items = nodes.map((nd, i) => {
@@ -561,7 +561,7 @@ L.infographic = (ctx) => {
       '<div class="cell igs-l" style="' + cols(1, 4) + '"><div class="block">' +
         kicker(ctx, sectionLabel(ctx)) + rule(ctx, 48) +
         titleH1(ctx, a.title, { width: GRID.span(4), maxLines: 4, scale: [72, 64, 56, 50, 44] }) +
-        (support ? para(ctx, support, 26, { maxw: GRID.span(4) }) : '') +
+        (support ? para(ctx, support, 30, { maxw: GRID.span(4) }) : '') +
       '</div></div>' +
       '<div class="cell igs-r" style="' + cols(6, 12) + '">' + el(ctx, 'div', 'ig-wrap', IG.renderInfographic(d, W, H, p) + source, { role: 'figure-wrap' }) + '</div></div>';
   } else {
@@ -569,7 +569,7 @@ L.infographic = (ctx) => {
     fg = '<div class="canvas igk"><div class="igk-head g12"><div class="block" style="' + cols(1, 8) + '">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: GRID.span(8), maxLines: 2, scale: [80, 70, 62, 54, 48] }) + '</div>' +
-      '<div class="cell" style="' + cols(9, 12) + ';align-self:end">' + (support ? para(ctx, support, 28, { maxw: GRID.span(4) }) : '') + '</div></div>' +
+      '<div class="cell" style="' + cols(9, 12) + ';align-self:end">' + (support ? para(ctx, support, 30, { maxw: GRID.span(4) }) : '') + '</div></div>' +
       el(ctx, 'div', 'ig-wrap', IG.renderInfographic(d, W, H, p) + source, { role: 'figure-wrap' }) + '</div>';
   }
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: 'ig-slide' };

@@ -401,6 +401,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* gradient key-word in display titles */
 .title .hl{background:linear-gradient(100deg,var(--accent) 0%,var(--accent2) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-box-decoration-break:clone;box-decoration-break:clone;padding-right:.04em}
 .serif-tone .title.t-display .hl{font-style:italic}
+.ref-skin .title .hl{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:inherit}
 /* title words materialise one by one */
 .title .w{opacity:0;filter:blur(10px);transition:opacity .8s var(--ease),filter .8s var(--ease)}
 .slide.is-active .title .w{opacity:1;filter:blur(0);transition-delay:calc(.18s + var(--w,0)*.06s)}
