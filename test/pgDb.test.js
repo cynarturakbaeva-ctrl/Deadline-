@@ -102,3 +102,41 @@ test('pgDb: админ — генерация журналы, қолмен тө�
     await pool.end();
   }
 });
+
+test('pgDb: тестер режимі — күніне 3, пікірсіз келесісі жоқ, атомарлы, @username бойынша табу', { skip }, async () => {
+  delete require.cache[require.resolve('../storage/pgDb')];
+  const db = require('../storage/pgDb');
+  const T = require('../core/tester');
+  const pool = new Pool({ connectionString: URL });
+  db._setPool(pool);
+  try {
+    await db.initDB();
+    const U = 'tt' + Date.now();
+    const NOW = Date.now();
+    await db.registerUser(U);
+    await db.setUserProfile(U, { name: 'Тестер', username: 'Tst_' + U });
+    assert.strictEqual((await db.findUser({ username: ('tst_' + U).toLowerCase() })).chat_id, U);
+    assert.strictEqual(await db.useTesterCredit(U, NOW), null, 'тестер емес');
+    await db.setTester(U, T.untilFor(7, NOW), NOW);
+    // параллель 3 сұраныс — тек біреуі өтеді (busy)
+    const got = await Promise.all([1, 2, 3].map(() => db.useTesterCredit(U, NOW)));
+    assert.deepStrictEqual(got.filter((x) => x != null), [2]);
+    await db.setTesterPending(U, 'job-' + U);
+    assert.strictEqual(await db.useTesterCredit(U, NOW), null, 'пікір күтілуде');
+    await db.logTesterFeedback('job-' + U, U, 'Сурет сай емес, фактілер дұрыс');
+    assert.strictEqual(await db.useTesterCredit(U, NOW), 1);
+    await db.refundTesterCredit(U);
+    assert.strictEqual((await db.getTester(U)).tester_credits, 2);
+    assert.strictEqual((await db.addTesterCredits(U, 3, NOW)).tester_credits, 5);
+    assert.strictEqual(await db.useTesterCredit(U, NOW + 86400e3), 4, 'ертең: 5 сақталды (3-ке түспейді), біреуі жұмсалды');
+    await db.logGen('job-' + U, { chat_id: U, tester: true, topic: 'T', status: 'done', created_at: NOW });
+    const td = await db.testerData();
+    assert.ok(td.users.some((u) => u.chat_id === U && u.tester_until > NOW));
+    assert.ok(td.gens.some((g) => g.job_id === 'job-' + U));
+    assert.ok(td.feedback.some((f) => f.job_id === 'job-' + U && /Сурет/.test(f.text)));
+    await db.setTester(U, null, NOW + 1000);
+    assert.strictEqual(T.isActive(await db.getTester(U), NOW + 2000), false);
+  } finally {
+    await pool.end();
+  }
+});

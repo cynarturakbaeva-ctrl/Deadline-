@@ -76,6 +76,7 @@ const SCHEMA = {
     )`,
     cols: {
       name: 'TEXT', username: 'TEXT',
+      tester_until: 'BIGINT', tester_credits: 'INTEGER DEFAULT 0', tester_day: 'TEXT', tester_pending: 'TEXT',
       partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
       credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT', blocked: 'BOOLEAN DEFAULT FALSE',
       referred_by: 'TEXT', ref_earnings: 'INTEGER DEFAULT 0', last_attempt_at: 'BIGINT DEFAULT 0',
@@ -148,7 +149,18 @@ const SCHEMA = {
     cols: {
       chat_id: 'TEXT', mode: 'TEXT', topic: 'TEXT', title: 'TEXT', slides: 'INTEGER', language: 'TEXT', free: 'BOOLEAN DEFAULT FALSE',
       status: 'TEXT', error: 'TEXT', cost_tg: 'REAL', tokens: 'INTEGER', duration_ms: 'INTEGER', quality: 'REAL', created_at: 'BIGINT', finished_at: 'BIGINT',
+      tester: 'BOOLEAN DEFAULT FALSE',
     },
+  },
+  // Тестерлердің әр презентацияға жазған пікірі (бір жұмыс — бір пікір)
+  tester_feedback: {
+    create: `CREATE TABLE IF NOT EXISTS tester_feedback (
+      job_id TEXT PRIMARY KEY,
+      chat_id TEXT,
+      text TEXT,
+      created_at BIGINT
+    )`,
+    cols: { chat_id: 'TEXT', text: 'TEXT', created_at: 'BIGINT' },
   },
   // Күнделікті воронка: бір адам · бір қадам · бір күн = бір жазба (start → app → gen → paid)
   events: {
@@ -905,7 +917,7 @@ async function setUserProfile(chatId, { name = null, username = null } = {}) {
     [String(chatId), name ? String(name).slice(0, 80) : null, username ? String(username).slice(0, 40) : null]);
 }
 
-const GEN_COLS = ['chat_id', 'mode', 'topic', 'title', 'slides', 'language', 'free', 'status', 'error', 'cost_tg', 'tokens', 'duration_ms', 'quality', 'created_at', 'finished_at'];
+const GEN_COLS = ['chat_id', 'mode', 'topic', 'title', 'slides', 'language', 'free', 'tester', 'status', 'error', 'cost_tg', 'tokens', 'duration_ms', 'quality', 'created_at', 'finished_at'];
 /** Генерация журналын жазу/жаңарту (тек берілген өрістер өзгереді) */
 async function logGen(jobId, fields = {}) {
   const cols = GEN_COLS.filter((c) => fields[c] !== undefined);
@@ -949,6 +961,84 @@ async function adminData({ since = 0, chatId = null } = {}) {
   };
 }
 
+// ─── Тестер режимі (логика: core/tester.js) ──────────────────────────────
+const T = require('../core/tester');
+const TESTER_COLS = 'chat_id, name, username, tester_until, tester_credits, tester_day, tester_pending';
+const testerRow = (u) => (u ? { ...u, tester_until: numOrNull(u.tester_until), tester_credits: num(u.tester_credits) } : null);
+
+async function getTester(chatId) {
+  const r = await q(`SELECT ${TESTER_COLS} FROM users WHERE chat_id = $1`, [String(chatId)]);
+  return testerRow(r.rows[0]);
+}
+/** id немесе username (кіші әріппен) бойынша адамды табу — ботқа бір рет кірген болуы керек */
+async function findUser({ id = null, username = null } = {}) {
+  const r = id
+    ? await q('SELECT chat_id, name, username FROM users WHERE chat_id = $1', [String(id)])
+    : await q('SELECT chat_id, name, username FROM users WHERE lower(username) = $1 LIMIT 1', [String(username || '').toLowerCase()]);
+  return r.rows[0] || null;
+}
+/** Тестер ету / мерзімін ұзарту (until мс) немесе тоқтату (until = null → мерзімі қазір бітеді, тарихы қалады) */
+async function setTester(chatId, until, now = Date.now()) {
+  if (until) {
+    const cur = await getTester(chatId);
+    const credits = Math.max(T.creditsToday(cur, now), T.DAILY);
+    await q('UPDATE users SET tester_until = $2, tester_credits = $3, tester_day = $4, tester_pending = NULL WHERE chat_id = $1',
+      [String(chatId), Number(until), credits, T.dayOf(now)]);
+  } else {
+    await q('UPDATE users SET tester_until = LEAST(COALESCE(tester_until, $2), $2), tester_pending = NULL WHERE chat_id = $1', [String(chatId), now]);
+  }
+  return getTester(chatId);
+}
+/** Админ: бүгінгі тестер-кредитке n қосу (бүгінгі толтыру ескеріледі; 0-ден төмен түспейді) */
+async function addTesterCredits(chatId, n, now = Date.now()) {
+  const cur = await getTester(chatId);
+  if (!T.isActive(cur, now)) return null;
+  const credits = Math.max(0, T.creditsToday(cur, now) + (parseInt(n, 10) || 0));
+  await q('UPDATE users SET tester_credits = $2, tester_day = $3 WHERE chat_id = $1', [String(chatId), credits, T.dayOf(now)]);
+  return getTester(chatId);
+}
+/**
+ * Атомарлы: тестер-кредитті жұмсау. Мерзімі өтпеген, пікір күтпейтін, бүгін кредиті бар болса ғана.
+ * Күн ауысса алдымен 3-ке дейін толады. Сәтті болса tester_pending = 'busy' (келесі параллель сұраныс өтпейді).
+ */
+async function useTesterCredit(chatId, now = Date.now()) {
+  const eff = `(CASE WHEN tester_day IS DISTINCT FROM $2 THEN GREATEST(COALESCE(tester_credits, 0), $3) ELSE COALESCE(tester_credits, 0) END)`;
+  const r = await q(
+    `UPDATE users SET tester_credits = ${eff} - 1, tester_day = $2, tester_pending = 'busy'
+     WHERE chat_id = $1 AND COALESCE(tester_until, 0) > $4 AND tester_pending IS NULL AND ${eff} > 0
+     RETURNING tester_credits`,
+    [String(chatId), T.dayOf(now), T.DAILY, now]
+  );
+  return r.rows.length ? num(r.rows[0].tester_credits) : null;
+}
+/** Генерация құласа: кредит қайтарылады, пікір күтілмейді */
+async function refundTesterCredit(chatId) {
+  await q('UPDATE users SET tester_credits = COALESCE(tester_credits, 0) + 1, tester_pending = NULL WHERE chat_id = $1', [String(chatId)]);
+}
+async function setTesterPending(chatId, jobId) {
+  await q('UPDATE users SET tester_pending = $2 WHERE chat_id = $1', [String(chatId), jobId ? String(jobId) : null]);
+}
+/** Тестер пікірін сақтау + келесі презентацияны ашу */
+async function logTesterFeedback(jobId, chatId, text) {
+  await q(`INSERT INTO tester_feedback (job_id, chat_id, text, created_at) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (job_id) DO UPDATE SET text = EXCLUDED.text, created_at = EXCLUDED.created_at`,
+  [String(jobId), String(chatId), String(text || '').replace(/\u0000/g, '').slice(0, 3000), Date.now()]);
+  await q('UPDATE users SET tester_pending = NULL WHERE chat_id = $1', [String(chatId)]);
+}
+/** Админ «Тестерлер» бөлімі: тестерлер, олардың генерациялары мен пікірлері */
+async function testerData() {
+  const [users, gens, feedback] = await Promise.all([
+    q(`SELECT ${TESTER_COLS} FROM users WHERE tester_until IS NOT NULL`),
+    q('SELECT job_id, chat_id, mode, topic, title, status, created_at FROM gen_log WHERE tester = TRUE ORDER BY created_at DESC LIMIT 2000'),
+    q('SELECT job_id, chat_id, text, created_at FROM tester_feedback ORDER BY created_at DESC LIMIT 1000'),
+  ]);
+  return {
+    users: users.rows.map(testerRow),
+    gens: gens.rows.map((g) => ({ ...g, created_at: numOrNull(g.created_at) })),
+    feedback: feedback.rows.map((f) => ({ ...f, created_at: numOrNull(f.created_at) })),
+  };
+}
+
 async function closeDB() {
   if (pool && typeof pool.end === 'function') await pool.end().catch(() => {});
 }
@@ -988,6 +1078,15 @@ module.exports = {
   logGen,
   logPayment,
   adminData,
+  getTester,
+  findUser,
+  setTester,
+  addTesterCredits,
+  useTesterCredit,
+  refundTesterCredit,
+  setTesterPending,
+  logTesterFeedback,
+  testerData,
   logEvent,
   funnelStats,
   funnelDay,

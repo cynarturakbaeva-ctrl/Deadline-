@@ -4,7 +4,8 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked, logEvent, funnelStats, funnelDay, setUserProfile, logPayment } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked, logEvent, funnelStats, funnelDay, setUserProfile, logPayment, getTester, logTesterFeedback } = require('./db');
+const testerCore = require('./core/tester');
 const { ratingKeyboard, commentPromptText, commentKeyboard, parseCommentCallback, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -680,11 +681,52 @@ bot.onText(/\/broadcast ([\s\S]+)/, async (msg, match) => {
 });
 
 // ─── Негізгі хабар обработчигі ────────────────────────────────────────────
+// ─── Тестер пікірі: презентациядан кейінгі 3 сұраққа бір хабарламамен жауап ─────
+const TESTER_MIN_CHARS = 15;
+/** true → хабарлама тестер пікірі ретінде өңделді */
+async function handleTesterFeedback(chatId, text, from) {
+  if (!text || MENU_TEXTS.has(text)) return false;
+  const t = await getTester(chatId).catch(() => null);
+  if (!t || !t.tester_pending || t.tester_pending === 'busy') return false;
+  const job = await getJob(t.tester_pending).catch(() => null);
+  if (!job || job.status !== 'done' || String(job.chatId) !== String(chatId)) return false;
+  if (text.trim().length < TESTER_MIN_CHARS) {
+    await bot.sendMessage(chatId, '✍️ Сәл толығырақ жазыңыз: 3 сұрақтың әрқайсысына қысқа жауап (сурет/мәтін, факт, мұғалімге тапсырар ма едіңіз).');
+    return true;
+  }
+  await logTesterFeedback(job.id, chatId, text.trim());
+  pendingComment.delete(String(chatId));
+  const left = testerCore.creditsToday(await getTester(chatId).catch(() => null));
+  await bot.sendMessage(chatId, `🙏 Рахмет! Пікіріңіз сақталды.
+🧪 Бүгін тағы ${left} тегін презентация жасай аласыз.`, MAIN_KEYBOARD).catch(() => {});
+  if (ADMIN_ID) {
+    try {
+      const who = [from && from.first_name, from && from.last_name].filter(Boolean).join(' ') || 'Тестер';
+      const user = from && from.username ? ` (@${from.username})` : '';
+      const topic = String(job.title || (job.payload && job.payload.topic) || '').slice(0, 80);
+      await bot.sendMessage(ADMIN_ID, `🧪 Тестер пікірі — ${who}${user}\n📊 ${topic}\n\n«${text.trim().slice(0, 3000)}»\n🆔 ${chatId}`, { disable_web_page_preview: true });
+      if (job.pptxPath && require('fs').existsSync(job.pptxPath)) {
+        const isDocx = job.payload && job.payload.mode === 'referat';
+        await bot.sendDocument(ADMIN_ID, job.pptxPath, { caption: `🧪 ${who} · 🆔 ${chatId}` }, {
+          filename: (String(job.title || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60) || 'file') + (isDocx ? '.docx' : '.pptx'),
+          contentType: isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        });
+      }
+    } catch (e) { console.warn('[Tester] admin notify failed:', e.message); }
+  }
+  return true;
+}
+
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text   = msg.text;
 
   if (text && text.startsWith('/')) return;
+
+  // Тестер пікір күтіп тұрса — мәтін соған жазылады (мәзір батырмалары өтеді)
+  try {
+    if (await handleTesterFeedback(chatId, text, msg.from)) return;
+  } catch (e) { console.error('[Tester] feedback error:', e.message); }
 
   // Пікір: біздің «Пікір қалдырғыңыз келсе…» хабарламамызға Reply ретінде жазылған мәтін
   const replied = msg.reply_to_message;

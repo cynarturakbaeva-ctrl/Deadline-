@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   let ctx = null;            // { api, esc, showToast, haptic } — app.js береді
-  const st = { view: 'overview', days: 14, userQ: '', userFilter: 'all', genFilter: 'all' };
+  const st = { view: 'overview', days: 14, userQ: '', userFilter: 'all', genFilter: 'all', testerDays: 7, testerWho: '' };
   const $ = (s) => document.querySelector(s);
 
   const tz = { timeZone: 'Asia/Almaty' };
@@ -36,6 +36,7 @@
       if (st.view === 'overview') box.innerHTML = await viewOverview();
       else if (st.view === 'users') box.innerHTML = await viewUsers();
       else if (st.view === 'gens') box.innerHTML = await viewGens();
+      else if (st.view === 'testers') box.innerHTML = await viewTesters();
       else box.innerHTML = await viewPayments();
       bind(box);
     } catch (err) {
@@ -139,6 +140,51 @@
         <div class="adm-muted">${fmtDT(p.createdAt)} · ${p.credits} кредит · ${p.kind}</div></div>`).join('') || '<p class="hint">Әзірге жоқ</p>'}</div>`;
   }
 
+  // ── Тестерлер ───────────────────────────────────────────────────────────
+  const fmtDay = (ms) => (ms ? new Date(ms).toLocaleDateString('ru-RU', { ...tz, day: '2-digit', month: '2-digit' }) : '—');
+  function testerRow(t) {
+    const state = t.active ? `✅ белсенді · ${fmtDay(t.until)} дейін` : '⏹ мерзімі бітті';
+    return `<div class="adm-row static">
+      <div class="adm-row-top"><button type="button" class="adm-link" data-user="${e(t.id)}">${e(t.name)}</button>${t.username ? ` <span class="adm-muted">@${e(t.username)}</span>` : ''}<span class="adm-right adm-muted">${state}</span></div>
+      <div class="adm-muted">${t.active ? `бүгін <b>${t.creditsToday}</b>/${t.daily} · ` : ''}жасатқан ${t.gens}${t.failed ? ` (қате ${t.failed})` : ''} · пікір ${t.feedbacks}${t.pending && t.pending !== 'busy' ? ' · ⏳ пікір күтілуде' : ''}${t.pending === 'busy' ? ' · ⚙️ жасалып жатыр' : ''}</div>
+      <div class="adm-muted">соңғы: ${fmtDT(t.lastAt)} · 🆔 ${e(t.id)}</div>
+      <div class="adm-actions">${t.active
+    ? `<button type="button" class="btn secondary small" data-tcredit="1" data-id="${e(t.id)}">+1 бүгін</button>
+         <button type="button" class="btn secondary small" data-tcredit="3" data-id="${e(t.id)}">+3 бүгін</button>
+         <button type="button" class="btn secondary small" data-tcredit="-1" data-id="${e(t.id)}">−1</button>
+         <button type="button" class="btn secondary small" data-tremove="${e(t.id)}">Тоқтату</button>`
+    : `<button type="button" class="btn secondary small" data-treadd="${e(t.username ? '@' + t.username : t.id)}">🧪 Қайта тестер ету (${st.testerDays} күн)</button>`}</div></div>`;
+  }
+  async function viewTesters() {
+    const r = await ctx.api('/api/admin/testers');
+    return `<div class="card compact">
+        <div class="adm-h">Тестер қосу</div>
+        <input type="text" id="admTesterWho" class="adm-search" placeholder="@username немесе ID" value="${e(st.testerWho)}" autocomplete="off" />
+        <div class="chips">${[3, 7, 14].map((d) => `<button type="button" class="chip${st.testerDays === d ? ' active' : ''}" data-tdays="${d}">${d} күн</button>`).join('')}</div>
+        <button type="button" class="btn primary" id="admTesterAdd">🧪 Тестер ету</button>
+        <p class="hint">Күніне ${r.daily} презентация тегін: жұмсамаса жиналмайды, күнде түнде ${r.daily}-ке дейін толады. Әр презентациядан кейін бот 3 сұрақ қояды — пікір жазбайынша келесісі ашылмайды. Адам ботқа бір рет кірген болуы керек.</p>
+      </div>
+      <div class="adm-grid">${tile('Белсенді тестер', r.active) + tile('Жасатқан', r.gens) + tile('Пікір', r.feedbacks)}</div>
+      <div class="adm-h">Тестерлер</div>
+      <div class="list">${r.items.map(testerRow).join('') || '<p class="hint">Әзірге тестер жоқ</p>'}</div>
+      <div class="adm-h">Соңғы пікірлер</div>
+      <div class="list">${r.recent.map((f) => `<div class="adm-row static">
+        <div class="adm-row-top"><button type="button" class="adm-link" data-user="${e(f.chatId)}">${e(f.name)}</button><span class="adm-right adm-muted">${fmtDT(f.createdAt)}</span></div>
+        ${f.topic ? `<div class="adm-muted">📊 ${e(f.topic)}</div>` : ''}
+        <div class="adm-comment">${e(f.text)}</div>
+        <button type="button" class="btn secondary small adm-send" data-send="${e(f.jobId)}">📤 Файлды маған жіберу</button></div>`).join('') || '<p class="hint">Әзірге пікір жоқ</p>'}</div>`;
+  }
+  async function addTester(who) {
+    if (!who || !who.trim()) { ctx.showToast('@username немесе ID жазыңыз'); return; }
+    try {
+      const r = await ctx.api('/api/admin/testers', { method: 'POST', body: JSON.stringify({ who: who.trim(), days: st.testerDays }) });
+      if (!r.ok) { ctx.showToast(r.message || 'Қате'); return; }
+      st.testerWho = '';
+      ctx.showToast(`🧪 ${r.name} — тестер (${st.testerDays} күн). Ботқа хабарлама жіберілді.`);
+      render();
+    } catch (err) { ctx.showToast('Қате: ' + err.message); }
+  }
+
   // ── Клиент картасы ──────────────────────────────────────────────────────
   async function openUser(id) {
     $('#admUser').classList.remove('hidden');
@@ -179,6 +225,29 @@
       render();
     }));
     root.querySelectorAll('[data-user]').forEach((b) => { if (b !== root) b.addEventListener('click', () => openUser(b.dataset.user)); });
+    // тестерлер
+    root.querySelectorAll('[data-tdays]').forEach((b) => b.addEventListener('click', () => {
+      const w = root.querySelector('#admTesterWho'); if (w) st.testerWho = w.value;
+      st.testerDays = +b.dataset.tdays; render();
+    }));
+    const tAdd = root.querySelector('#admTesterAdd');
+    if (tAdd) {
+      const w = root.querySelector('#admTesterWho');
+      tAdd.addEventListener('click', () => addTester(w.value));
+      w.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') addTester(w.value); });
+    }
+    root.querySelectorAll('[data-treadd]').forEach((b) => b.addEventListener('click', () => addTester(b.dataset.treadd)));
+    root.querySelectorAll('[data-tcredit]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        const r = await ctx.api(`/api/admin/tester/${encodeURIComponent(b.dataset.id)}/credits`, { method: 'POST', body: JSON.stringify({ n: +b.dataset.tcredit }) });
+        ctx.showToast(r.ok ? `Бүгін: ${r.tester.creditsToday}` : r.message); render();
+      } catch (err) { ctx.showToast('Қате: ' + err.message); b.disabled = false; }
+    }));
+    root.querySelectorAll('[data-tremove]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm('Тестерлікті тоқтату керек пе? Тарихы мен пікірлері сақталады.')) return;
+      try { await ctx.api(`/api/admin/tester/${encodeURIComponent(b.dataset.tremove)}/remove`, { method: 'POST', body: '{}' }); ctx.showToast('Тоқтатылды'); render(); } catch (err) { ctx.showToast('Қате: ' + err.message); }
+    }));
     const q = root.querySelector('#admUserQ');
     if (q) {
       let t = null;

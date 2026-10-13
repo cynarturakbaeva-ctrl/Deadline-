@@ -38,7 +38,8 @@ function emptyDB() {
     learn_uses: [],
     rate_prompts: {},
     events: {},
-    gen_log: {}
+    gen_log: {},
+    tester_feedback: {}
   };
 }
 
@@ -62,7 +63,8 @@ function loadDB() {
       learn_uses: Array.isArray(db.learn_uses) ? db.learn_uses : [],
       rate_prompts: db.rate_prompts || {},
       events: db.events || {},
-      gen_log: db.gen_log || {}
+      gen_log: db.gen_log || {},
+      tester_feedback: db.tester_feedback || {}
     };
   } catch (err) {
     console.error('[DB] Local read error:', err.message);
@@ -732,6 +734,75 @@ async function adminData({ since = 0, chatId = null } = {}) {
   };
 }
 
+// ─── Тестер режимі (логика: core/tester.js; тесттер бұл файлды көшіретіндіктен — кешіктірілген require) ──
+const T = () => require('../core/tester');
+const testerOf = (u) => (u ? {
+  chat_id: u.chat_id, name: u.name || null, username: u.username || null, tester_until: u.tester_until == null ? null : Number(u.tester_until),
+  tester_credits: Number(u.tester_credits) || 0, tester_day: u.tester_day || null, tester_pending: u.tester_pending || null,
+} : null);
+
+async function getTester(chatId) { return testerOf(db.users[String(chatId)]); }
+async function findUser({ id = null, username = null } = {}) {
+  const u = id ? db.users[String(id)] : Object.values(db.users).find((x) => String(x.username || '').toLowerCase() === String(username || '').toLowerCase());
+  return u ? { chat_id: u.chat_id, name: u.name || null, username: u.username || null } : null;
+}
+async function setTester(chatId, until, now = Date.now()) {
+  const u = db.users[String(chatId)];
+  if (!u) return null;
+  if (until) {
+    u.tester_credits = Math.max(T().creditsToday(testerOf(u), now), T().DAILY);
+    u.tester_until = Number(until); u.tester_day = T().dayOf(now); u.tester_pending = null;
+  } else {
+    u.tester_until = Math.min(u.tester_until == null ? now : Number(u.tester_until), now); u.tester_pending = null;
+  }
+  saveDB(db);
+  return testerOf(u);
+}
+async function addTesterCredits(chatId, n, now = Date.now()) {
+  const u = db.users[String(chatId)];
+  if (!T().isActive(testerOf(u), now)) return null;
+  u.tester_credits = Math.max(0, T().creditsToday(testerOf(u), now) + (parseInt(n, 10) || 0));
+  u.tester_day = T().dayOf(now);
+  saveDB(db);
+  return testerOf(u);
+}
+async function useTesterCredit(chatId, now = Date.now()) {
+  const u = db.users[String(chatId)];
+  const t = testerOf(u);
+  if (!T().isActive(t, now) || t.tester_pending) return null;
+  const c = T().creditsToday(t, now);
+  if (c <= 0) return null;
+  u.tester_credits = c - 1; u.tester_day = T().dayOf(now); u.tester_pending = 'busy';
+  saveDB(db);
+  return u.tester_credits;
+}
+async function refundTesterCredit(chatId) {
+  const u = db.users[String(chatId)];
+  if (!u) return;
+  u.tester_credits = (Number(u.tester_credits) || 0) + 1; u.tester_pending = null;
+  saveDB(db);
+}
+async function setTesterPending(chatId, jobId) {
+  const u = db.users[String(chatId)];
+  if (!u) return;
+  u.tester_pending = jobId ? String(jobId) : null;
+  saveDB(db);
+}
+async function logTesterFeedback(jobId, chatId, text) {
+  const f = db.tester_feedback || (db.tester_feedback = {});
+  f[String(jobId)] = { job_id: String(jobId), chat_id: String(chatId), text: String(text || '').slice(0, 3000), created_at: Date.now() };
+  const u = db.users[String(chatId)];
+  if (u) u.tester_pending = null;
+  saveDB(db);
+}
+async function testerData() {
+  return {
+    users: Object.values(db.users).filter((u) => u.tester_until != null).map(testerOf),
+    gens: Object.values(db.gen_log || {}).filter((g) => g.tester).sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).map((x) => ({ ...x })),
+    feedback: Object.values(db.tester_feedback || {}).sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).map((x) => ({ ...x })),
+  };
+}
+
 module.exports = {
   backend: 'json',
   closeDB: async () => {},
@@ -766,6 +837,15 @@ module.exports = {
   logGen,
   logPayment,
   adminData,
+  getTester,
+  findUser,
+  setTester,
+  addTesterCredits,
+  useTesterCredit,
+  refundTesterCredit,
+  setTesterPending,
+  logTesterFeedback,
+  testerData,
   logEvent,
   funnelStats,
   funnelDay,
