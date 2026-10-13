@@ -85,7 +85,7 @@ function infographicToContent(s, d) {
     if (['compare', 'pictogram'].includes(d.kind) && numeric.length >= 1 && numeric.length <= 2) {
       s.stats = numeric.map((it) => ({ value: itemLine({ display: it.display }, d), label: it.label + (it.detail ? ' — ' + it.detail : '') }));
     } else {
-      s.bullets = items.slice(0, 5).map((it) => itemLine(it, d));
+      s.bullets = items.slice(0, 6).map((it) => itemLine(it, d));
     }
   }
   if (d.source && !norm(s.body) && hasText) s.body = d.source;

@@ -112,3 +112,15 @@ test('balanced deck is left alone', () => {
   ];
   assert.strictEqual(limitInfographics(deck), 0);
 });
+
+test('vision heuristic does not "fix" chart or converted data slides', () => {
+  const { heuristicFromPng } = require('../products/presentation/visionCritic');
+  const codes = (slide) => heuristicFromPng('/nonexistent.png', slide, 0).map((x) => x.code);
+  assert.deepStrictEqual(codes({ title: 'График', infographic: bar }), []);
+  assert.deepStrictEqual(codes({ title: 'Кесте', table: { headers: ['a'], rows: [['1']] } }), []);
+  const six = ['2012 — 28', '2014 — 29', '2016 — 29', '2018 — 31', '2020 — 38', '2022 — 36'];
+  assert.deepStrictEqual(codes({ title: 'Динамика', bullets: six, noInfographic: true }), []);
+  // ordinary slides are still checked
+  assert.ok(codes({ title: 'Бос' }).includes('underfilled_slide'));
+  assert.ok(codes({ title: 'Құжат', bullets: six.map((b) => b + ' сөз сөз сөз') }).includes('text_document_feel'));
+});

@@ -61,7 +61,10 @@ function heuristicFromPng(pngPath, slide, index) {
   }
 
   const bullets = Array.isArray(slide?.bullets) ? slide.bullets.filter(Boolean) : [];
-  if (bullets.length >= 6) {
+  // chart/table/timeline slides carry their content in a drawn structure, not in bullets
+  const structured = !!(slide && (slide.infographic || slide.table || slide.noInfographic
+    || (Array.isArray(slide.timeline) && slide.timeline.length) || (Array.isArray(slide.steps) && slide.steps.length)));
+  if (bullets.length >= 6 && !structured) {
     issues.push({
       code: 'text_document_feel',
       severity: 'high',
@@ -70,7 +73,7 @@ function heuristicFromPng(pngPath, slide, index) {
       redesign: 'reduce_bullets_to_4',
     });
   }
-  if (bullets.length <= 1 && !slide?.body && !(slide?.stats && slide.stats.length) && !(slide?.visualSvg)) {
+  if (bullets.length <= 1 && !slide?.body && !(slide?.stats && slide.stats.length) && !(slide?.visualSvg) && !structured) {
     issues.push({
       code: 'underfilled_slide',
       severity: 'medium',
