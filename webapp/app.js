@@ -149,6 +149,17 @@
     $('#charCount').textContent = $('#topic').value.length;
   });
 
+  // ── Тестер режимі: бүгінгі тегін тест презентациясы ──────────────────────
+  function renderTester(t) {
+    const el = $('#testerBanner');
+    if (!el) return;
+    if (!t || !t.active) { el.classList.add('hidden'); return; }
+    const until = new Date(t.until).toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit' });
+    el.innerHTML = `🧪 Тест режимі: бүгін <b>${t.creditsToday}/${t.daily}</b> тегін презентация · ${until} дейін`
+      + (t.pending && t.pending !== 'busy' ? '<br>⏳ Алдымен алдыңғы презентацияға ботқа пікір жазыңыз' : '');
+    el.classList.remove('hidden');
+  }
+
   // ── Load me ───────────────────────────────────────────────────────────
   async function loadMe() {
     try {
@@ -168,7 +179,8 @@
         $('#plusPrice').textContent = me.plus.amount;
         $('#plusEach').textContent = `(≈ ${Math.round(me.plus.amount / me.plus.credits)}₸ / дана)`;
       }
-      $('#freeBanner').classList.toggle('hidden', !me.freeAvailable);
+      $('#freeBanner').classList.toggle('hidden', !me.freeAvailable || !!(me.tester && me.tester.active));
+      renderTester(me.tester);
       $('#kaspiPhone').textContent = me.kaspi?.phone || '';
       $('#kaspiName').textContent = me.kaspi?.name || '';
       if (me.isAdmin && window.DeadlineAdmin) window.DeadlineAdmin.init({ api, esc, showToast, haptic });
@@ -266,12 +278,13 @@
       return showToast('Алдымен шаблон (.pptx) жүктеңіз');
     }
     const freeNow = !!(state.me && state.me.freeAvailable && state.mode === 'presentation');
-    if (state.me && state.me.credits <= 0 && !freeNow) {
+    const testerNow = !!(state.me && state.me.tester && state.me.tester.active && state.me.tester.creditsToday > 0);
+    if (state.me && state.me.credits <= 0 && !freeNow && !testerNow) {
       haptic('error');
       showToast(state.me.freeAvailable ? 'Тегін презентация тек AI Presentation режимінде' : 'Кредит жоқ — Аккаунт бөліміне өтіңіз');
       return;
     }
-    if (freeNow && state.me.credits <= 0 && state.slideCount > (state.me.freeMaxSlides || 10)) {
+    if (freeNow && !testerNow && state.me.credits <= 0 && state.slideCount > (state.me.freeMaxSlides || 10)) {
       showToast(`Тегін презентация — ${state.me.freeMaxSlides || 10} слайдқа дейін`);
     }
 
@@ -303,6 +316,11 @@
       });
       state.currentJobId = res.jobId;
       if (res.free && state.me) { state.me.freeAvailable = false; $('#freeBanner').classList.add('hidden'); }
+      if (res.tester && state.me && state.me.tester) {
+        state.me.tester.creditsToday = Math.max(0, state.me.tester.creditsToday - 1);
+        state.me.tester.pending = res.jobId;
+        renderTester(state.me.tester);
+      }
       if (state.me) {
         state.me.credits = res.creditsLeft;
         $('#creditsVal').textContent = res.creditsLeft;
@@ -313,7 +331,7 @@
       pollJob(res.jobId);
     } catch (e) {
       haptic('error');
-      if (e.status === 402) showToast(e.data?.message || 'Кредит жеткіліксіз');
+      if (e.status === 402 || e.status === 409) showToast(e.data?.message || 'Кредит жеткіліксіз');
       else if (e.status === 429) showToast(e.data?.message || 'Тым жиі сұраныс');
       else showToast(e.message || 'Қате');
     } finally {

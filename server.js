@@ -19,7 +19,9 @@ const {
   createJob, updateJob, getJob, getUserJobs, addHistory, getHistory,
   cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
   scheduleRatePrompt, takeDueRatePrompts, logEvent, setUserProfile, logGen, adminData, addCredits,
+  getTester, findUser, setTester, addTesterCredits, useTesterCredit, refundTesterCredit, setTesterPending, testerData,
 } = require('./db');
+const testerCore = require('./core/tester');
 const adminCalc = require('./core/admin');
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -182,6 +184,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
       // бірінші презентация тегін (≤10 слайд, тек AI режимі) — Mini App батырмасы мен баннері үшін
       freeAvailable: !user.freeUsed && !user.total && (user.credits || 0) <= 0,
       freeMaxSlides: FREE_MAX_SLIDES,
+      tester: testerCore.testerView(await getTester(chatId).catch(() => null)),
     });
   } catch (err) {
     console.error('[API] /me', err);
@@ -361,6 +364,7 @@ app.post('/api/material', authMiddleware, express.raw({ type: '*/*', limit: '50m
 });
 
 app.post('/api/generate', authMiddleware, async (req, res) => {
+  let testerHold = null; // тестер-кредит алынды, бірақ жұмыс әлі жасалмады → қате болса қайтарылады
   try {
     const chatId = String(req.tgUser.id);
     const { topic, slideCount, language, style, audience, performedBy, checkedBy, mode, pages, university, faculty, department, group, city, refId, requirements, materialIds, sampleId, learnConsent } = req.body || {};
@@ -391,9 +395,20 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       await registerUser(chatId, null);
       user = await getUser(chatId);
     }
+    // Тестер: күніне 3 тегін презентация (жиналмайды); алдыңғысына пікір жазылмайынша келесісі жоқ
+    let isTester = false;
+    const tst = await getTester(chatId).catch(() => null);
+    if (testerCore.isActive(tst)) {
+      const block = await testerBlock(tst);
+      if (block) return res.status(409).json(block);
+      if ((await useTesterCredit(chatId)) != null) { isTester = true; testerHold = chatId; }
+      else if (!user || user.credits <= 0) {
+        return res.status(402).json({ error: 'tester_limit', message: `Бүгінгі ${testerCore.DAILY} тегін тест презентациясы бітті — ертең таңертең қайта толады 🙂` });
+      }
+    }
     // Бірінші презентация тегін: кредиті жоқ, ешқашан сатып алмаған адамға — тек AI режимі, ≤10 слайд, тәуліктік шек
     let isFree = false;
-    if (!user || user.credits <= 0) {
+    if (!isTester && (!user || user.credits <= 0)) {
       const freeOk = genMode === 'presentation' && user && !user.freeUsed && !user.total
         && (await countFreeDecksSince(startOfDayMs())) < FREE_DAILY_LIMIT
         && (await claimFreeDeck(chatId));
@@ -428,7 +443,7 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       group: clean(group), city: clean(city), performedBy: clean(performedBy), checkedBy: clean(checkedBy),
     };
 
-    const charged = isFree || await useCredit(chatId);
+    const charged = isFree || isTester || await useCredit(chatId);
     if (!charged) {
       return res.status(402).json({ error: 'no_credits', message: 'Кредит жеткіліксіз' });
     }
@@ -478,11 +493,12 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     const typedRequirements = !isReferat && genMode === 'presentation' ? String(requirements || '').trim() : '';
     const requirementsSource = typedRequirements.slice(0, 2000);
 
-    console.log(`[API] generate: mode=${genMode}${isFree ? ' FREE' : ''} language=${language || '(жоқ → kk)'} slides=${effSlides || '-'} pages=${pages || '-'} materials=${materialMeta.length}${sampleName ? ' sample=' + sampleName : ''} chat=${chatId}`);
+    console.log(`[API] generate: mode=${genMode}${isFree ? ' FREE' : ''}${isTester ? ' TESTER' : ''} language=${language || '(жоқ → kk)'} slides=${effSlides || '-'} pages=${pages || '-'} materials=${materialMeta.length}${sampleName ? ' sample=' + sampleName : ''} chat=${chatId}`);
     const job = await createJob(chatId, {
       topic: topicStr,
       slideCount: effSlides || null,
       free: isFree,
+      tester: isTester,
       language: language || 'kk',
       style: style || null,
       audience: audience || null,
@@ -501,8 +517,9 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     });
     logGen(job.id, {
       chat_id: chatId, mode: genMode, topic: topicStr.slice(0, 500), slides: isReferat ? null : (effSlides || null),
-      language: language || 'kk', free: isFree, status: 'queued', created_at: Date.now(),
+      language: language || 'kk', free: isFree, tester: isTester, status: 'queued', created_at: Date.now(),
     }).catch((e) => console.warn('[GenLog]', e.message));
+    if (isTester) { await setTesterPending(chatId, job.id).catch((e) => console.warn('[Tester] pending', e.message)); testerHold = null; }
 
     // Fire-and-forget generation
     runGeneration(job.id).catch(err => {
@@ -512,11 +529,13 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     res.status(202).json({
       jobId: job.id,
       status: 'queued',
-      creditsLeft: isFree ? (user.credits || 0) : (user.credits || 1) - 1,
+      creditsLeft: isFree || isTester ? (user.credits || 0) : (user.credits || 1) - 1,
       free: isFree,
+      tester: isTester,
     });
   } catch (err) {
     console.error('[API] /generate', err);
+    if (testerHold) await refundTesterCredit(testerHold).catch(() => {});
     res.status(500).json({ error: 'server_error' });
   }
 });
@@ -648,10 +667,85 @@ app.post('/api/admin/gen/:jobId/send', authMiddleware, adminOnly, adminRoute(asy
   return { ok: true };
 }));
 
+// ─── Тестерлер бөлімі ─────────────────────────────────────────────────────
+app.get('/api/admin/testers', authMiddleware, adminOnly, adminRoute(async () => testerCore.testersList(await testerData())));
+
+// @username немесе ID бойынша тестер ету (адам ботқа бір рет кірген болуы керек)
+app.post('/api/admin/testers', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const who = testerCore.parseWho(req.body && req.body.who);
+  if (!who) return { ok: false, message: '@username немесе ID жазыңыз' };
+  const u = await findUser(who);
+  if (!u) return { ok: false, message: 'Бұл адам ботқа әлі кірмеген. Алдымен ол ботқа /start басуы керек (не Mini App-ты бір рет ашуы керек).' };
+  const days = clampInt(req.body.days, testerCore.DEFAULT_DAYS, 1, 60);
+  const t = await setTester(u.chat_id, testerCore.untilFor(days));
+  const until = new Date(t.tester_until + 5 * 3600e3).toISOString().slice(0, 10).split('-').reverse().slice(0, 2).join('.');
+  if (req.body.notify !== false && global.__deadlineBot) {
+    global.__deadlineBot.sendMessage(u.chat_id,
+      `🧪 *Сіз DeadLine тест тобына қосылдыңыз!*\n\n${until} дейін күн сайын *${testerCore.DAILY} презентация тегін* (жұмсалмағаны жиналмайды, күнде ${testerCore.DAILY}-ке дейін толады).\n\n`
+      + 'Шарты: әр презентациядан кейін бот 3 сұрақ қояды — бір хабарламамен жауап бересіз. Пікір жазылғаннан кейін келесі презентация ашылады.\n\nMini App-ты ашып, тақырыбыңызды жазыңыз 👇',
+      { parse_mode: 'Markdown' }).catch((e) => console.warn('[Tester] welcome failed:', e.message));
+  }
+  console.log(`[Admin] tester ${u.chat_id} until ${new Date(t.tester_until).toISOString()}`);
+  return { ok: true, id: u.chat_id, name: u.name || (u.username ? '@' + u.username : u.chat_id), tester: testerCore.testerView(t) };
+}));
+
+// Тестердің бүгінгі тегін презентациясына қосу/азайту (ертең бәрібір 3-ке дейін толады, артығы сақталады)
+app.post('/api/admin/tester/:id/credits', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const n = clampInt(req.body && req.body.n, 0, -20, 20);
+  if (!n) throw new Error('n керек (-20..20, 0 емес)');
+  const t = await addTesterCredits(req.params.id, n);
+  if (!t) return { ok: false, message: 'Тестер мерзімі біткен — алдымен қайта тестер етіңіз' };
+  if (n > 0 && req.body.notify !== false && global.__deadlineBot) {
+    global.__deadlineBot.sendMessage(req.params.id, `🧪 Сізге бүгін тағы *${n}* тегін тест презентациясы қосылды. Бүгін барлығы: *${testerCore.creditsToday(t)}*`, { parse_mode: 'Markdown' }).catch(() => {});
+  }
+  return { ok: true, tester: testerCore.testerView(t) };
+}));
+
+// Тестерлікті тоқтату (тарихы мен пікірлері сақталады)
+app.post('/api/admin/tester/:id/remove', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const t = await setTester(req.params.id, null);
+  return { ok: true, tester: testerCore.testerView(t) };
+}));
+
 // Root → Mini App
 app.get('/', (_req, res) => {
   res.redirect('/webapp/');
 });
+
+// ─── Тестер режимі ────────────────────────────────────────────────────────
+/** Құлаған/жіберілмеген жұмыс: кредит қайда алынса, сонда қайтарылады */
+async function refundFor(job) {
+  const chatId = job.chatId;
+  if (job.payload?.tester) return refundTesterCredit(chatId).catch((e) => console.warn('[Tester] refund', e.message));
+  if (job.payload?.free) return releaseFreeDeck(chatId);
+  return refundCredit(chatId);
+}
+/**
+ * Тестер келесі презентацияны жасай ала ма? null → иә. Пікір күтіліп тұрса — себебі.
+ * Жұмыс өшіп кетсе (48 сағ) не 30 минуттан астам «жасалып жатыр» күйінде қатып қалса — бөгемейміз.
+ */
+async function testerBlock(tst) {
+  const pend = tst && tst.tester_pending;
+  if (!pend) return null;
+  const job = pend === 'busy' ? null : await getJob(pend).catch(() => null);
+  const stale = !job || (job.status !== 'done' && Date.now() - (Number(job.createdAt) || 0) > 30 * 60e3);
+  if (pend === 'busy' || stale) {
+    if (stale && pend !== 'busy') await setTesterPending(tst.chat_id, null).catch(() => {});
+    return pend === 'busy' ? { error: 'tester_busy', message: 'Алдыңғы презентация әлі жасалып жатыр — сәл күтіңіз.' } : null;
+  }
+  if (job.status !== 'done') return { error: 'tester_busy', message: 'Алдыңғы презентация әлі жасалып жатыр — сәл күтіңіз.' };
+  return {
+    error: 'tester_feedback',
+    message: `🧪 Алдымен «${String(job.title || job.payload?.topic || '').slice(0, 60)}» презентациясына пікір жазыңыз — ботқа бір хабарламамен (3 сұраққа жауап). Сосын келесі тегін презентация ашылады.`,
+  };
+}
+/** Тестерге 3 сұрақ (жұлдызша батырмасымен бірге) */
+async function askTester(job, title) {
+  if (!global.__deadlineBot) return;
+  await global.__deadlineBot.sendMessage(job.chatId, testerCore.questionsText(title || job.payload?.topic), {
+    parse_mode: 'Markdown', reply_markup: ratingKeyboard(job.id),
+  }).catch((e) => console.warn('[Tester] ask failed:', e.message));
+}
 
 // ─── Кешіктірілген баға сұрауы ────────────────────────────────────────────
 // Файл жеткен бойда емес: клиент презентацияны ашып қарап үлгеруі үшін RATE_PROMPT_DELAY_MIN (әдепкі 60) минуттан кейін,
@@ -801,12 +895,12 @@ async function executeReferatJob(job) {
     } catch (e) {
       console.warn('[Job] referat send failed', e.message);
     }
-    queueRatePrompt(job, 'referat');
+    if (job.payload?.tester) askTester(job, result.title); else queueRatePrompt(job, 'referat');
     console.log(`[Job] ${jobId} referat done — ${result.title} (${result.pages} pages, fillOk=${result.fillOk})`);
   } catch (err) {
     console.error(`[Job] ${jobId} referat failed:`, err.message);
     logGen(jobId, { status: 'failed', error: String(err.message || 'unknown'), finished_at: Date.now() }).catch(() => {});
-    await refundCredit(chatId);
+    await refundFor(job);
     await updateJob(jobId, {
       status: 'failed', phase: 'failed', detail: 'Қате орын алды', progress: 0, error: err.message || 'unknown',
     });
@@ -898,7 +992,7 @@ async function executeJob(jobId) {
     }
 
     scheduleLearn(job, 'done', result.templateLearn);
-    queueRatePrompt(job, 'presentation');
+    if (!job.payload?.tester) queueRatePrompt(job, 'presentation');
 
     await updateJob(jobId, {
       status: 'done',
@@ -953,7 +1047,7 @@ async function executeJob(jobId) {
           // Telegram боты 50 МБ-тан үлкен файлды жібере алмайды (шаблон 50 МБ-қа жақын болса, нәтиже де сондай)
           const mb = Math.round(fs.statSync(pptxPath).size / 1024 / 1024);
           console.warn(`[Job] ${jobId} pptx ${mb}MB > Telegram 50MB limit`);
-          if (job.payload?.free) await releaseFreeDeck(chatId); else await refundCredit(chatId);
+          await refundFor(job);
           await global.__deadlineBot.sendMessage(chatId, `⚠️ Дайын файл ${mb} МБ — Telegram 50 МБ-тан үлкен файлды жібере алмайды. Кредитіңіз қайтарылды.\nШаблондағы суреттерді кішірейтіп (сығып) қайта жүктеңіз.`).catch(() => {});
         } else if (pptxPath && fs.existsSync(pptxPath)) {
           const pptxName = `${(result.title || job.payload.topic || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60)}.pptx`;
@@ -987,6 +1081,8 @@ async function executeJob(jobId) {
         { parse_mode: 'Markdown', disable_web_page_preview: true }).catch(() => {});
     }
 
+    if (job.payload?.tester) await askTester(job, result.title);
+
     // Шаблон режимін әлі қолданбағандарға бір рет еске саламыз (процесс ішінде бір рет)
     if (job.mode !== 'template' && job.payload?.mode !== 'template') nudgeTemplate(chatId).catch(() => {});
 
@@ -996,7 +1092,7 @@ async function executeJob(jobId) {
     console.log(`[Job] ${jobId} FAILED: ${String(err.stack || err.message).slice(0, 1500)}`);
     scheduleLearn(job, 'failed', { error: String(err.message || 'unknown').slice(0, 80) });
     logGen(jobId, { status: 'failed', error: err.isQualityGate ? 'quality_gate' : String(err.message || 'unknown'), finished_at: Date.now() }).catch(() => {});
-    if (job.payload?.free) await releaseFreeDeck(chatId); else await refundCredit(chatId);
+    await refundFor(job);
     await updateJob(jobId, {
       status: 'failed',
       phase: 'failed',

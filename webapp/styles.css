@@ -214,6 +214,7 @@ label.btn { display: flex; align-items: center; justify-content: center; cursor:
 
 .free-banner{margin:0 0 10px;padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.35;text-align:center;
   background:linear-gradient(90deg,rgba(245,183,0,.16),rgba(255,122,69,.16));border:1px solid rgba(245,183,0,.35)}
+.tester-banner{background:linear-gradient(90deg,rgba(91,124,250,.16),rgba(34,207,224,.14));border-color:rgba(91,124,250,.4)}
 
 /* ── Админ панель ─────────────────────────────────────────────────────── */
 .adm-nav { margin-bottom: 12px; }
