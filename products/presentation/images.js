@@ -24,7 +24,7 @@ const MAX_Q = 80;
 const PER_PROVIDER = 5;
 const MAX_DOWNLOAD_ATTEMPTS = 6;
 const MIN_W = Number(process.env.IMAGE_MIN_WIDTH) || 900;
-const UA = 'DeadLinePresentationBot/3.1 (educational project)';
+const UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)'; // Wikimedia саясаты: байланыс көрсетілсін
 const DEFAULT_ORDER = ['pexels', 'unsplash', 'pixabay', 'wikimedia'];
 
 function staticOrder() {
@@ -83,10 +83,14 @@ function left(name) {
 /** Providers to ask, best first. `free` decks never spend the reserve of the keyed providers. */
 function providerOrder(opts = {}) {
   const now = Date.now();
-  const base = staticOrder().filter((n) => !KEYED[n] || process.env[KEYED[n]]);
+  let base = staticOrder().filter((n) => !KEYED[n] || process.env[KEYED[n]]);
+  // атаулы тақырып (тұлға, оқиға, картина, жыл) → алдымен архив: стоктарда олар жоқ, бірақ «ұқсас» бірдеңе береді
+  if (opts.named && base.includes('wikimedia')) base = ['wikimedia'].concat(base.filter((n) => n !== 'wikimedia'));
   const ok = base.filter((n) => !(q0(n).coolUntil > now) && !(opts.free && RESERVE[n] != null && left(n) <= RESERVE[n]));
   const keyed = ok.filter((n) => DEFAULT_LIMIT[n] != null).sort((a, b) => left(b) - left(a));
-  return keyed.concat(ok.filter((n) => DEFAULT_LIMIT[n] == null));
+  const rest = ok.filter((n) => DEFAULT_LIMIT[n] == null);
+  if (opts.named && rest[0] === 'wikimedia') return ['wikimedia'].concat(keyed, rest.slice(1));
+  return keyed.concat(rest);
 }
 
 // ── Caches: the same school topics come back all day, so most searches/downloads repeat ──
@@ -135,8 +139,55 @@ function imageStats() {
   return out;
 }
 
+// Сұраныстағы «стиль» сөздері: фото-сайттар оларға да сәйкестендіреді → тақырыпқа қатысы жоқ сурет келеді
+const STYLE_WORDS = new Set([
+  'dramatic', 'cinematic', 'moody', 'soft', 'wide', 'shot', 'light', 'lighting', 'lit', 'daylight', 'sunlight', 'midday',
+  'hour', 'background', 'style', 'shallow', 'depth', 'field', 'high', 'detail', 'detailed', 'angle', 'medium', 'close', 'closeup',
+  'warm', 'cool', 'teal', 'orange', 'blue', 'golden', 'muted', 'documentary', 'candid', 'photography', 'photo', 'photograph',
+  'mood', 'atmosphere', 'ambience', 'vibe', 'feeling', 'tone', 'composition', 'clean', 'bright', 'natural', 'sunny', 'day',
+  'inspiring', 'joyful', 'hopeful', 'optimistic', 'focused', 'peaceful', 'calm', 'empowered', 'proud', 'festive', 'friendly',
+  'encouraging', 'professional', 'formal', 'academic', 'serene', 'vibrant', 'colorful', 'beautiful', 'elegant', 'modern', 'view',
+  'concept', 'conceptual', 'abstract', 'representing', 'symbolizing', 'afternoon', 'morning', 'evening', 'window', 'quiet',
+]);
+const STOP_WORDS = new Set(['with', 'and', 'the', 'a', 'an', 'at', 'in', 'on', 'of', 'for', 'to', 'from', 'into', 'over', 'under', 'by', 'or', 'its', 'their', 'his', 'her', 'each', 'other', 'together', 'while', 'during', 'through', 'across', 'about', 'some', 'two', 'three', 'group', 'people']);
+const isStyleWord = (w) => STYLE_WORDS.has(w.toLowerCase()) || STOP_WORDS.has(w.toLowerCase());
+
+/** «subject, warm golden hour lighting, inspiring mood» → «subject»: тек стиль сөздерінен тұратын бөліктер алынады. */
+function cleanQuery(query) {
+  const parts = String(query || '').split(',').map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  const keep = parts.filter((p, i) => i === 0 || p.split(/\s+/).some((w) => w.length > 2 && !isStyleWord(w.replace(/[^A-Za-z-]/g, ''))));
+  return keep.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Атаулы нәрселер: «Florence Nightingale», «Crimean War», «Silk Road», жыл (1855). Сөйлемнің бірінші сөзі
+ * жалғыз бас әріппен тұрса — атау емес («Diverse people…»).
+ */
+function namedPhrases(query) {
+  const words = String(query || '').replace(/[,;:()]/g, ' ').split(/\s+/).filter(Boolean);
+  const out = []; let cur = [];
+  const flush = () => {
+    if (!cur.length) return;
+    const first = cur[0].i === 0;
+    if (!(first && cur.length === 1)) out.push(cur.map((x) => x.w).join(' '));
+    cur = [];
+  };
+  words.forEach((w, i) => {
+    if (/^(1[0-9]{3}|20[0-2][0-9])s?$/.test(w)) { flush(); out.push(w); return; }
+    if (/^[A-Z][a-zA-Z'’-]+$/.test(w) && !(i > 0 && STOP_WORDS.has(w.toLowerCase()))) cur.push({ w, i });
+    else flush();
+  });
+  flush();
+  return out;
+}
+// архив сұранысына жарамсыз жалпы сөздер / архивте жақсы табылатын түрлер
+const VAGUE_WORDS = new Set(['historical', 'history', 'ancient', 'classic', 'classical', 'traditional', 'old', 'famous', 'national', 'historic', 'vintage', 'real']);
+const MEDIUM_WORDS = new Set(['painting', 'portrait', 'map', 'manuscript', 'engraving', 'photograph', 'statue', 'monument', 'battle', 'fresco', 'mosaic', 'sculpture', 'building', 'mosque', 'mausoleum', 'fortress', 'museum']);
+const isNamedQuery = (query) => namedPhrases(query).length > 0;
+
 function queryVariants(query) {
-  const raw = String(query || '').trim();
+  const raw = cleanQuery(query);
   if (!raw) return [];
   const variants = [];
   const push = (q) => {
@@ -144,14 +195,17 @@ function queryVariants(query) {
     if (s && !variants.includes(s)) variants.push(s);
   };
   push(raw);
-  push(raw.split(',')[0]);
-  const stop = new Set([
-    'with', 'and', 'the', 'a', 'an', 'at', 'in', 'on', 'of', 'for', 'to', 'from',
-    'dramatic', 'cinematic', 'moody', 'soft', 'wide', 'shot', 'light', 'lighting',
-    'hour', 'background', 'style', 'shallow', 'depth', 'field', 'high', 'detail',
-    'warm', 'cool', 'teal', 'orange', 'blue', 'golden', 'muted', 'documentary',
-  ]);
-  const words = raw.split(',')[0].split(/\s+/).filter((w) => w.length > 2 && !stop.has(w.toLowerCase()));
+  const words = raw.split(/\s+/).filter((w) => w.length > 2 && !isStyleWord(w));
+  const named = namedPhrases(raw);
+  if (named.length) {
+    // «Florence Nightingale Scutari» — архивте ұзын сұраныс ештеңе таппайды, атаулар + бір зат есім табады
+    const inNamed = (w) => named.some((n) => n.split(' ').includes(w));
+    const rest = words.filter((w) => !inNamed(w) && !VAGUE_WORDS.has(w.toLowerCase()));
+    const extra = rest.find((w) => MEDIUM_WORDS.has(w.toLowerCase())) || rest[0];
+    const base = named.join(' ');
+    push(base + (extra && base.split(' ').length < 4 ? ' ' + extra : ''));
+    push(base);
+  }
   if (words.length >= 2) push(words.slice(0, 5).join(' '));
   if (words.length >= 1) push(words.slice(0, 3).join(' '));
   return variants.slice(0, 4);
@@ -177,6 +231,8 @@ function lumOf(hex) {
 const tooDark = (c) => { const l = lumOf(c.avg); return l != null && l < 0.035; };
 
 const clip = (query) => String(query || '').trim().slice(0, MAX_Q);
+/** Сурет сипаттамасы (alt / tags / Wikimedia атауы) — тексеруші модельге және логқа */
+const tidy = (t) => String(t || '').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
 
 // ── Провайдерлер: әрқайсысы кандидаттар массивін қайтарады [{url, credit, source, w}] ──
 
@@ -187,7 +243,8 @@ async function wikimediaCandidates(query) {
     params: {
       action: 'query', format: 'json', origin: '*',
       generator: 'search', gsrsearch: q, gsrlimit: 10, gsrnamespace: 6,
-      prop: 'imageinfo', iiprop: 'url|mime|size', iiurlwidth: 1280,
+      prop: 'imageinfo', iiprop: 'url|mime|size|extmetadata', iiurlwidth: 1280,
+      iiextmetadatafilter: 'ImageDescription|ObjectName', iiextmetadatalanguage: 'en',
     },
     timeout: 12000,
     headers: { 'User-Agent': UA },
@@ -203,11 +260,16 @@ async function wikimediaCandidates(query) {
     const url = info.thumburl || info.url;
     if (!url || !/^https?:\/\//i.test(url)) continue;
     if (!info.thumburl && info.size && info.size > 2_500_000) continue;
+    const meta = info.extmetadata || {};
+    const name = String(page.title || '').replace(/^File:/i, '').replace(/\.[a-z0-9]{2,4}$/i, '').replace(/_/g, ' ');
+    const about = [meta.ObjectName && meta.ObjectName.value, meta.ImageDescription && meta.ImageDescription.value]
+      .filter(Boolean).map((v) => String(v).replace(/<[^>]+>/g, ' ')).join('. ');
     out.push({
       url,
       credit: page.title ? String(page.title).replace(/^File:/i, '') : 'Wikimedia Commons',
       source: 'wikimedia',
       w: info.width || 0,
+      desc: tidy(name + (about ? '. ' + about : '')),
     });
   }
   return out;
@@ -236,6 +298,7 @@ async function pexelsCandidates(query) {
       source: 'pexels',
       w: p.width || 0,
       avg: p.avg_color,
+      desc: tidy(p.alt),
     }))
     .filter((c) => c.url);
 }
@@ -264,6 +327,7 @@ async function unsplashCandidates(query) {
       source: 'unsplash',
       w: r.width || 0,
       avg: r.color,
+      desc: tidy([r.alt_description, r.description, (r.tags || []).map((t) => t && t.title).filter(Boolean).join(', ')].filter(Boolean).join('. ')),
     }))
     .filter((c) => c.url);
 }
@@ -282,6 +346,7 @@ async function pixabayCandidates(query) {
       credit: h.user ? `Pixabay/${h.user}` : 'Pixabay',
       source: 'pixabay',
       w: h.largeImageURL ? Math.min(1280, h.imageWidth || 1280) : 640,
+      desc: tidy(h.tags),
     }))
     .filter((c) => c.url);
 }
@@ -301,6 +366,42 @@ const PROVIDERS = {
  *   budget — осы фотоға рұқсат етілген API іздеу саны (кэш тегін), бірнеше шақыру арасында ортақ
  * @returns {Promise<{dataUri:string,url:string,credit:string,source:string}|null>}
  */
+/** Қарапайым түбір: soldiers→soldier, charging→charg, studies→study */
+function stem(w) {
+  let t = String(w || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (t.length > 4 && t.endsWith('ies')) t = t.slice(0, -3) + 'y';
+  else if (t.length > 5 && t.endsWith('ing')) t = t.slice(0, -3);
+  else if (t.length > 4 && t.endsWith('ed')) t = t.slice(0, -2);
+  else if (t.length > 4 && t.endsWith('es') && /(ch|sh|ss|x)es$/.test(t)) t = t.slice(0, -2);
+  else if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) t = t.slice(0, -1);
+  return t;
+}
+const keyTerms = (query) => [...new Set(cleanQuery(query).split(/\s+/).filter((w) => w.length > 2 && !isStyleWord(w)).map(stem).filter((t) => t.length > 2))];
+
+/**
+ * Резерв тексеру (тексеруші модель қолжетімсіз болса): сипаттамада сұраныстың кемінде бір мағыналы сөзі болуы керек.
+ * Сипаттамасы мүлде жоқ топтама (ескі провайдер) — бұрынғыдай өткізіледі.
+ */
+function lexicalFit(cands, query) {
+  if (!cands.some((c) => c.desc)) return cands.map((_, i) => i);
+  const terms = keyTerms(query);
+  const scored = cands.map((c, i) => {
+    const words = new Set(String(c.desc || '').split(/[^A-Za-z0-9]+/).map(stem).filter(Boolean));
+    return { i, score: terms.filter((t) => words.has(t)).length };
+  });
+  return scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score || a.i - b.i).map((x) => x.i);
+}
+
+/**
+ * Суретті табады ЖӘНЕ жүктейді. Жүктеу сәтсіз болса — келесі кандидатқа/провайдерге/сұраныс нұсқасына өтеді.
+ * opts.judge берілсе: әр топтама алдымен тексеріледі (сипаттамасы слайдқа сай ма) — сай келмесе алынбайды.
+ * @param {string} query
+ * @param {{used?: Set<string>, free?: boolean, budget?: {left:number}, judge?: (cands: object[], q: string) => Promise<number[]|null>}} [opts]
+ *   used — осы презентацияда алынған URL-дер (қайталанбау үшін); free — тегін колода (резервті жемейді);
+ *   budget — осы фотоға рұқсат етілген API іздеу саны (кэш тегін), бірнеше шақыру арасында ортақ;
+ *   judge — кандидаттардан сайларының индекстерін (ең жақсысы бірінші) қайтарады; null → сөздік резерв тексеру
+ * @returns {Promise<{dataUri:string,url:string,credit:string,source:string,desc?:string}|null>}
+ */
 async function findImage(query, opts = {}) {
   if (!isLatinQuery(query)) {
     console.warn(`[Image] skipped non-English query: "${String(query || '').slice(0, 50)}"`);
@@ -309,9 +410,10 @@ async function findImage(query, opts = {}) {
   const used = opts.used instanceof Set ? opts.used : new Set();
   const variants = queryVariants(query);
   if (!variants.length) return null;
-  const order = providerOrder({ free: !!opts.free });
+  const order = providerOrder({ free: !!opts.free, named: isNamedQuery(query) });
   const budget = opts.budget || { left: 4 };
   let attempts = 0;
+  let rejected = 0;
 
   for (const q of variants) {
     if (budget.left <= 0 && ![...order].some((n) => searchCache.has(n + '|' + q.toLowerCase()))) break;
@@ -323,10 +425,19 @@ async function findImage(query, opts = {}) {
         console.warn(`[Image:${name}] search failed (${err.response?.status || err.code || err.message}) q="${q.slice(0, 40)}"`);
         continue;
       }
-      for (const c of cands) {
-        if (!c.url || used.has(c.url)) continue;
-        if (c.w && c.w < MIN_W) continue;
-        if (tooDark(c)) continue;
+      let fresh = cands.filter((c) => c.url && !used.has(c.url) && !(c.w && c.w < MIN_W) && !tooDark(c));
+      if (!fresh.length) continue;
+      if (typeof opts.judge === 'function') {
+        let pick = null;
+        try { pick = await opts.judge(fresh, query); } catch (err) { console.warn(`[Image] judge failed: ${err.message}`); }
+        if (!Array.isArray(pick)) pick = lexicalFit(fresh, query);
+        const chosen = pick.filter((i) => Number.isInteger(i) && fresh[i]).map((i) => fresh[i]);
+        rejected += fresh.length - chosen.length;
+        if (!chosen.length) { console.log(`[Image] off-topic ×${fresh.length} source=${name} q="${q.slice(0, 50)}" e.g. "${String(fresh[0].desc || '').slice(0, 60)}"`); continue; }
+        fresh = chosen;
+      }
+      for (const c of fresh) {
+        if (used.has(c.url)) continue;
         if (attempts >= MAX_DOWNLOAD_ATTEMPTS) {
           console.log(`[Image] gave up after ${attempts} download attempts for "${String(query).slice(0, 60)}"`);
           return null;
@@ -335,13 +446,13 @@ async function findImage(query, opts = {}) {
         used.add(c.url); // параллель тапсырмалар бір URL-ді алмауы үшін — жүктемес бұрын белгілейміз
         const dataUri = await downloadCached(c.url);
         if (dataUri) {
-          console.log(`[Image] ok source=${c.source} q="${q.slice(0, 50)}"`);
-          return { dataUri, url: c.url, credit: c.credit, source: c.source };
+          console.log(`[Image] ok source=${c.source} q="${q.slice(0, 50)}"${c.desc ? ` photo="${c.desc.slice(0, 80)}"` : ''}`);
+          return { dataUri, url: c.url, credit: c.credit, source: c.source, desc: c.desc || '' };
         }
       }
     }
   }
-  console.log(`[Image] no image for "${String(query).slice(0, 60)}"`);
+  console.log(`[Image] no image for "${String(query).slice(0, 60)}"${rejected ? ` (${rejected} off-topic rejected)` : ''}`);
   return null;
 }
 
@@ -405,5 +516,9 @@ module.exports = {
   searchPexels,
   searchPixabay,
   queryVariants,
+  cleanQuery,
+  namedPhrases,
+  isNamedQuery,
+  lexicalFit,
   downloadAsDataUri,
 };
