@@ -82,7 +82,7 @@ async function searchImage(query) {
  * (интернетсіз, проекторда, флешкадан ашылады; URL мерзімі өтсе де бұзылмайды).
  * Сәтсіз болса null қайтарады (шақырушы fallback-ке түседі).
  */
-const DL_UA = 'DeadLinePresentationBot/3.1 (educational project)';
+const DL_UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function downloadAsDataUri(url, attempt = 0) {

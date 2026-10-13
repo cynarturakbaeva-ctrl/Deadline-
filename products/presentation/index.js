@@ -33,6 +33,7 @@ const { uniqueId } = require('../../core/tmpFiles');
 const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
 const { validateInfographic } = require('./design/infographics');
 const { planPhotoSlides } = require('./photoPlan');
+const { makePhotoJudge } = require('./photoJudge');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
@@ -71,7 +72,7 @@ async function fetchImageWithFallback(query, topic, used, deckQueries = [], opts
     try {
       // findImage: табады + жүктейді; жүктелмесе келесі кандидатқа/провайдерге өзі өтеді
       if (budget.left <= 0) break;
-      const hit = await findImage(q, { used, free: !!opts.free, budget });
+      const hit = await findImage(q, { used, free: !!opts.free, budget, judge: opts.judge });
       if (hit && hit.dataUri) return hit.dataUri;
     } catch (err) {
       console.warn(`[Image] "${q}" failed: ${err.message}`);
@@ -555,7 +556,9 @@ async function generatePresentation(userInput, options = {}) {
     if (validateInfographic(slide.infographic)) return null;
     console.log(`[Image] query="${query}"`);
     try {
-      return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free });
+      // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
+      const judge = makePhotoJudge({ topic: title || topic, title: slide.title, query, cover: idx === 0 || idx === slides.length - 1 });
+      return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free, judge });
     } catch (err) {
       // Бір слайдтың суреті ешқашан бүкіл презентацияны құлатпауы керек
       console.warn(`[Image] slide failed, using fallback background: ${err.message}`);

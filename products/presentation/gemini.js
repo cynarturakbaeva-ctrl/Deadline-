@@ -452,7 +452,10 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 - VARIETY WITH RHYTHM: do NOT repeat the same image type for 3+ consecutive slides. Alternate full_background, split (left/right_half), strip, and none. Cover and closing may use full_background.
 - Avoid: identical card grids every slide, pointless corner decorations, random gradients, walls of text, tiny text, generic stock clichés ("handshake business").
 - Simple content → simple powerful composition (center, large title, one idea). Dense content → full width, stronger overlay, fewer competing elements.
-- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, photographic, topic-true, no baked-in text/charts/screens. Describe the LITERAL subject of THIS slide (people, objects, place the slide is about) — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes). Bright, well-lit, clearly visible subject; do not put "dark", "moody" or "dim" in the query. Translate the slide idea into English yourself; required on EVERY slide, also on infographic/table slides with image "none" (the code may still give that slide a photo).
+- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, no baked-in text/charts/screens. Name the LITERAL thing a photo of THIS slide must show (who / what / where), so a stranger could check the photo against it — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes) and never a generic stand-in (smiling students, handshake, laptop, office) for a specific subject. NO lighting, mood, colour or camera words (no "golden hour", "warm light", "inspiring mood", "cinematic", "documentary style") — they make search engines return off-topic photos.
+  • Named subject (a person, historical event, battle, artwork, building, city, organisation, scientific term): write its exact English name first, plus what kind of image fits — e.g. "Florence Nightingale portrait", "Battle of Balaclava painting", "Khoja Ahmed Yasawi mausoleum", "Max Weber portrait", "enzyme substrate molecular model". Real historical events get period paintings, archive photos or maps — never modern reenactors.
+  • General subject: concrete scene with the key object — e.g. "elementary pupils raising hands classroom", "landfill aerial view", "geologist examining rock outcrop".
+  Translate the slide idea into English yourself; required on EVERY slide, also on infographic/table slides with image "none" (the code may still give that slide a photo).
 - Do NOT output composition.mood, composition.accentColor or composition.decorative — the renderer chooses the colour theme and background decoration for the whole deck.
 - Do NOT write colour or "dark/black background" wording into imageQuery; describe the photographed scene only.`;
 
@@ -526,7 +529,7 @@ const SLIDE_JSON_SHAPE = `{
   "table": null,
 "  "visual": null,
   "infographic": null,
-  "imageQuery": "English photographic query with scene, mood, lighting",
+  "imageQuery": "English, 3-8 words: the exact subject the photo must show (named subject first)",
   "visualIntent": "semantic visual concept for the optional 3D web scene",
   "composition": {
     "image": "full_background",
@@ -821,7 +824,7 @@ Fix only:
 - Too many bullets (>5) → keep the strongest 3-4
 - Each bullet >20 words → shorten slightly (keep it a complete sentence; never cut bullets down to bare labels)
 - full_background + overlay=none → add dark_gradient_bottom
-- Vague imageQuery → rewrite in English with scene+mood+lighting
+- Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"
 - If 2+ stats with right_half/left_half image → change image to full_background
 - Do NOT touch the "visual" field (leave it exactly as given)
