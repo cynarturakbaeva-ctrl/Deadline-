@@ -37,7 +37,8 @@ function emptyDB() {
     learn_templates: {},
     learn_uses: [],
     rate_prompts: {},
-    events: {}
+    events: {},
+    gen_log: {}
   };
 }
 
@@ -60,7 +61,8 @@ function loadDB() {
       learn_templates: db.learn_templates || {},
       learn_uses: Array.isArray(db.learn_uses) ? db.learn_uses : [],
       rate_prompts: db.rate_prompts || {},
-      events: db.events || {}
+      events: db.events || {},
+      gen_log: db.gen_log || {}
     };
   } catch (err) {
     console.error('[DB] Local read error:', err.message);
@@ -694,6 +696,42 @@ async function cleanupOldJobs(maxAgeMs = 2 * 24 * 3600 * 1000) {
   return removed;
 }
 
+// ─── Админ панель ───────────────────────────────────────────────────────
+async function setUserProfile(chatId, { name = null, username = null } = {}) {
+  const u = db.users[String(chatId)];
+  if (!u || (!name && !username)) return;
+  if (name) u.name = String(name).slice(0, 80);
+  if (username) u.username = String(username).slice(0, 40);
+  saveDB(db);
+}
+
+async function logGen(jobId, fields = {}) {
+  const g = db.gen_log || (db.gen_log = {});
+  const cur = g[String(jobId)] || { job_id: String(jobId) };
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) cur[k] = v; });
+  g[String(jobId)] = cur;
+  saveDB(db);
+}
+
+async function logPayment(chatId, amount, credits, ref) {
+  const key = String(ref);
+  if (db.receipts[key]) return;
+  db.receipts[key] = { receipt_no: key, chat_id: String(chatId), amount: Number(amount) || 0, credits: Number(credits) || 0, status: 'manual', created_at: Date.now() };
+  saveDB(db);
+}
+
+async function adminData({ since = 0, chatId = null } = {}) {
+  const who = chatId ? String(chatId) : null;
+  const mine = (x) => (who ? String(x.chat_id) === who : (Number(x.created_at) || 0) >= since);
+  return {
+    users: Object.values(db.users).filter((u) => !who || u.chat_id === who).map((u) => ({ ...u })),
+    gens: Object.values(db.gen_log || {}).filter(mine).sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).map((x) => ({ ...x })),
+    receipts: Object.values(db.receipts).filter(mine).map((x) => ({ ...x })),
+    feedback: Object.values(db.feedback).filter(mine).map((x) => ({ ...x })),
+    events: Object.values(db.events || {}).filter((e) => (who ? e.chat_id === who : (Number(e.created_at) || 0) >= since)).map((x) => ({ ...x })),
+  };
+}
+
 module.exports = {
   backend: 'json',
   closeDB: async () => {},
@@ -724,6 +762,10 @@ module.exports = {
   releaseFreeDeck,
   countFreeDecksSince,
   freeFunnel,
+  setUserProfile,
+  logGen,
+  logPayment,
+  adminData,
   logEvent,
   funnelStats,
   funnelDay,

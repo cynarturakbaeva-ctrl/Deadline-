@@ -214,3 +214,47 @@ label.btn { display: flex; align-items: center; justify-content: center; cursor:
 
 .free-banner{margin:0 0 10px;padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.35;text-align:center;
   background:linear-gradient(90deg,rgba(245,183,0,.16),rgba(255,122,69,.16));border:1px solid rgba(245,183,0,.35)}
+
+/* ── Админ панель ─────────────────────────────────────────────────────── */
+.adm-nav { margin-bottom: 12px; }
+.adm-days { margin-bottom: 10px; }
+.adm-h { font-size: 12px; font-weight: 700; color: var(--hint); text-transform: uppercase; letter-spacing: .04em; margin: 16px 2px 8px; }
+.adm-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.adm-tile { background: var(--bg2); border-radius: 12px; padding: 10px; min-width: 0; }
+.adm-tile-v { font-size: 18px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.adm-tile-l { font-size: 11px; color: var(--hint); margin-top: 2px; }
+.adm-tile-s { font-size: 11px; color: var(--hint); }
+.adm-chart { margin-top: 12px; }
+.adm-chart-t { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.adm-chart svg { display: block; overflow: visible; }
+.adm-bar { fill: var(--btn); opacity: .55; }
+.adm-bar.last { opacity: 1; }
+.adm-base { stroke: var(--hint); stroke-opacity: .35; stroke-width: 1; }
+.adm-val { font-size: 10px; fill: var(--text); font-weight: 600; }
+.adm-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--hint); margin-top: 4px; }
+.adm-table-wrap { overflow-x: auto; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.adm-table th, .adm-table td { padding: 6px 4px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.15); }
+.adm-table th:first-child, .adm-table td:first-child { text-align: left; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-table th { color: var(--hint); font-weight: 600; }
+.adm-small { font-size: 12px; line-height: 1.5; }
+.adm-alert { display: block; width: 100%; text-align: left; border: 0; border-radius: 12px; padding: 10px 12px; margin: 4px 0 8px; background: rgba(255, 92, 92, .14); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.adm-search { width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid rgba(127,127,127,.25); background: var(--bg2); color: var(--text); font-size: 15px; margin-bottom: 10px; }
+.adm-row { display: block; width: 100%; text-align: left; background: var(--bg2); color: var(--text); border: 0; border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.45; cursor: pointer; }
+.adm-row.static { cursor: default; }
+.adm-row + .adm-row { margin-top: 8px; }
+.adm-row-top { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.adm-right { margin-left: auto; }
+.adm-stars { color: #f5c542; letter-spacing: 1px; }
+.adm-muted { color: var(--hint); font-size: 12px; }
+.adm-bad { color: var(--danger); font-size: 12px; }
+.adm-comment { margin-top: 6px; padding: 6px 8px; border-left: 3px solid var(--btn); background: rgba(127,127,127,.08); border-radius: 6px; font-size: 13px; }
+.adm-link { border: 0; background: none; padding: 0; color: var(--link); font: inherit; font-weight: 600; cursor: pointer; }
+.adm-send { margin-top: 8px; }
+.adm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.adm-actions .btn { text-decoration: none; display: inline-flex; align-items: center; }
+#admUser { place-items: end center; padding: 0; }
+.adm-sheet { background: var(--bg); width: min(520px, 100%); max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 14px 14px 28px; }
+.adm-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 16px; }
+.tabs .tab.hidden { display: none; }
+.adm-sheet .adm-grid { margin-top: 10px; }

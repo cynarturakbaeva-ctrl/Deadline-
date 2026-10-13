@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { extractPdfText, parseReceiptText, validateReceipt } = require('./core/receipt');
-const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked, logEvent, funnelStats, funnelDay } = require('./db');
+const { initDB, getUser, registerUser, addCredits, applyReceipt, getAllChatIds, REFERRALS_PER_BONUS, getPartner, requestPartner, setPartnerStatus, creditPartnerCommission, payoutPartner, listPartners, PARTNER_RATE, listLearnedTemplates, listLearnUses, setFeedback, getJob, freeFunnel, countFreeDecksSince, setBlocked, logEvent, funnelStats, funnelDay, setUserProfile, logPayment } = require('./db');
 const { ratingKeyboard, commentPromptText, commentKeyboard, parseCommentCallback, parseFeedbackCallback, jobTagOf } = require('./core/feedbackUi');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -72,6 +72,21 @@ function webAppKeyboard() {
   };
 }
 
+const ADMIN_IDS = String(ADMIN_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
+const isAdminChat = (id) => ADMIN_IDS.includes(String(id));
+/** Админге: Mini App бірден «Админ» бөлімімен ашылады */
+function adminKeyboard() {
+  if (!WEBAPP_URL) return undefined;
+  const base = WEBAPP_URL.replace(/\/$/, '') + '/webapp/';
+  return { inline_keyboard: [[{ text: '🛠 Админ панель', web_app: { url: base + '#admin' } }], [{ text: '📱 Mini App', web_app: { url: base } }]] };
+}
+
+bot.onText(/^\/admin\b/, (msg) => {
+  if (!isAdminChat(msg.chat.id)) return;
+  const kb = adminKeyboard();
+  bot.sendMessage(msg.chat.id, kb ? 'Админ панель:' : 'WEBAPP_URL орнатылмаған', kb ? { reply_markup: kb } : {}).catch(() => {});
+});
+
 // ─── /start ────────────────────────────────────────────────────────────────
 bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId   = msg.chat.id;
@@ -90,7 +105,8 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const evSource = source || (referredBy ? 'ref' : null);
   logEvent(chatId, 'start', evSource).catch(() => {});
   if (isNew) logEvent(chatId, 'new', evSource).catch(() => {});
-  setBlocked(chatId, false).catch(() => {}); // бұрын бұғаттап, қайта оралған адам рассылкаға қайта кіреді
+  setBlocked(chatId, false).catch(() => {});
+  setUserProfile(chatId, { name: [msg.from && msg.from.first_name, msg.from && msg.from.last_name].filter(Boolean).join(' '), username: msg.from && msg.from.username }).catch(() => {}); // бұрын бұғаттап, қайта оралған адам рассылкаға қайта кіреді
   const me = await getUser(chatId).catch(() => null);
   const freeLine = me && !me.freeUsed && !me.total && !(me.credits > 0)
     ? '🎁 *Бірінші презентация — ТЕГІН* (10 слайдқа дейін, өңделетін PPTX + баяндама мәтіні).\n\n'
@@ -110,7 +126,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const kb = webAppKeyboard();
     if (kb) {
       return bot.sendMessage(chatId, 'Төмендегі батырмамен Mini App ашыңыз:', {
-        reply_markup: kb,
+        reply_markup: isAdminChat(chatId) ? adminKeyboard() : kb,
       });
     }
   });
@@ -435,7 +451,9 @@ async function confirmPendingReceipt(chatId, credits, source) {
   // Қолмен растауда сома белгісіз — кредит санынан бағамен есептейміз (Plus / бірінші баға / әдепкі)
   const paid = credits === PLUS.credits ? PLUS.amount
     : (before.total === 0 && credits === 1 ? FIRST_PRICE : credits * PRICE);
-  await payPartnerCommission(chatId, paid, `m:${chatId}:${Date.now()}`);
+  const payRef = `m:${chatId}:${Date.now()}`;
+  logPayment(chatId, paid, credits, payRef).catch((e) => console.warn('[Pay] log failed', e.message));
+  await payPartnerCommission(chatId, paid, payRef);
 
   await bot.sendMessage(
     chatId,
@@ -563,6 +581,14 @@ async function notifyAdminFeedback(job, from, { rating, comment } = {}) {
     await bot.sendMessage(ADMIN_ID,
       `${head} — ${who}${user}\n📊 ${topic}${meta ? '\n' + meta : ''}` + (comment ? `\n\n«${String(comment).slice(0, 1500)}»` : '') + low + `\n🆔 ${job.chatId}`,
       { disable_web_page_preview: true });
+    // ⭐1–3: файлдың өзін де жібереміз — не ұнамағанын бірден көру үшін
+    if (rating && rating <= 3 && job.pptxPath && require('fs').existsSync(job.pptxPath)) {
+      const isDocx = job.payload && job.payload.mode === 'referat';
+      await bot.sendDocument(ADMIN_ID, job.pptxPath, { caption: `${rating}/5 · 🆔 ${job.chatId}` }, {
+        filename: (String(job.title || 'presentation').replace(/[^\w\u0400-\u04FF\- ]+/g, '').slice(0, 60) || 'file') + (isDocx ? '.docx' : '.pptx'),
+        contentType: isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      }).catch((e) => console.warn('[Feedback] admin file send failed:', e.message));
+    }
   } catch (e) { console.warn('[Feedback] admin notify failed:', e.message); }
 }
 

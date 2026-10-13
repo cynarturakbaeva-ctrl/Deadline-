@@ -18,13 +18,17 @@ const {
   checkRateLimits, markGenerationAttempt, markGenerationSuccess,
   createJob, updateJob, getJob, getUserJobs, addHistory, getHistory,
   cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
-  scheduleRatePrompt, takeDueRatePrompts, logEvent,
+  scheduleRatePrompt, takeDueRatePrompts, logEvent, setUserProfile, logGen, adminData, addCredits,
 } = require('./db');
+const adminCalc = require('./core/admin');
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^@/, '');
+// Админ (ADMIN_CHAT_ID): Mini App-та «Админ» бөлімі ашылады, /api/admin/* тек соған
+const ADMIN_IDS = String(process.env.ADMIN_CHAT_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
+const isAdminId = (id) => ADMIN_IDS.includes(String(id));
 const WEBAPP_URL = process.env.WEBAPP_URL || `http://localhost:${PORT}`;
 
 const templateNudged = new Set();
@@ -64,14 +68,14 @@ const WEBAPP_DIR = path.join(__dirname, 'webapp');
 const assetVersion = (() => {
   try {
     const h = require('crypto').createHash('sha1');
-    for (const f of ['app.js', 'styles.css', 'index.html']) h.update(fs.readFileSync(path.join(WEBAPP_DIR, f)));
+    for (const f of ['app.js', 'admin.js', 'styles.css', 'index.html']) h.update(fs.readFileSync(path.join(WEBAPP_DIR, f)));
     return h.digest('hex').slice(0, 10);
   } catch { return String(Date.now()); }
 })();
 const sendIndex = (req, res) => {
   try {
     const html = fs.readFileSync(path.join(WEBAPP_DIR, 'index.html'), 'utf8')
-      .replace(/(src|href)="(app\.js|styles\.css)"/g, `$1="$2?v=${assetVersion}"`);
+      .replace(/(src|href)="(app\.js|admin\.js|styles\.css)"/g, `$1="$2?v=${assetVersion}"`);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('X-Frame-Options', 'ALLOWALL');
     res.type('html').send(html);
@@ -160,7 +164,9 @@ app.get('/api/me', authMiddleware, async (req, res) => {
       user = await getUser(chatId);
     }
     logEvent(chatId, 'app').catch(() => {});
+    setUserProfile(chatId, { name: [req.tgUser.first_name, req.tgUser.last_name].filter(Boolean).join(' '), username: req.tgUser.username }).catch(() => {});
     res.json({
+      isAdmin: isAdminId(chatId),
       id: chatId,
       firstName: req.tgUser.first_name || '',
       lastName: req.tgUser.last_name || '',
@@ -493,6 +499,10 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       sampleText: sampleText || null,
       sampleName: sampleName || null,
     });
+    logGen(job.id, {
+      chat_id: chatId, mode: genMode, topic: topicStr.slice(0, 500), slides: isReferat ? null : (effSlides || null),
+      language: language || 'kk', free: isFree, status: 'queued', created_at: Date.now(),
+    }).catch((e) => console.warn('[GenLog]', e.message));
 
     // Fire-and-forget generation
     runGeneration(job.id).catch(err => {
@@ -554,6 +564,89 @@ app.get('/api/job/:id/download/:type', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'server_error' });
   }
 });
+
+// ─── АДМИН ПАНЕЛЬ (тек ADMIN_CHAT_ID) ──────────────────────────────────────
+function adminOnly(req, res, next) {
+  if (!req.tgUser || !isAdminId(req.tgUser.id)) return res.status(403).json({ error: 'forbidden' });
+  next();
+}
+const adminRoute = (fn) => async (req, res) => {
+  try { res.json(await fn(req)); } catch (e) { console.error('[Admin]', req.path, e); res.status(500).json({ error: 'server_error', message: e.message }); }
+};
+const clampInt = (v, d, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || d));
+
+app.get('/api/admin/overview', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const days = clampInt(req.query.days, 14, 1, 90);
+  const data = await adminData({ since: Date.now() - days * 86400e3 });
+  const ov = adminCalc.overview(data, { days }); // users — әрқашан барлығы
+  let images = null;
+  try { images = require('./products/presentation/images').imageStats(); } catch {}
+  return { ...ov, images };
+}));
+
+app.get('/api/admin/users', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const data = await adminData({ since: 0 });
+  return adminCalc.usersList(data, { q: req.query.q, filter: req.query.filter, limit: clampInt(req.query.limit, 50, 1, 200), offset: clampInt(req.query.offset, 0, 0, 1e6) });
+}));
+
+app.get('/api/admin/user/:id', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const data = await adminData({ chatId: req.params.id });
+  return adminCalc.userDetail(data, req.params.id) || { error: 'not_found' };
+}));
+
+app.get('/api/admin/gens', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const days = clampInt(req.query.days, 30, 1, 365);
+  const data = await adminData({ since: Date.now() - days * 86400e3 });
+  return adminCalc.gensList(data, { filter: req.query.filter, limit: clampInt(req.query.limit, 50, 1, 200), offset: clampInt(req.query.offset, 0, 0, 1e6) });
+}));
+
+app.get('/api/admin/payments', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const days = clampInt(req.query.days, 30, 1, 365);
+  const data = await adminData({ since: Date.now() - days * 86400e3 });
+  return adminCalc.paymentsList(data, { limit: 200 });
+}));
+
+// Клиентке кредит қосу (сыйлық / өтемақы — табыс есебіне кірмейді)
+app.post('/api/admin/user/:id/credits', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const n = clampInt(req.body && req.body.n, 0, -50, 50);
+  if (!n) throw new Error('n керек (-50..50, 0 емес)');
+  const user = await addCredits(req.params.id, n);
+  if (n > 0 && req.body.notify !== false && global.__deadlineBot) {
+    global.__deadlineBot.sendMessage(req.params.id, `🎁 Сізге *${n}* презентация кредиті қосылды. Жалпы: *${user.credits}*`, { parse_mode: 'Markdown' }).catch(() => {});
+  }
+  console.log(`[Admin] credits ${req.params.id} ${n > 0 ? '+' : ''}${n}`);
+  return { ok: true, credits: user.credits };
+}));
+
+// Клиентке бот атынан хабарлама
+app.post('/api/admin/user/:id/message', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const text = String((req.body && req.body.text) || '').trim().slice(0, 3500);
+  if (!text) throw new Error('мәтін бос');
+  if (!global.__deadlineBot) throw new Error('бот қосылмаған');
+  await global.__deadlineBot.sendMessage(req.params.id, text);
+  return { ok: true };
+}));
+
+// Генерация файлын админнің Telegram-ына жіберу (файл JOB_RETENTION_HOURS бойы сақталады)
+app.post('/api/admin/gen/:jobId/send', authMiddleware, adminOnly, adminRoute(async (req) => {
+  const job = await getJob(req.params.jobId);
+  if (!job || !job.pptxPath || !fs.existsSync(job.pptxPath)) {
+    return { ok: false, message: `Файл жоқ: жұмыстар ${Math.round(RETENTION_MS / 3600e3)} сағаттан кейін өшіріледі` };
+  }
+  if (!global.__deadlineBot) throw new Error('бот қосылмаған');
+  const to = String(req.tgUser.id);
+  const isDocx = job.payload && job.payload.mode === 'referat';
+  const base = String(job.title || 'presentation').replace(/[^\wЀ-ӿ\- ]+/g, '').slice(0, 60) || 'file';
+  await global.__deadlineBot.sendDocument(to, job.pptxPath, { caption: `🆔 ${job.chatId} · ${job.id}` }, {
+    filename: base + (isDocx ? '.docx' : '.pptx'),
+    contentType: isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  });
+  const sp = speechFile(job.id);
+  if (!isDocx && fs.existsSync(sp)) {
+    await global.__deadlineBot.sendDocument(to, sp, {}, { filename: base.slice(0, 50) + ' — баяндама.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }).catch(() => {});
+  }
+  return { ok: true };
+}));
 
 // Root → Mini App
 app.get('/', (_req, res) => {
@@ -686,6 +779,7 @@ async function executeReferatJob(job) {
       title: result.title || job.payload.topic, qualityScore: null,
       pptxPath: docxPath, htmlPath: null,
     });
+    logGen(jobId, { status: 'done', title: result.title || job.payload.topic, finished_at: Date.now() }).catch(() => {});
     await markGenerationSuccess(chatId, false);
     await addHistory(chatId, {
       id: jobId, title: result.title || job.payload.topic, topic: job.payload.topic,
@@ -711,6 +805,7 @@ async function executeReferatJob(job) {
     console.log(`[Job] ${jobId} referat done — ${result.title} (${result.pages} pages, fillOk=${result.fillOk})`);
   } catch (err) {
     console.error(`[Job] ${jobId} referat failed:`, err.message);
+    logGen(jobId, { status: 'failed', error: String(err.message || 'unknown'), finished_at: Date.now() }).catch(() => {});
     await refundCredit(chatId);
     await updateJob(jobId, {
       status: 'failed', phase: 'failed', detail: 'Қате орын алды', progress: 0, error: err.message || 'unknown',
@@ -816,6 +911,11 @@ async function executeJob(jobId) {
       htmlPath,
     });
 
+    logGen(jobId, {
+      status: 'done', title: result.title || job.payload.topic, quality: result.qualityScore ?? null,
+      cost_tg: result.cost && result.cost.estimatedCostTg != null ? result.cost.estimatedCostTg : null,
+      tokens: result.cost ? result.cost.totalTokens || null : null, duration_ms: result.durationMs || null, finished_at: Date.now(),
+    }).catch(() => {});
     await markGenerationSuccess(chatId, !!result.expensiveVisuals);
     await countReferral(chatId);
     await addHistory(chatId, {
@@ -895,6 +995,7 @@ async function executeJob(jobId) {
     console.error(`[Job] ${jobId} failed:`, err.message);
     console.log(`[Job] ${jobId} FAILED: ${String(err.stack || err.message).slice(0, 1500)}`);
     scheduleLearn(job, 'failed', { error: String(err.message || 'unknown').slice(0, 80) });
+    logGen(jobId, { status: 'failed', error: err.isQualityGate ? 'quality_gate' : String(err.message || 'unknown'), finished_at: Date.now() }).catch(() => {});
     if (job.payload?.free) await releaseFreeDeck(chatId); else await refundCredit(chatId);
     await updateJob(jobId, {
       status: 'failed',

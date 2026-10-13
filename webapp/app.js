@@ -171,6 +171,7 @@
       $('#freeBanner').classList.toggle('hidden', !me.freeAvailable);
       $('#kaspiPhone').textContent = me.kaspi?.phone || '';
       $('#kaspiName').textContent = me.kaspi?.name || '';
+      if (me.isAdmin && window.DeadlineAdmin) window.DeadlineAdmin.init({ api, esc, showToast, haptic });
     } catch (e) {
       console.error(e);
       $('#creditsVal').textContent = '?';
