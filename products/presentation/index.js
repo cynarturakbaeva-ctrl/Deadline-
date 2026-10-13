@@ -10,7 +10,7 @@ const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide
 const { analyzeTemplate, schemaRuleLine } = require('./templateSchema');
 const { writeSlots } = require('./templateWriter');
 const { findImage, fallbackQueries, isLatinQuery } = require('./images');
-const { limitTables, applyDeckTheme } = require('./deckPolish');
+const { limitTables, limitInfographics, applyDeckTheme } = require('./deckPolish');
 const { analyzeReference, referenceItems } = require('../../design-dna');
 const REQ = require('../../requirements');
 const { applyReferencePlan, layoutMatch } = require('./refPlan');
@@ -516,6 +516,12 @@ async function generatePresentation(userInput, options = {}) {
   if (maxSlides && slides.length > maxSlides) {
     while (slides.length > maxSlides) slides.splice(slides.length - 2, 1);
     slides.forEach((slide, i) => { slide.index = i + 1; });
+  }
+  // Инфографика сирек болғанда ғана күшті: ~30%-дан аспайды, қатар тұрмайды, бір түрі (екі өсу графигі) қайталанбайды.
+  // Қалғаны мәтін/сан/қадам болып қалады → ол слайдтарға фото мен мәтін макеттері түседі
+  {
+    const converted = limitInfographics(slides);
+    if (converted) console.log(`[Pipeline] Infographics → text on ${converted} slide(s) (variety)`);
   }
   // «Made in DeadLine» карточкасы (тек тегін колода): PPTX-те бөлек, өшірілетін нысан; HTML бұрышты бос қалдырады
   const badge = options.badgeUrl !== undefined && options.free

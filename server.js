@@ -18,7 +18,7 @@ const {
   checkRateLimits, markGenerationAttempt, markGenerationSuccess,
   createJob, updateJob, getJob, getUserJobs, addHistory, getHistory,
   cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
-  scheduleRatePrompt, takeDueRatePrompts,
+  scheduleRatePrompt, takeDueRatePrompts, logEvent,
 } = require('./db');
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -159,6 +159,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
       await registerUser(chatId, null);
       user = await getUser(chatId);
     }
+    logEvent(chatId, 'app').catch(() => {});
     res.json({
       id: chatId,
       firstName: req.tgUser.first_name || '',
@@ -426,6 +427,8 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
       return res.status(402).json({ error: 'no_credits', message: 'Кредит жеткіліксіз' });
     }
     await markGenerationAttempt(chatId);
+    logEvent(chatId, 'gen').catch(() => {});
+    if (isFree) logEvent(chatId, 'free').catch(() => {});
 
     // Берілген материал файлдарын толық талдау (Mode 2/3). Бірнеше файл — бір контекст.
     let materialText = '';

@@ -423,10 +423,10 @@ function parseCoverMeta(input) {
 function styleGuide(style) {
   switch (style) {
     case 'business':  return `STYLE: Corporate business. Clean, data-driven slides.`;
-    case 'minimal':   return `STYLE: Minimalist. Max whitespace. 2-3 elements per slide. No clutter.`;
+    case 'minimal':   return `STYLE: Minimalist. Max whitespace. 2-3 elements per slide. No clutter (still complete sentences, just fewer of them).`;
     case 'creative':  return `STYLE: Creative/bold. Variety in layout.`;
     case 'academic':  return `STYLE: Academic/scientific. Precise language.`;
-    case 'pitch':     return `STYLE: Startup pitch. Short punchy text. Problem→Solution→Market→Ask.`;
+    case 'pitch':     return `STYLE: Startup pitch. Short punchy text (this style overrides READABLE SLIDES: bullets may be 4-10 words). Problem→Solution→Market→Ask.`;
     default:          return `STYLE: Professional mixed. Balance visual variety and content clarity.`;
   }
 }
@@ -452,15 +452,16 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 - VARIETY WITH RHYTHM: do NOT repeat the same image type for 3+ consecutive slides. Alternate full_background, split (left/right_half), strip, and none. Cover and closing may use full_background.
 - Avoid: identical card grids every slide, pointless corner decorations, random gradients, walls of text, tiny text, generic stock clichés ("handshake business").
 - Simple content → simple powerful composition (center, large title, one idea). Dense content → full width, stronger overlay, fewer competing elements.
-- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, photographic, topic-true, no baked-in text/charts/screens. Describe the LITERAL subject of THIS slide (people, objects, place the slide is about) — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes). Bright, well-lit, clearly visible subject; do not put "dark", "moody" or "dim" in the query. Translate the slide idea into English yourself; required on every slide that is not image "none".
+- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, photographic, topic-true, no baked-in text/charts/screens. Describe the LITERAL subject of THIS slide (people, objects, place the slide is about) — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes). Bright, well-lit, clearly visible subject; do not put "dark", "moody" or "dim" in the query. Translate the slide idea into English yourself; required on EVERY slide, also on infographic/table slides with image "none" (the code may still give that slide a photo).
 - Do NOT output composition.mood, composition.accentColor or composition.decorative — the renderer chooses the colour theme and background decoration for the whole deck.
 - Do NOT write colour or "dark/black background" wording into imageQuery; describe the photographed scene only.`;
 
 const CONTENT_RULES = `CONTENT & LANGUAGE (teach, do not encyclopedia-dump):
 - title: 4-8 words, concrete, no vague "Introduction/Overview/Basics" alone
-- subtitle: always present, 1 sentence (10-22 words) that advances the idea
-- body: optional; 1-2 short sentences max when bullets cannot carry the point
-- bullets: 2-4 items, each 5-12 words, one idea each — thesis not filler
+- READABLE SLIDES: students present by reading the slide aloud, and teachers grade a slide with only 2-word labels as empty. Every content slide must carry complete, informative sentences — but never a wall of text. (When TEMPLATE SLOT rules are given above, their slot types and lengths win over this.)
+- subtitle: always present, 1-2 complete sentences (12-30 words) that explain the slide's point in plain words
+- body: optional; 1-2 sentences when bullets cannot carry the point
+- bullets: 3-4 items, each ONE complete sentence of 8-16 words with a concrete fact, cause or example (subject + verb), e.g. "Партиялар қаражатының қайдан келгенін жыл сайын жария түрде есеп береді", NOT a bare label like "Қаржы ашықтығы" — one idea each, no filler
 - stats: ONLY real numbers from the client brief or universally known facts; labels 2-5 words. If unsure, set stats null
 - table: ONLY for a true side-by-side comparison of 2+ things across the same attributes; at most ONE table per 4 slides and NEVER on two adjacent slides. Everything else is bullets, stats, body text or a diagram — a deck where most slides are tables is a failure. Default for "table" is null.
 - Vary slide forms across the deck: mix bullets, one big stat, short statement, quote, process/timeline, comparison — never the same form 3 slides in a row.
@@ -483,7 +484,7 @@ const VISUAL_RULES = `SEMANTIC VISUAL FIELD (diagram only when it teaches faster
 - Slide with visual still needs title, subtitle, 2-4 short bullets as text fallback.`;
 
 const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram library — the code draws it beautifully, you only give the data):
-- Use it whenever a slide's meaning is numbers or a clear structure: aim for 2-4 infographic slides per 10 slides, each a DIFFERENT kind; never on the cover or the references slide; never two in a row.
+- Use it only where a slide's meaning really IS numbers or a clear structure: at most 3 infographic slides per 10 slides (2 for 6-8 slides), each a DIFFERENT kind (not two line/column trend charts); never on the cover or the references slide; never two in a row. The other slides are text + photo — a deck of only charts looks monotonous.
 - Shape: {"kind":"...","items":[{"label":"...","value":"...","detail":"...","icon":"...","group":"..."}],"unit":"","center":"","source":"","headers":[]}
 - kinds and their data:
   • bar — 3-8 categories compared by one number (ranking, shares). value required.
@@ -503,7 +504,7 @@ const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram lib
 - label ≤ 4 words, detail ≤ 12 words, value keeps its unit as text ("72%", "4,2 млн", "2019"). Write labels in the presentation language.
 - icon (optional, English): one of users, user, graduation-cap, book-open, school, briefcase, building-2, landmark, factory, globe, map-pin, leaf, tree-pine, sun, droplets, flame, zap, cpu, monitor, smartphone, wifi, database, cloud, shield, lock, heart-pulse, stethoscope, microscope, flask-conical, atom, dna, brain, lightbulb, target, trophy, award, star, flag, rocket, trending-up, trending-down, coins, wallet, shopping-cart, truck, car, plane, house, wrench, settings, scale, file-text, calendar, clock, message-circle, megaphone, handshake, puzzle, layers, network, recycle, wheat, mountain, waves, music, palette, camera, history, crown, swords, castle, baby, apple, sprout, church, scroll, newspaper, vote, bot.
 - Numbers: use real, well-established figures you are confident about (statistics, dates, shares); add "source" (organisation + year) when you know it.
-- A slide with an infographic still has title + subtitle; bullets may be null. Default for "infographic" is null.`;
+- A slide with an infographic still has title + subtitle; the subtitle is a 1-2 sentence takeaway that reads the data aloud (what it shows and why it matters, e.g. "2015 жылдан бері индекс 28-ден 39 балға өсті: бұл реформалардың нәтижесі"); bullets may be null. Default for "infographic" is null.`;
 
 const CLIENT_FIRST_RULES = `CLIENT INTENT IS LAW (highest priority — overrides defaults when they conflict):
 - The client's message is a BRIEF you must obey: topic, structure, slide count, language, tone, what to include/exclude, syllabus points, names, numbers, dates.
@@ -592,6 +593,7 @@ STEP 2 — Generate exactly ${slideCount} slides. ${languageRule}
 Slide 1 must be the cover slide. ${slideCount >= 5 ? 'Slide 2 MUST be the introduction slide titled exactly "' + introTitleFor(language) + '" (why the topic matters, what the audience will learn). ' : ''}The last slide must be a closing/summary slide${style === 'academic' ? ' (or references list — see STEP 3)' : ''}.
 - If STRUCTURED MATERIAL: map the existing weeks/chapters/sections onto the middle slides in their original order. If there are more sections than available slides, group adjacent sections together rather than dropping content. Keep original section names/numbers (e.g. "Апта 3: ...", "Тарау 2: ...") where present.
 - If SHORT TOPIC: design a sensible flow (intro → concepts → details → applications → conclusion, or similar).
+- Every slide covers a DIFFERENT aspect. Never plan two slides about the same thing seen twice (e.g. "growth 1920–2024" and "boom 1927–1999" are ONE slide: show the trend once, then move to causes, consequences, regions, examples).
 ${academicStructureRule ? `
 STEP 3 — Academic structure applies (style=academic):${academicStructureRule}` : ''}
 
@@ -812,12 +814,12 @@ ${batchJSON}
 Fix only:
 - Text readability over images (fix overlay or textPosition)
 - Title too long (>10 words) → shorten
-- Subtitle longer than 25 words → cut to one sentence
+- Subtitle longer than 35 words → trim to at most 2 sentences
 - Body longer than 40 words → trim
 - full_background + dark_gradient_left → textPosition must be center_left
 - full_background + dark_gradient_right → textPosition must be center_right
 - Too many bullets (>5) → keep the strongest 3-4
-- Each bullet >14 words → shorten slightly
+- Each bullet >20 words → shorten slightly (keep it a complete sentence; never cut bullets down to bare labels)
 - full_background + overlay=none → add dark_gradient_bottom
 - Vague imageQuery → rewrite in English with scene+mood+lighting
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"

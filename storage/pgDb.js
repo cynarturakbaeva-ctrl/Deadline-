@@ -124,6 +124,18 @@ const SCHEMA = {
       language: 'TEXT', created_at: 'BIGINT', job_id: 'TEXT',
     },
   },
+  // Күнделікті воронка: бір адам · бір қадам · бір күн = бір жазба (start → app → gen → paid)
+  events: {
+    create: `CREATE TABLE IF NOT EXISTS events (
+      chat_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      day TEXT NOT NULL,
+      source TEXT,
+      created_at BIGINT,
+      PRIMARY KEY (chat_id, kind, day)
+    )`,
+    cols: { source: 'TEXT', created_at: 'BIGINT' },
+  },
   feedback: {
     create: `CREATE TABLE IF NOT EXISTS feedback (
       id TEXT PRIMARY KEY,
@@ -266,12 +278,14 @@ async function initDB() {
 
 // ─── Users ──────────────────────────────────────────────────────────────
 async function ensureUser(chatId, referredBy = null, source = null) {
-  await q(
+  const r = await q(
     `INSERT INTO users (chat_id, credits, total, referred_by, ref_earnings, created_at, source)
      VALUES ($1, 0, 0, $2, 0, ${tw('users', 'created_at', '$3')}, $4)
-     ON CONFLICT (chat_id) DO NOTHING`,
+     ON CONFLICT (chat_id) DO NOTHING
+     RETURNING chat_id`,
     [String(chatId), referredBy ? String(referredBy) : null, Date.now(), source ? String(source).slice(0, 40) : null]
   );
+  return r.rowCount > 0;
 }
 
 async function getUser(chatId) {
@@ -319,9 +333,39 @@ async function freeFunnel() {
   };
 }
 
+/** true → жаңа адам (бұрын болмаған) */
 async function registerUser(chatId, referredBy = null, source = null) {
-  await ensureUser(chatId, referredBy, source);
+  return ensureUser(chatId, referredBy, source);
 }
+
+// ─── Воронка ────────────────────────────────────────────────────────────
+/** Алматы күні (UTC+5) — "2026-10-13" */
+const funnelDay = (t = Date.now()) => new Date(t + 5 * 3600e3).toISOString().slice(0, 10);
+
+/**
+ * Қадамды белгілеу (бір адамға бір күнде бір рет). Арна: берілгені → сол күнгі /start арнасы → тіркелген арнасы.
+ * kind: new | start | app | gen | free | paid
+ */
+async function logEvent(chatId, kind, source = null, t = Date.now()) {
+  const day = funnelDay(t);
+  await q(
+    `INSERT INTO events (chat_id, kind, day, source, created_at)
+     SELECT $1, $2, $3, COALESCE($4,
+       (SELECT source FROM events WHERE chat_id = $1 AND kind = 'start' AND day = $3 LIMIT 1),
+       (SELECT COALESCE(source, CASE WHEN referred_by IS NOT NULL THEN 'ref' END) FROM users WHERE chat_id = $1),
+       'direct'), $5
+     ON CONFLICT (chat_id, kind, day) DO NOTHING`,
+    [String(chatId), String(kind), day, source ? String(source).slice(0, 40) : null, t]
+  );
+}
+
+/** Бір күннің воронкасы: { day, total: {kind:n}, sources: [{source, new, start, app, gen, free, paid}] } */
+async function funnelStats(day) {
+  const r = await q('SELECT source, kind, COUNT(*)::int AS n FROM events WHERE day = $1 GROUP BY 1, 2', [day]);
+  const { foldFunnel } = require('../core/funnel'); // lazy: тесттер бұл файлды бөлек көшіріп жүктейді
+  return foldFunnel(day, r.rows.map((x) => ({ source: x.source || 'direct', kind: x.kind, n: num(x.n) })));
+}
+
 
 async function addCredits(chatId, amount) {
   const n = Number(amount) || 0;
@@ -862,6 +906,9 @@ module.exports = {
   releaseFreeDeck,
   countFreeDecksSince,
   freeFunnel,
+  logEvent,
+  funnelStats,
+  funnelDay,
   getAllChatIds,
   setBlocked,
   checkRateLimits,

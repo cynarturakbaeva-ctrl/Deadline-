@@ -171,7 +171,7 @@ function renderSlide(slide, index, plan, ctxDeck) {
   const accent = palette.accent;
   const sk = ctxDeck.skin;
   const dec = sk && sk.decor ? decorHtml(sk, refIndexFor(sk, index, ctxDeck.total, ctxDeck.roles), layoutName, index, ctxDeck.mediaIds, palette) : { html: '', vars: '' };
-  return '<article class="slide L-' + layoutName + ' ' + (out.cls || '') + (ctxDeck.serif ? ' serif-tone' : '') + ' cam-' + cam + (index === 0 ? ' is-active' : '') +
+  return '<article class="slide L-' + layoutName + ' ' + (out.cls || '') + (ctxDeck.serif ? ' serif-tone' : '') + (palette.ref ? ' ref-skin' : '') + ' cam-' + cam + (index === 0 ? ' is-active' : '') +
     '" data-index="' + index + '" data-layout="' + layoutName + '" data-type="' + plan.type + '" data-cam="' + cam + '" data-accent="' + accent +
     '" style="' + paletteVars(palette) + dec.vars + '"><div class="layer layer-bg" data-depth="0.12">' + (out.bg || '') + decoFor(out.bg, palette, index) + (sk && sk.decor ? dec.html : skinShapes(ctxDeck.skin, layoutName, index, ctxDeck.total)) +
     '</div><div class="layer layer-mid" data-depth="0.4">' + out.fg + '</div></article>';

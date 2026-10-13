@@ -102,7 +102,7 @@ const RE = {
 
 /** Validated infographic for the slide: the LLM's own `infographic` field, else one detected from the content. */
 function infographicOf(s, isFirst) {
-  if (isFirst) return null;
+  if (isFirst || s.noInfographic) return null; // deckPolish.limitInfographics turned this one into text
   const IG = require('./infographics'); // lazy: infographics.js itself uses helpers from this file
   return IG.validateInfographic(s.infographic) || IG.autoInfographic(s);
 }
