@@ -26,7 +26,7 @@ function slideFacts(s, i, total) {
   const st = (Array.isArray(s.stats) ? s.stats : []).filter((x) => x && x.value != null)
     .map((x) => String(x.value) + (x.label ? ' — ' + x.label : ''));
   const tb = s.table && Array.isArray(s.table.rows) ? s.table.rows.slice(0, 4).map((r) => (Array.isArray(r) ? r.join(' | ') : String(r))) : [];
-  const role = i === 0 ? 'cover' : i === total - 1 ? 'closing' : /әдебиет|reference|литератур|источник|sources/i.test(String(s.title || '')) ? 'references' : 'content';
+  const role = i === 0 ? 'cover' : i === total - 1 ? 'closing' : /әдебиет|\breferences?\b|литератур|источник|\bsources\b/i.test(String(s.title || '')) ? 'references' : 'content';
   return {
     n: i + 1,
     role,

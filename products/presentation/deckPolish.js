@@ -5,6 +5,7 @@
  */
 const T = require('./design/tokens');
 const IG = require('./design/infographics');
+const { truncate } = require('./design/analyze');
 
 const norm = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 const hasTable = (s) => !!(s && s.table && ((s.table.headers || []).length || (s.table.rows || []).length));
@@ -21,7 +22,7 @@ function tableToBullets(table) {
       return cells.length > 2 && headers[j + 1] ? headers[j + 1] + ': ' + c : c;
     }).filter(Boolean);
     const line = rest.length ? label + ': ' + rest.join('; ') : label;
-    return line.length > 160 ? line.slice(0, 157).trimEnd() + '…' : line;
+    return truncate(line, 200);
   }).filter(Boolean);
 }
 
@@ -55,7 +56,7 @@ function limitTables(slides) {
  */
 const IG_FAMILY = { line: 'trend', column: 'trend', donut: 'share', pictogram: 'share', funnel: 'flow', cycle: 'flow' };
 const igFamily = (kind) => IG_FAMILY[kind] || kind;
-const REFS_RE = /әдебиет|reference|пайдаланылған|библиограф|литератур|источник|sources/i;
+const REFS_RE = /әдебиет|\breferences?\b|пайдаланылған|библиограф|литератур|источник|\bsources\b/i;
 
 /** Drawn infographic of a slide: the LLM's field, else what the layout engine would detect from its content. */
 function slideInfographic(s) {
@@ -68,7 +69,7 @@ function itemLine(it, d) {
   const v = it.display ? (d.unit && !/[^\d\s.,+\-]/.test(it.display) ? it.display + (d.unit === '%' ? '%' : ' ' + d.unit) : it.display) : '';
   const head = [it.label, v].filter(Boolean).join(' — ');
   const line = it.detail ? (head ? head + ': ' + it.detail : it.detail) : head;
-  return line.length > 160 ? line.slice(0, 157).trimEnd() + '…' : line;
+  return truncate(line, 200);
 }
 
 /**

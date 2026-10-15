@@ -174,7 +174,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .title+.rule{margin-top:var(--s4)}
 .folio{position:absolute;left:var(--mx);right:var(--mx);bottom:40px;display:flex;justify-content:space-between;align-items:baseline;font-size:20px;line-height:1;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);z-index:3}
 .folio b{font-weight:650;color:var(--text2)}
-.folio-l{max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.folio-l{max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:clip}
 
 /* ── reveal ── */
 .rv{opacity:0;transform:translateY(14px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
@@ -337,6 +337,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .hn-n{display:block;font-size:20px;letter-spacing:.14em;font-weight:650;color:var(--accent);margin-bottom:var(--s2)}
 .hn-l{font-size:calc(var(--rl,30px)*var(--fs,1));font-weight:650;line-height:1.2;color:var(--text);text-wrap:balance}
 .hn-d{margin-top:var(--s1);font-size:calc(var(--rd,24px)*var(--fs,1));line-height:1.45;color:var(--text2);text-wrap:pretty}
+.st-s,.hn-s{color:var(--text);font-weight:500;line-height:1.4}.st-s{margin-top:var(--s3)}.hn-s{margin-top:var(--s2)}
 
 /* ── table ── */
 .table-wrap{width:100%}

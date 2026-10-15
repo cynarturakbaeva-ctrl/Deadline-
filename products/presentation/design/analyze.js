@@ -32,13 +32,24 @@ function toNode(raw) {
   const m = String(raw == null ? '' : raw).match(/^(.{4,48}?)\s+[—–-]\s+(.{6,})$/);
   return m ? { label: m[1].trim(), detail: m[2].trim() } : sp;
 }
+/**
+ * Shorten text to maxLen WITHOUT an ellipsis: prefer the end of a sentence/clause, else a word boundary.
+ * Layouts are chosen so this rarely fires; every cut is counted (truncate.count) and reported by the QA log,
+ * because a shortened sentence is still lost content.
+ */
 function truncate(text, maxLen) {
-  const s = String(text || '');
+  const s = String(text || '').trim();
   if (s.length <= maxLen) return s;
-  const cut = s.slice(0, maxLen);
+  truncate.count += 1;
+  const cut = s.slice(0, maxLen + 1);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (end >= maxLen * 0.5) return cut.slice(0, end + 1).trim();
+  const clause = Math.max(cut.lastIndexOf(', '), cut.lastIndexOf('; '), cut.lastIndexOf(' — '), cut.lastIndexOf(' – '));
+  if (clause >= maxLen * 0.55) return cut.slice(0, clause).replace(/[\s,;:–—-]+$/, '').trim();
   const sp = cut.lastIndexOf(' ');
-  return (sp > maxLen * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:–—-]+$/, '') + '…';
+  return (sp > maxLen * 0.5 ? cut.slice(0, sp) : s.slice(0, maxLen)).replace(/[\s,;:–—-]+$/, '').trim();
 }
+truncate.count = 0;
 
 /** Numeric value that is safe to count-up (dates, ranges, centuries are NOT). */
 function parseStatNumber(v) {
@@ -96,7 +107,7 @@ function imageMeta(url) {
 
 const RE = {
   conclusion: /қорытынды|conclusion|резюме|takeaway|итог|заключен|summary/i,
-  references: /әдебиет|reference|пайдаланылған|библиограф|литератур|источник|sources/i,
+  references: /әдебиет|\breferences?\b|пайдаланылған|библиограф|литератур|источник|\bsources\b/i,
   section: /^(бөлім|тарау|раздел|глава|part|section|chapter)\b/i,
 };
 
@@ -199,7 +210,8 @@ function classify(a) {
   // Short definition-like slide without bullets
   if (!a.bullets.length && a.bodyWords > 0 && a.bodyWords < 28) return a.hasPhoto ? 'split' : 'statement';
   // Photo + text
-  if (a.hasPhoto && a.bulletWords + a.bodyWords <= 60) return 'split';
+  // subtitle да бағанға кіреді: сыймайтын мәтінді фотомен бір бағанға тықпаймыз (QA соңғы буллетті жасыратын)
+  if (a.hasPhoto && a.bulletWords + a.bodyWords + wc(a.subtitle) <= 56) return 'split';
   // Bullets (with or without body)
   if (a.bullets.length >= 2 || a.bullets.length === 1) return 'points';
   return a.hasPhoto ? 'split' : 'statement';

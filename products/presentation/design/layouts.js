@@ -85,9 +85,16 @@ const kicker = (ctx, text) => (text ? el(ctx, 'div', 'kicker', esc(text), { role
 const lead = (ctx, text, size, o = {}) => (text ? el(ctx, 'p', 'lead' + (o.cls ? ' ' + o.cls : ''), esc(text), { role: 'lead', style: '--ls:' + (size || TYPE_SCALE.lead) + 'px' + (o.maxw ? ';max-width:' + o.maxw + 'px' : '') }) : '');
 const para = (ctx, text, size, o = {}) => (text ? el(ctx, 'p', 'para' + (o.cls ? ' ' + o.cls : ''), esc(text), { role: 'text', style: '--bs:' + size + 'px' + (o.maxw ? ';max-width:' + o.maxw + 'px' : '') }) : '');
 
+/** Running title for the folio: the whole title, or its part before ':' / '—', else nothing (never a cut title). */
+function runningTitle(title, max = 46) {
+  const t = String(title || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const head = t.split(/\s*[:—–]\s+|\s*:\s*/)[0].trim();
+  return head.length >= 6 && head.length <= max ? head : '';
+}
 function folio(ctx) {
   const a = ctx.a;
-  return '<div class="folio" data-role="folio"><span class="folio-l">' + esc(truncate(ctx.deckTitle, 46)) + '</span>' +
+  return '<div class="folio" data-role="folio"><span class="folio-l">' + esc(runningTitle(ctx.deckTitle)) + '</span>' +
     '<span class="folio-r"><b>' + pad2(a.index + 1) + '</b><span class="of"> / ' + pad2(a.total) + '</span></span></div>';
 }
 const sectionLabel = (ctx) => {
@@ -486,10 +493,17 @@ L.process = (ctx) => {
   const grid = n <= 4 ? n : 3;
   const labS = n <= 3 ? 42 : n === 4 ? 36 : 32;
   const detS = n <= 4 ? 28 : 25;
-  const items = nodes.map((nd, i) => '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + pad2(i + 1) + '</span>' +
-    (i < n - 1 && n <= 4 ? '<i class="st-arrow"></i>' : '') + '</div>' +
-    '<div class="st-l" style="--rl:' + labS + 'px">' + esc(truncate(nd.label, 64)) + '</div>' +
-    (nd.detail ? '<div class="st-d" style="--rd:' + detS + 'px">' + esc(truncate(nd.detail, 170)) + '</div>' : '') + '</li>').join('');
+  // Тек сөйлем (жапсырмасыз) түйін: қалың «тақырып» ұясына сыймайды → толық сөйлем оқылатын өлшеммен, кесілмей
+  const sentS = n <= 3 ? 32 : n === 4 ? 29 : 26;
+  const items = nodes.map((nd, i) => {
+    const sentence = !nd.detail && nd.label.length > 40;
+    return '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + pad2(i + 1) + '</span>' +
+      (i < n - 1 && n <= 4 ? '<i class="st-arrow"></i>' : '') + '</div>' +
+      (sentence
+        ? '<div class="st-d st-s" style="--rd:' + sentS + 'px">' + esc(truncate(nd.label, 240)) + '</div>'
+        : '<div class="st-l" style="--rl:' + labS + 'px">' + esc(truncate(nd.label, 64)) + '</div>' +
+          (nd.detail ? '<div class="st-d" style="--rd:' + detS + 'px">' + esc(truncate(nd.detail, 200)) + '</div>' : '')) + '</li>';
+  }).join('');
   const fg = '<div class="canvas proc-canvas"><div class="proc-head g12"><div class="block" style="' + cols(1, 8) + '">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: GRID.span(8), maxLines: 2, scale: [84, 74, 66, 58, 52] }) + '</div>' +
@@ -502,9 +516,14 @@ L.hierarchy = (ctx) => {
   const a = ctx.a;
   const nodes = nodeList(a, 'hierarchy', 6);
   const n = nodes.length;
-  const kids = nodes.map((nd, i) => '<li class="hn drop" data-role="node"><span class="hn-n">' + pad2(i + 1) + '</span>' +
-    '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
-    (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 23) + 'px">' + esc(truncate(nd.detail, 130)) + '</div>' : '') + '</li>').join('');
+  const kids = nodes.map((nd, i) => {
+    const sentence = !nd.detail && nd.label.length > 40; // тек сөйлем → кесілмей, оқылатын өлшеммен
+    return '<li class="hn drop" data-role="node"><span class="hn-n">' + pad2(i + 1) + '</span>' +
+      (sentence
+        ? '<div class="hn-d hn-s" style="--rd:' + (n <= 3 ? 30 : n === 4 ? 28 : 25) + 'px">' + esc(truncate(nd.label, 220)) + '</div>'
+        : '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
+          (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 23) + 'px">' + esc(truncate(nd.detail, 170)) + '</div>' : '')) + '</li>';
+  }).join('');
   const fg = '<div class="canvas hier"><div class="block hier-root">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: GRID.span(9), maxLines: 2, scale: [80, 70, 62, 54, 48], cls: 'center' }) +

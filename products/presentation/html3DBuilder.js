@@ -225,7 +225,10 @@ function buildNew(slides, presentationTitle, opts) {
   const mt = mediaTable(skin);
   const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
   const ctxDeck = { palette, ts, deckTitle, skin, serif, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
+  const cut0 = A.truncate.count;
   const slidesHTML = list.map((s, i) => renderSlide(s, i, plan[i], ctxDeck)).join('');
+  // кез келген қысқарту = жоғалған мазмұн: өлшеу үшін логқа (мақсат — 0)
+  if (A.truncate.count > cut0) console.warn('[Design] text shortened ' + (A.truncate.count - cut0) + '× (layout too small for the content)');
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
   return '<!DOCTYPE html><html lang="kk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + mt.css + '</style></head><body>' +
