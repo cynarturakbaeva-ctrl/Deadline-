@@ -18,6 +18,8 @@ const { css, paletteVars } = require('./design/style');
 const { QA_SCRIPT, reviewDeckPlan } = require('./design/qa');
 const RUNTIME = require('./design/runtime');
 const { refIndexFor } = require('../../design-dna/skin');
+const SYS = require('./design/systems');
+const IG = require('./design/infographics');
 
 const safeColor = T.safeColor;
 const isVisualSvg = A.isVisualSvg;
@@ -148,11 +150,14 @@ function mediaTable(skin) {
 }
 
 const STACK_OF = { points: 'stackPoints', editorial: 'stackPoints', split: 'stackSplit', closing: 'stackPoints', references: 'stackRefs' };
+// Дизайн жүйесінің «тақырып жоғарыда» құрылымы (швейцар, академия): мазмұн слайдтары басқа композицияда
+const SYS_STACK_OF = { points: 'stackPoints', editorial: 'stackPoints', split: 'stackSplit', references: 'stackRefs' };
 
 function renderSlide(slide, index, plan, ctxDeck) {
   const { palette, ts, deckTitle } = ctxDeck;
   let layoutName = plan.layout;
   if (ctxDeck.skin && ctxDeck.skin.titleTop && STACK_OF[layoutName] && index > 0) layoutName = STACK_OF[layoutName];
+  else if (!ctxDeck.skin && ctxDeck.sys && ctxDeck.sys.stack && SYS_STACK_OF[layoutName] && index > 0) layoutName = SYS_STACK_OF[layoutName];
   const a = plan.a; a.slideRef = slide;
   if (ctxDeck.skin && ctxDeck.skin.decor && index === 0 && ctxDeck.skin.coverPic && a.hasPhoto) {
     const cp = ctxDeck.skin.coverPic;
@@ -161,11 +166,11 @@ function renderSlide(slide, index, plan, ctxDeck) {
   if (ctxDeck.skin && ctxDeck.skin.photoShape === 'circle' && layoutName === 'imageFocus') layoutName = 'split';
   let out;
   try {
-    out = (L[layoutName] || L.statement)(makeCtx(a, plan, palette, ts, deckTitle));
+    out = (L[layoutName] || L.statement)(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   } catch (err) {
     console.warn('[Design] layout "' + layoutName + '" failed on slide ' + (index + 1) + ': ' + err.message + ' → statement');
     layoutName = 'statement';
-    out = L.statement(makeCtx(a, plan, palette, ts, deckTitle));
+    out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   }
   const cam = chooseCam(index);
   const accent = palette.accent;
@@ -177,9 +182,9 @@ function renderSlide(slide, index, plan, ctxDeck) {
     '</div><div class="layer layer-mid" data-depth="0.4">' + out.fg + '</div></article>';
 }
 
-function skinStage(skin, palette, badge) {
+function skinStage(skin, palette, badge, dsCls) {
   // «Made in DeadLine» карточкасы PPTX-те оң жақ төменгі бұрышқа қойылады → бет нөмірі сол жерден ығысады
-  if (!skin) return badge ? ' class="has-badge"' : '';
+  if (!skin) return ' class="' + [dsCls, badge ? 'has-badge' : ''].filter(Boolean).join(' ') + '"';
   const cls = ['ref-skin'];
   if (badge) cls.push('has-badge');
   if (skin.flat) cls.push('ref-flat');
@@ -215,7 +220,10 @@ function build3DPresentationHTML(slides, presentationTitle, opts) {
 function buildNew(slides, presentationTitle, opts) {
   const list = Array.isArray(slides) ? slides : [];
   const palette = deckPalette(list, opts.style);
-  const ts = T.typeStyleFor(palette);
+  // Дизайн жүйесі (қаріп, нөмірлеу, folio, мұқаба, әшекей): клиент референсі болса — оның өз көрінісі (aurora негізі)
+  const sysId = opts.skin ? SYS.DEFAULT : (opts.system || (list[0] && list[0].composition && list[0].composition.design) || SYS.DEFAULT);
+  const sys = SYS.getSystem(sysId);
+  const ts = SYS.typeStyleFor(sys, palette);
   const deckTitle = presentationTitle || (list[0] && list[0].title) || 'Presentation';
   const plan = A.planDeck(list);
   const warnings = reviewDeckPlan(plan);
@@ -224,15 +232,18 @@ function buildNew(slides, presentationTitle, opts) {
   const skin = opts.skin || null;
   const mt = mediaTable(skin);
   const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
-  const ctxDeck = { palette, ts, deckTitle, skin, serif, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
+  const ctxDeck = { palette, ts, deckTitle, skin, serif, sys, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
   const cut0 = A.truncate.count;
-  const slidesHTML = list.map((s, i) => renderSlide(s, i, plan[i], ctxDeck)).join('');
+  // инфографика мәтінін өлшеу жүйенің мәтін қарпімен (Arial Calibri-ден кеңірек)
+  IG.setTextEm(/Arial/i.test(ts.text.split(',')[0]) ? 0.56 : 0.515);
+  let slidesHTML;
+  try { slidesHTML = list.map((s, i) => renderSlide(s, i, plan[i], ctxDeck)).join(''); } finally { IG.setTextEm(0.515); }
   // кез келген қысқарту = жоғалған мазмұн: өлшеу үшін логқа (мақсат — 0)
   if (A.truncate.count > cut0) console.warn('[Design] text shortened ' + (A.truncate.count - cut0) + '× (layout too small for the content)');
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
   return '<!DOCTYPE html><html lang="kk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + mt.css + '</style></head><body>' +
-    '<div id="frame"><div id="stage"' + skinStage(skin, palette, opts.badge) + '>' + slidesHTML +
+    '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + SYS.systemCss(sys, palette) + mt.css + '</style></head><body>' +
+    '<div id="frame"><div id="stage"' + skinStage(skin, palette, opts.badge, opts.skin ? '' : 'ds-' + sys.id) + '>' + slidesHTML +
     '<div id="topbar" hidden><span id="cur">01</span><span id="total">' + total + '</span></div>' +
     '<div id="dots"></div><div id="controls"><button class="ctrl" id="prev" type="button">‹</button><button class="ctrl" id="next" type="button">›</button><button class="ctrl" id="full" type="button">⛶</button></div>' +
     '<div id="hint">← → · swipe · wheel</div><div id="progress"></div></div></div>' +

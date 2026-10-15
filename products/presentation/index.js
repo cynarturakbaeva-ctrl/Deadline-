@@ -141,6 +141,7 @@ async function mapLimit(items, limit, fn) {
 async function generatePresentation(userInput, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : async () => {};
   const genId = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  let design = { mood: null, system: null }; // дизайн жүйесі + палитра (студенттің жадына қайтарылады)
   const photoKeys = []; // осы колодаға алынған суреттер (canonKey) → студенттің жадына (келесіде қайталанбайды)
   const t0 = Date.now();
   const cost = createCostTracker(genId);
@@ -412,10 +413,9 @@ async function generatePresentation(userInput, options = {}) {
   }
 
   // 2e. Colour theme + decoration are chosen by CODE (the LLM always copied the same dark/gold example)
-  {
-    const mood = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme });
-    console.log(`[Pipeline] Theme: ${mood}`);
-  }
+  // Дизайн жүйесі + палитра: студенттің соңғы дизайндары қайталанбайды (options.designAvoid — server.js береді)
+  design = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, avoid: options.designAvoid });
+  console.log(`[Pipeline] Design: system=${design.system} mood=${design.mood}${options.designAvoid ? ` (avoid ${[].concat(options.designAvoid.systems || []).join('/')})` : ''}`);
 
   // 2f. Референс құрылымын слайдтарға қолдану (макет түрі + мазмұнды сәйкестендіру).
   //     Template режимінде ӨТКІЗІЛЕДІ: бұл HTML-рендерге арналған (буллеттерді кестеге/санға айналдырады),
@@ -447,7 +447,7 @@ async function generatePresentation(userInput, options = {}) {
       if (reqQaResult.repaired.length) {
         // Слайдтар өзгерген соң тема мен композицияны қайта қолданамыз (жаңа слайдтар да безендірілсін)
         try {
-          applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme });
+          applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, keep: design });
           if (refAnalysis && refAnalysis.outline && mode !== 'template') applyReferencePlan(slides, refAnalysis.outline);
         } catch (e) { console.warn('[Pipeline] re-theme after QA failed:', e.message); }
       }
@@ -947,6 +947,7 @@ async function generatePresentation(userInput, options = {}) {
     visionScore: visionMeta.overallScore,
     visionSource: visionMeta.source,
     photoKeys,
+    design,
   };
 }
 

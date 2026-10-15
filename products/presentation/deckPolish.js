@@ -4,6 +4,7 @@
  * The model copies whatever its prompt example shows, so look & variety must not depend on it.
  */
 const T = require('./design/tokens');
+const SYS = require('./design/systems');
 const IG = require('./design/infographics');
 const { truncate } = require('./design/analyze');
 
@@ -131,21 +132,42 @@ function limitInfographics(slides) {
   return converted;
 }
 
+// Пайдаланушы белгісіз болғандағы (тест, ішкі шақыру) резерв: процестің соңғы таңдауы. Нақты студент үшін
+// server.js оның соңғы дизайндарын options.designAvoid арқылы береді (бұрын бұл ЖАЛҒЫЗ ортақ айнымалы еді —
+// студенттің келесі презентациясы оның өзінікінен емес, кез келген адамның соңғысынан ғана ерекшеленетін).
 let lastTheme = null;
-/** Pick the deck theme in code and stamp it on every slide (HTML builder + SVG visuals read it from there). */
+let lastSystem = null;
+/**
+ * Презентацияның дизайн жүйесі мен палитрасын КОД таңдайды және әр слайдқа жазады
+ * (HTML builder пен SVG визуалдар composition.mood / composition.design-ты оқиды).
+ * @param {object[]} slides
+ * @param {{seed?:string, style?:string, brief?:string, refTheme?:object, avoid?:{systems?:string[], moods?:string[]}, keep?:{mood:string, system:string}}} opts
+ *   keep — талаптар тексеруінен кейін қайта қолданғанда ТАҢДАУ ӨЗГЕРМЕЙДІ (бұрын келесі палитраға ауысып кететін)
+ * @returns {{mood:string, system:string}}
+ */
 function applyDeckTheme(slides, opts) {
   const o = opts || {};
-  let mood;
-  if (o.refTheme) mood = T.registerMood(o.refTheme); // клиенттің референс PPTX-і: түс/реңк/радиус сол күйі
-  else { mood = T.pickTheme({ seed: o.seed, style: o.style, brief: o.brief, avoid: lastTheme }); lastTheme = mood; }
+  let mood; let system = SYS.DEFAULT;
+  if (o.keep && o.keep.mood && T.MOODS[o.keep.mood]) { mood = o.keep.mood; system = o.keep.system || SYS.DEFAULT; }
+  else if (o.refTheme) mood = T.registerMood(o.refTheme); // клиенттің референс PPTX-і: түс/реңк/радиус сол күйі
+  else {
+    const av = o.avoid || {};
+    const avoidSystems = Array.isArray(av.systems) && av.systems.length ? av.systems : (lastSystem ? [lastSystem] : []);
+    const avoidMoods = Array.isArray(av.moods) && av.moods.length ? av.moods : (lastTheme ? [lastTheme] : []);
+    const d = SYS.pickDesign({ seed: o.seed, style: o.style, brief: o.brief, avoidSystems, avoidMoods });
+    mood = d.mood; system = d.system;
+    lastTheme = mood; lastSystem = system;
+  }
   const accent = T.MOODS[mood].accent;
   (Array.isArray(slides) ? slides : []).forEach((s) => {
     const c = s.composition || (s.composition = {});
     c.mood = mood;
     c.accentColor = accent;
+    c.design = system;
+    c.layoutSeed = T.strHash(String(o.seed || '') + '|layout') & 0xffff; // ырғақ (analyze.planDeck): фото жағы, баламалар
     c.decorative = [];
   });
-  return mood;
+  return { mood, system };
 }
 
 module.exports = { limitTables, limitInfographics, infographicToContent, applyDeckTheme, tableToBullets };

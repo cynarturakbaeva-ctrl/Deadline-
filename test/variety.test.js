@@ -26,19 +26,60 @@ test('explicit client wish about background wins', () => {
   }
 });
 
-test('two decks in a row never get the same theme', () => {
+test('two decks in a row never get the same design system or theme', () => {
   const a = applyDeckTheme([{}], { seed: 'same' });
   const b = applyDeckTheme([{}], { seed: 'same' });
-  assert.notStrictEqual(a, b);
+  assert.notStrictEqual(a.system, b.system);
+  assert.notStrictEqual(a.mood, b.mood);
 });
 
-test('applyDeckTheme overrides the LLM mood/accent on every slide', () => {
+test('applyDeckTheme overrides the LLM mood/accent on every slide and stamps the design system', () => {
   const slides = [{ composition: { mood: 'dark', accentColor: '#d4a843', decorative: ['corner_circle'] } }, {}];
-  const mood = applyDeckTheme(slides, { seed: 'x1', style: 'academic' });
+  const { mood, system } = applyDeckTheme(slides, { seed: 'x1', style: 'academic' });
   for (const s of slides) {
     assert.strictEqual(s.composition.mood, mood);
+    assert.strictEqual(s.composition.design, system);
     assert.strictEqual(s.composition.accentColor, T.MOODS[mood].accent);
   }
+  // талаптар тексеруінен кейін қайта қолданғанда таңдау ӨЗГЕРМЕЙДІ (бұрын келесі палитраға ауысатын)
+  const again = applyDeckTheme(slides, { seed: 'x1', style: 'academic', keep: { mood, system } });
+  assert.deepStrictEqual(again, { mood, system });
+});
+
+test('one student: the next deck avoids his last 2 design systems and recent palettes; the mood fits the system', () => {
+  const SYS = require('../products/presentation/design/systems');
+  for (let i = 0; i < 300; i++) {
+    const recent = { systems: ['swiss', 'journal', 'mono'], moods: ['cloud', 'ivory'] };
+    const d = applyDeckTheme([{}], { seed: 'topic|g' + i, avoid: recent });
+    assert.ok(!['swiss', 'journal'].includes(d.system), d.system);
+    assert.ok(SYS.SYSTEMS[d.system].moods.includes(d.mood) || !SYS.SYSTEMS[d.system].moods.filter((m) => !recent.moods.includes(m)).length);
+    assert.ok(!recent.moods.includes(d.mood));
+  }
+  // ақ/қара фон тілегі сақталады
+  for (let i = 0; i < 100; i++) {
+    const d = SYS.pickDesign({ seed: 'q' + i, brief: 'қара фон болсын' });
+    assert.ok(!T.isLightMood(d.mood), d.mood);
+  }
+});
+
+test('every design system renders a full deck: its own fonts, numbering, folio and cover', () => {
+  const SYS = require('../products/presentation/design/systems');
+  const { build3DPresentationHTML } = require('../products/presentation/html3DBuilder');
+  const slides = [
+    { title: 'Жер кадастры және геоақпараттық жүйелер', subtitle: 'Баяндама', bullets: ['Орындаған: А. Сапар', 'Топ: ГР-11'], composition: { visualPurpose: 'cover' } },
+    { title: 'Негізгі бағыттар', bullets: ['Бірінші бағыт: учаскелерді тіркеу', 'Екінші бағыт: мониторинг', 'Үшінші бағыт: жоспарлау'] },
+    { title: 'Қорытынды', bullets: ['Түйін бір', 'Түйін екі'], composition: { visualPurpose: 'conclusion' } },
+  ];
+  const seen = new Set();
+  for (const id of Object.keys(SYS.SYSTEMS)) {
+    const html = build3DPresentationHTML(slides, slides[0].title, { system: id });
+    assert.ok(html.includes('id="stage" class="ds-' + id), id);
+    assert.ok(/class="row-n">/.test(html), id + ' rows');
+    const sig = (html.match(/class="row-n">([^<]+)</) || [])[1] + '|' + (html.match(/class="canvas[^"]*cover[^"]*"/) || [])[0];
+    seen.add(sig + '|' + SYS.SYSTEMS[id].cover + '|' + JSON.stringify(SYS.SYSTEMS[id].type));
+  }
+  assert.strictEqual(seen.size, Object.keys(SYS.SYSTEMS).length, 'әр жүйе өзгеше');
+  assert.ok(build3DPresentationHTML(slides, 't', { system: 'swiss' }).includes("font-family:'Arial'"), 'Arial шрифті ендірілді');
 });
 
 test('limitTables: <=1 table per 4 slides, never adjacent; extras become bullets', () => {

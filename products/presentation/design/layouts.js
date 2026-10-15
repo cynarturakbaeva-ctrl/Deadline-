@@ -12,6 +12,7 @@ const { fitSize, bodySize } = require('./typography');
 const { splitLabelDetail, toNode, truncate, parseStatNumber } = require('./analyze');
 const I = require('./imagery');
 const IG = require('./infographics');
+const { formatNum } = require('./systems/numbers');
 
 const esc = (v) => (v == null ? '' : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -33,16 +34,20 @@ function statShares(items) {
 }
 
 // ── shared building blocks ────────────────────────────────────────────────
-function makeCtx(a, plan, palette, ts, deckTitle) {
-  const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
+const BASE_SYS = { id: 'aurora', num: 'pad', folio: { title: true, total: true, pad: true, cover: true }, cover: 'classic', closing: 'rows' };
+function makeCtx(a, plan, palette, ts, deckTitle, sys) {
+  const head = ts.display.split(',')[0];
+  const serif = /Times|DisplayFace|serif/i.test(head);
   let i = 0;
   return {
-    a, plan, palette, ts, deckTitle, serif,
+    a, plan, palette, ts, deckTitle, serif, sys: sys || BASE_SYS,
     rv() { i += 1; return 'class="rv" style="--i:' + i + '"'; },
     rvAttr() { i += 1; return { cls: 'rv', style: '--i:' + i }; },
-    kind: serif ? 'serif' : 'sans',
+    kind: serif ? 'serif' : /Arial/i.test(head) ? 'arial' : 'sans',
   };
 }
+/** Дизайн жүйесі бойынша нөмір (01 / 1 / 1. / I / [01]) */
+const num = (ctx, n) => formatNum((ctx.sys || BASE_SYS).num, n);
 
 function el(ctx, tag, cls, inner, o = {}) {
   ctx._n = (ctx._n || 0) + 1;
@@ -94,8 +99,11 @@ function runningTitle(title, max = 46) {
 }
 function folio(ctx) {
   const a = ctx.a;
-  return '<div class="folio" data-role="folio"><span class="folio-l">' + esc(runningTitle(ctx.deckTitle)) + '</span>' +
-    '<span class="folio-r"><b>' + pad2(a.index + 1) + '</b><span class="of"> / ' + pad2(a.total) + '</span></span></div>';
+  const f = (ctx.sys && ctx.sys.folio) || BASE_SYS.folio;
+  if (a.index === 0 && f.cover === false) return '';
+  const n = (v) => (f.pad === false ? String(v) : pad2(v));
+  return '<div class="folio" data-role="folio"><span class="folio-l">' + (f.title === false ? '' : esc(runningTitle(ctx.deckTitle))) + '</span>' +
+    '<span class="folio-r"><b>' + n(a.index + 1) + '</b>' + (f.total === false ? '' : '<span class="of"> / ' + n(a.total) + '</span>') + '</span></div>';
 }
 const sectionLabel = (ctx) => {
   const s = ctx.a.slideRef || {};
@@ -112,7 +120,7 @@ function listRows(ctx, items, o = {}) {
     const p = splitLabelDetail(raw);
     const hasDetail = !!p.detail;
     const lab = hasDetail ? p.label : p.label;
-    return '<li class="row drop" data-role="row"><span class="row-n">' + pad2(k + 1) + '</span><div class="row-b">' +
+    return '<li class="row drop" data-role="row"><span class="row-n">' + num(ctx, k + 1) + '</span><div class="row-b">' +
       '<div class="row-l' + (hasDetail ? ' strong' : '') + '" style="--rl:' + L + 'px">' + esc(lab) + '</div>' +
       (hasDetail ? '<div class="row-d" style="--rd:' + D + 'px">' + esc(p.detail) + '</div>' : '') + '</div></li>';
   }).join('');
@@ -138,7 +146,36 @@ function photoBleed(ctx, side, spanCols) {
 // ── Layouts ───────────────────────────────────────────────────────────────
 const L = {};
 
+/** Мұқабаның ортақ бөліктері: титул деректері (факультет, орындаған…), ұйым атауы, лид */
+function coverParts(ctx, metaMax) {
+  const a = ctx.a;
+  const meta = a.bullets.map(splitLabelDetail);
+  // Титул деректері: «Кілт: мән» жолдары (факультет, кафедра, орындаған, тексерген, топ) + кілтсіз ұйым атауы (университет).
+  // Барлығы көрсетіледі (бұрын 3–4-ке қиылатын), 3-тен көп болса — ықшам тор.
+  const keyed = meta.filter((m) => m.detail);
+  const plain = meta.filter((m) => !m.detail).map((m) => m.label);
+  const labeled = keyed.length > 0 && plain.length <= 2;
+  const org = labeled && plain.length
+    ? el(ctx, 'div', 'cover-org', esc(plain.join(' · ')), { role: 'meta' })
+    : '';
+  const dense = labeled && keyed.length > (metaMax || 3);
+  const metaHtml = meta.length
+    ? el(ctx, 'div', 'meta-row' + (dense ? ' is-dense' : ''), (labeled
+      ? keyed.slice(0, 6).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
+      : '<div class="meta-i" data-role="meta"><span class="meta-v">' + esc(a.bullets.slice(0, 3).join('  ·  ')) + '</span></div>'), { role: 'meta-row' })
+    : '';
+  return { org, metaHtml, labeled };
+}
+
 L.cover = (ctx) => {
+  const v = (ctx.sys && ctx.sys.cover) || 'classic';
+  if (!(ctx.plan && ctx.plan.refCover) && COVER[v]) return COVER[v](ctx);
+  return COVER.classic(ctx);
+};
+
+const COVER = {};
+/** Классикалық: үлкен тақырып төменгі сол жақта, фото бүкіл фонда (аврора, техно) */
+COVER.classic = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const rc = ctx.plan && ctx.plan.refCover;
   const bleedOK = !rc && a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI);
@@ -154,20 +191,7 @@ L.cover = (ctx) => {
     fgCls = 'cover-photo';
   }
   const w = GRID.span(10);
-  const meta = a.bullets.map(splitLabelDetail);
-  // Титул деректері: «Кілт: мән» жолдары (факультет, кафедра, орындаған, тексерген, топ) + кілтсіз ұйым атауы (университет).
-  // Барлығы көрсетіледі (бұрын 3–4-ке қиылатын), 3-тен көп болса — ықшам тор.
-  const keyed = meta.filter((m) => m.detail);
-  const plain = meta.filter((m) => !m.detail).map((m) => m.label);
-  const labeled = keyed.length > 0 && plain.length <= 2;
-  const org = labeled && plain.length
-    ? el(ctx, 'div', 'cover-org', esc(plain.join(' · ')), { role: 'meta' })
-    : '';
-  const metaHtml = meta.length
-    ? el(ctx, 'div', 'meta-row' + (labeled && keyed.length > 3 ? ' is-dense' : ''), (labeled
-      ? keyed.slice(0, 6).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
-      : '<div class="meta-i" data-role="meta"><span class="meta-v">' + esc(a.bullets.slice(0, 3).join('  ·  ')) + '</span></div>'), { role: 'meta-row' })
-    : '';
+  const { org, metaHtml, labeled } = coverParts(ctx);
   const fg = '<div class="canvas cover">' +
     '<div class="cover-top">' + (sectionLabel(ctx) ? rule(ctx, 56) + kicker(ctx, sectionLabel(ctx)) : '') + org + '</div>' +
     '<div class="block cover-block">' +
@@ -179,14 +203,80 @@ L.cover = (ctx) => {
   return { bg, fg: fg + folio(ctx), cls: fgCls };
 };
 
+/** Ортаға тураланған: тақырып пен деректер ортада, фото бүкіл фонда біркелкі қараңғыланып (академия, ателье) */
+COVER.center = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const bleedOK = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI);
+  // фото үстінде мәтін әрқашан ақ, фото қараңғыланады (ашық палитрада бұрын фото «ағарып» көрінбей қалатын)
+  const bg = bleedOK
+    ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:radial-gradient(120% 90% at 50% 50%,rgba(8,10,14,.48) 0%,rgba(8,10,14,.66) 100%)"></div>'
+    : '<div class="plate plate-cover"></div>' + AURORA_SOFT;
+  const w = GRID.span(10);
+  const { org, metaHtml, labeled } = coverParts(ctx, 3);
+  const fg = '<div class="canvas cover cover-c' + (bleedOK ? ' on-photo' : '') + '">' +
+    '<div class="cover-top">' + org + '</div>' +
+    '<div class="block cover-block">' +
+      rule(ctx, 64) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3, cls: 'center', hl: true, scale: [128, 112, 98, 86, 76, 66] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 36, { maxw: GRID.span(8), cls: 'center' }) +
+    '</div>' +
+    '<div class="cover-foot">' + metaHtml + '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: bleedOK ? 'cover-photo cover-center' : 'cover-plain cover-center' };
+};
+
+/** Панель: сол жақта түсті тұтас панель (тақырып ішінде), оң жақта фото (швейцар) */
+COVER.panel = (ctx) => {
+  const a = ctx.a;
+  const panelW = Math.round(GRID.marginX + GRID.span(7) + GRID.gutter / 2);
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 1100);
+  const bg = '<div class="plate plate-cover"></div>' +
+    (photoOK ? photoBleed(ctx, 'right', 5) : '<div class="panel-pattern" aria-hidden="true"></div>') +
+    '<div class="cover-panel" style="width:' + panelW + 'px"></div>';
+  const w = GRID.span(6);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas g12 cover-p">' +
+    '<div class="cell on-accent cover-p-l" style="' + cols(1, 6) + '">' +
+      '<div class="cover-top">' + org + '</div>' +
+      '<div class="block">' +
+        titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 5, hl: true, scale: [112, 98, 86, 76, 66, 58] }) +
+        lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      '</div>' +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-panel-slide' };
+};
+
+/** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
+COVER.masthead = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 760);
+  const bg = '<div class="plate plate-cover"></div>';
+  const tw = photoOK ? GRID.span(7) : GRID.span(11);
+  const { org, metaHtml, labeled } = coverParts(ctx, photoOK ? 2 : 3);
+  const photo = photoOK
+    ? '<div class="cell mast-photo" style="' + cols(9, 12) + '">' + I.framedPhoto(a.photo, a.img, p, { fill: true, focus: a.focus }) + '</div>'
+    : '';
+  const fg = '<div class="canvas g12 cover-m">' +
+    '<div class="cell mast-l" style="' + cols(1, photoOK ? 7 : 12) + '">' +
+      '<div class="mast-top">' + (org || '<div class="cover-org">&nbsp;</div>') + '</div>' +
+      '<div class="block">' +
+        titleH1(ctx, a.title, { role: 'display', width: tw, maxLines: 4, hl: true, scale: [124, 108, 94, 82, 72, 62] }) +
+        lead(ctx, labeled ? '' : a.subtitle, 34, { maxw: tw }) +
+      '</div>' +
+      metaHtml +
+    '</div>' + photo + '</div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-mast' };
+};
+
 L.section = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
-  const num = ctx.plan.section ? pad2(ctx.plan.section) : pad2(a.index);
+  const sn = ctx.plan.section || a.index;
+  const numTxt = ['roman', 'plain', 'dot'].includes(ctx.sys.num) ? formatNum(ctx.sys.num === 'dot' ? 'plain' : ctx.sys.num, sn) : pad2(sn);
   const hasP = a.hasPhoto && I.sharpEnough(a.img, 900);
-  const bg = '<div class="plate plate-section"></div>' + AURORA_SOFT + (hasP ? photoBleed(ctx, 'right', 5) : ghost('ghost-num', num));
+  const bg = '<div class="plate plate-section"></div>' + AURORA_SOFT + (hasP ? photoBleed(ctx, 'right', 5) : ghost('ghost-num', numTxt));
   const textW = hasP ? GRID.span(6) : GRID.span(9);
   const fg = '<div class="canvas sect">' +
-    el(ctx, 'div', 'numeral-xl', num, { role: 'numeral' }) +
+    el(ctx, 'div', 'numeral-xl', numTxt, { role: 'numeral' }) +
     '<div class="block sect-block">' + rule(ctx, 56) +
       titleH1(ctx, a.title, { role: 'display', width: textW, maxLines: 3, scale: [120, 104, 92, 80, 68], hl: true }) +
       lead(ctx, a.subtitle || a.body, 34, { maxw: textW }) +
@@ -378,7 +468,7 @@ L.points = (ctx) => {
 function pointsColumns(ctx, parsed) {
   const a = ctx.a; const n = parsed.length;
   const tw = GRID.span(8);
-  const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + pad2(k + 1) + '</span>' +
+  const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + num(ctx, k + 1) + '</span>' +
     '<div class="concept-l" style="--rl:' + (n <= 3 ? 40 : n === 4 ? 36 : 32) + 'px">' + esc(m.label) + '</div>' +
     (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 24) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas conc"><div class="block conc-head">' +
@@ -416,16 +506,16 @@ L.stats = (ctx) => {
   const cells = items.map((s, k) => {
     const raw = String(s.value);
     const m = raw.match(/^([^\d-]*)(-?[\d][\d\s.,]*)(.*)$/);
-    const num = m ? parseStatNumber(m[2]) : null;
+    const val = m ? parseStatNumber(m[2]) : null;
     let valHtml;
-    if (m && num != null && isFinite(num)) {
+    if (m && val != null && isFinite(val)) {
       const numTxt = m[2].trim();
       valHtml = (m[1] ? '<span class="sfx">' + esc(m[1]) + '</span>' : '') +
-        '<span data-count="' + num + '" data-raw="' + esc(numTxt) + '">' + esc(numTxt) + '</span>' +
+        '<span data-count="' + val + '" data-raw="' + esc(numTxt) + '">' + esc(numTxt) + '</span>' +
         (m[3] ? '<span class="sfx">' + esc(m[3].trim()) + '</span>' : '');
     } else valHtml = esc(raw);
     const meter = shares[k] != null ? '<div class="meter" aria-hidden="true"><i style="--p:' + shares[k].toFixed(3) + ';--k:' + k + '"></i></div>' : '';
-    return '<li class="stat" data-role="stat"><span class="stat-ix">' + pad2(k + 1) + '</span><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
+    return '<li class="stat" data-role="stat"><span class="stat-ix">' + num(ctx, k + 1) + '</span><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
       meter + '<div class="stat-l">' + esc(s.label || '') + '</div></li>';
   }).join('');
   const support = a.subtitle || a.body;
@@ -509,7 +599,7 @@ L.process = (ctx) => {
   const sentS = n <= 3 ? 32 : n === 4 ? 29 : 26;
   const items = nodes.map((nd, i) => {
     const sentence = !nd.detail && nd.label.length > 40;
-    return '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + pad2(i + 1) + '</span>' +
+    return '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + num(ctx, i + 1) + '</span>' +
       (i < n - 1 && n <= 4 ? '<i class="st-arrow"></i>' : '') + '</div>' +
       (sentence
         ? '<div class="st-d st-s" style="--rd:' + sentS + 'px">' + esc(truncate(nd.label, 240)) + '</div>'
@@ -530,7 +620,7 @@ L.hierarchy = (ctx) => {
   const n = nodes.length;
   const kids = nodes.map((nd, i) => {
     const sentence = !nd.detail && nd.label.length > 40; // тек сөйлем → кесілмей, оқылатын өлшеммен
-    return '<li class="hn drop" data-role="node"><span class="hn-n">' + pad2(i + 1) + '</span>' +
+    return '<li class="hn drop" data-role="node"><span class="hn-n">' + num(ctx, i + 1) + '</span>' +
       (sentence
         ? '<div class="hn-d hn-s" style="--rd:' + (n <= 3 ? 30 : n === 4 ? 28 : 25) + 'px">' + esc(truncate(nd.label, 220)) + '</div>'
         : '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
@@ -619,8 +709,25 @@ L.quote = (ctx) => {
   return { bg: '<div class="plate"></div>' + AURORA_SOFT + ghost('ghost-quote', '”'), fg: fg + folio(ctx), cls: 'quote-slide' };
 };
 
+/** Қорытынды — «бөлінген»: фото бір жақта (толық биіктік), тақырып пен түйіндер екінші жақта (журнал, академия, ателье) */
+function closingSplit(ctx) {
+  const a = ctx.a;
+  const items = a.bullets.slice(0, 4);
+  const lw = GRID.span(6);
+  const bg = '<div class="plate plate-section"></div>' + photoBleed(ctx, 'left', 5);
+  const fg = '<div class="canvas g12 close close-split">' +
+    '<div class="cell close-r" style="' + cols(7, 12) + '"><div class="block">' +
+      rule(ctx, 56) +
+      titleH1(ctx, a.title, { role: 'display', width: lw, maxLines: 2, scale: [96, 84, 74, 64, 56], hl: true }) +
+      (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') +
+      (items.length ? listRows(ctx, items, { compact: items.length > 3, labelSize: 30, detailSize: 24 }) : para(ctx, a.body || '', 30, { maxw: lw })) +
+    '</div></div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'closing-slide' };
+}
+
 L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
+  if (ctx.sys && ctx.sys.closing === 'split' && a.hasPhoto && I.sharpEnough(a.img, 900)) return closingSplit(ctx);
   const hasP = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
   const bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'

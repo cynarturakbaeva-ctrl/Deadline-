@@ -98,9 +98,12 @@ const TYPE_SCALE = Object.freeze({
 
 // Typography personalities. `display` is used for major titles, `text` for everything else.
 const FONT_STACKS = Object.freeze({
-  // Office fonts → the PPTX text stays editable and looks the same on any PC (see style.js FACES)
+  // Office fonts → the PPTX text stays editable and looks the same on any PC (see style.js FACES).
+  // Барлығында қазақ әріптері толық (Ә Ғ Қ Ң Ө Ұ Ү Һ І), метрикасы Office шрифтімен бірдей клон арқылы өлшенеді.
   sans: 'Calibri,Carlito,sans-serif',
   serif: '"Times New Roman","Liberation Serif",serif',
+  arial: 'Arial,"Liberation Sans",sans-serif',
+  mono: '"Courier New","Liberation Mono",monospace',
 });
 const TYPE_STYLES = Object.freeze({
   editorial: {
@@ -255,6 +258,6 @@ function typeStyleFor(palette) {
 
 module.exports = {
   SPACE, RADIUS, SHADOW, GRID, TYPE_SCALE, FONT_STACKS, TYPE_STYLES, MOODS, THEME_POOLS, STYLE_HINTS,
-  buildPalette, typeStyleFor, pickTheme, isLightMood, registerMood,
+  buildPalette, typeStyleFor, pickTheme, isLightMood, registerMood, strHash,
   safeColor, hexToRgb, mixHex, shiftHue, luminance, contrast, ensureContrast, rgba,
 };

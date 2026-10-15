@@ -21,7 +21,7 @@ test('DNA reads palette, fonts, sizes from a real PPTX', () => {
 
 test('reference theme is stamped on every slide and survives buildPalette', () => {
   const slides = [{}, {}];
-  const mood = applyDeckTheme(slides, { seed: 's', style: 'business', refTheme: dnaToTheme(dna) });
+  const { mood } = applyDeckTheme(slides, { seed: 's', style: 'business', refTheme: dnaToTheme(dna) });
   assert.ok(mood.startsWith('ref_'));
   assert.ok(slides.every((s) => s.composition.mood === mood && s.composition.accentColor === '#3b82f6'));
   const pal = T.buildPalette(mood, '#3b82f6', 'business');

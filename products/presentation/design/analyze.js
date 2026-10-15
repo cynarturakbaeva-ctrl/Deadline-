@@ -258,11 +258,15 @@ function planDeck(slides) {
     return base;
   });
 
+  // Колоданың ырғақ «тұқымы» (applyDeckTheme жазады): бір мазмұн әр генерацияда басқа ырғақпен құрылады —
+  // фото қай жақтан басталады, қатар келген бірдей слайдтың баламасы қайсы. Тұқымсыз → бұрынғыдай (детерминді).
+  const c0 = (slides[0] && slides[0].composition) || {};
+  const seed = Number.isFinite(Number(c0.layoutSeed)) ? Number(c0.layoutSeed) >>> 0 : 0;
   // Alternatives that keep meaning but change the composition.
   const ALT = {
-    points: ['editorial', 'split'],
+    points: seed & 4 ? ['split', 'editorial'] : ['editorial', 'split'],
     editorial: ['points'],
-    split: ['imageFocus', 'points'],
+    split: seed & 8 ? ['points', 'imageFocus'] : ['imageFocus', 'points'],
     imageFocus: ['split'],
     statement: ['imageFocus'],
   };
@@ -279,12 +283,17 @@ function planDeck(slides) {
     }
   }
 
-  // Alternate image side for image-bearing layouts; number sections.
-  let flip = false; let sec = 0;
+  // Сурет жағы фото-слайдтар арасында, тақырып жағы мәтін-слайдтар арасында ӨЗ АЛДЫНА кезектеседі
+  // (бұрын бір ортақ санауыш еді: «split L, points R, split L» — екі фото бір жақта, editorial бәрі бір жақта).
+  const side = { photo: !!(seed & 1), text: !!(seed & 2) };
+  const fam = (l) => (l === 'split' || l === 'imageFocus' ? 'photo' : l === 'editorial' || l === 'points' ? 'text' : null);
+  let sec = 0;
   plan.forEach((p) => {
     if (p.layout === 'section') { sec += 1; p.section = sec; }
-    if (p.flipLocked) { flip = !p.flip; return; }
-    if (['split', 'imageFocus', 'editorial', 'points'].includes(p.layout)) { p.flip = flip; flip = !flip; }
+    const f = fam(p.layout);
+    if (!f) return;
+    if (p.flipLocked) { side[f] = !p.flip; return; }
+    p.flip = side[f]; side[f] = !side[f];
   });
   return plan;
 }

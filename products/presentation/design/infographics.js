@@ -79,6 +79,9 @@ function validateInfographic(raw) {
 const box = (x, y, w, h, extra) => 'left:' + Math.round(x) + 'px;top:' + Math.round(y) + 'px;width:' + Math.round(w) + 'px' + (h != null ? ';height:' + Math.round(h) + 'px' : '') + (extra ? ';' + extra : '');
 const txt = (cls, html, style, role) => '<div class="' + cls + '" data-role="' + (role || 'label') + '" style="' + style + '">' + html + '</div>';
 const { simulateLines } = require('./typography');
+// мәтін қарпінің орташа таңба ені (em): Calibri 0.515, Arial 0.56 — builder дизайн жүйесіне қарай орнатады
+let TEXT_EM = 0.515;
+function setTextEm(em) { TEXT_EM = Number(em) || 0.515; }
 /**
  * Detail text that FITS its box: the largest font in [maxFs..minFs] at which the whole text fits w×h
  * (line-height 1.38, sans glyph model); only if even minFs cannot hold it, the text is shortened at a
@@ -87,7 +90,7 @@ const { simulateLines } = require('./typography');
 function fitDetail(text, w, h, maxFs, minFs) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   for (let fs = maxFs; fs >= minFs; fs -= 1) {
-    const { lines, longest } = simulateLines(t, fs, w, 0.515, 0);
+    const { lines, longest } = simulateLines(t, fs, w, TEXT_EM, 0);
     if (longest <= w && lines * fs * 1.38 <= h) return { html: esc(t), fs };
   }
   const perLine = Math.max(8, Math.floor(w / (minFs * 0.515)));
@@ -477,4 +480,5 @@ function autoInfographic(slide) {
   return null;
 }
 
-module.exports = { KINDS, validateInfographic, renderInfographic, autoInfographic, KIND_NAMES: Object.keys(KINDS) };
+module.exports = {
+  setTextEm, KINDS, validateInfographic, renderInfographic, autoInfographic, KIND_NAMES: Object.keys(KINDS) };
