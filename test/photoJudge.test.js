@@ -102,6 +102,7 @@ test('makePhotoJudge: scores 0-10, below 7 dropped, best first, cached, judged a
     const judge = makePhotoJudge({ topic: 'Қырым соғысы', title: 'Балаклава шайқасы', text: 'Жеңіл бригаданың шабуылы', query: 'Battle of Balaclava painting' });
     const cands = [{ url: 'u0', desc: 'Charge of the Light Brigade painting' }, { url: 'u1', desc: 'Man in office' }, { url: 'u2', desc: 'Balaclava battle map 1854' }];
     assert.deepStrictEqual(await judge(cands), [2, 0]);
+    assert.deepStrictEqual([judge.scoreOf(cands[2]), judge.scoreOf(cands[1]), judge.scoreOf({ url: 'zz' })], [10, 2, null]);
     assert.match(prompts[0], /Балаклава шайқасы/);
     assert.match(prompts[0], /Slide says: Жеңіл бригаданың шабуылы/);
     assert.match(prompts[0], /2\) Balaclava battle map 1854/);
@@ -118,4 +119,46 @@ test('makePhotoJudge: scores 0-10, below 7 dropped, best first, cached, judged a
     global.fetch = origFetch;
     delete process.env.DEEPSEEK_API_KEY;
   }
+});
+
+test('pooled best-of: a 10-point archive photo beats the first 7-point stock photo; ≥9 stops the search', async () => {
+  calls.length = 0;
+  script = {
+    'https://api.pexels.com': pexels(['https://px/c1.jpg', 'Old sailing ship on the sea']),
+    'https://commons.wikimedia.org': wiki(['https://wm/c2.jpg', 'HMS Victory at Portsmouth, 1805 painting']),
+    'https://px/': (u) => jpeg(u), 'https://wm/': (u) => jpeg(u),
+  };
+  const scores = { 'https://px/c1.jpg': 7, 'https://wm/c2.jpg': 10 };
+  const judge = async (cands) => cands.map((c, i) => i).filter((i) => scores[cands[i].url] >= 7);
+  judge.scoreOf = (c) => scores[c.url];
+  const hit = await I.findImage('sailing warship painting harbour', { used: new Set(), judge });
+  assert.strictEqual(hit.url, 'https://wm/c2.jpg', 'кейінгі көздегі жоғары балл жеңеді');
+
+  calls.length = 0;
+  scores['https://px/c3.jpg'] = 9;
+  script['https://api.pexels.com'] = pexels(['https://px/c3.jpg', 'Sailing warship in harbour']);
+  const hit2 = await I.findImage('sailing warship harbour view', { used: new Set(), judge });
+  assert.strictEqual(hit2.url, 'https://px/c3.jpg');
+  assert.strictEqual(searched(/wikimedia/).length, 0, '9+ табылды — артық іздеу жоқ');
+});
+
+test('bigger renditions: Unsplash raw at 1920, Wikimedia 1920 thumbs, tall scans dropped, landscape first', async () => {
+  process.env.UNSPLASH_ACCESS_KEY = 'u';
+  try {
+    script = {
+      'https://api.unsplash.com': () => ({ headers: {}, data: { results: [{ urls: { raw: 'https://images.unsplash.com/photo-1?ixid=a', regular: 'https://r' }, width: 5000, user: { name: 'n' }, alt_description: 'x' }] } }),
+      'https://commons.wikimedia.org': () => ({ data: { query: { pages: {
+        0: { title: 'File:Scan page.jpg', index: 0, imageinfo: [{ mime: 'image/jpeg', width: 1000, height: 1800, thumburl: 'https://wm/tall.jpg' }] },
+        1: { title: 'File:Portrait.jpg', index: 1, imageinfo: [{ mime: 'image/jpeg', width: 2000, height: 2600, thumburl: 'https://wm/portrait.jpg' }] },
+        2: { title: 'File:Battle.jpg', index: 2, imageinfo: [{ mime: 'image/jpeg', width: 4000, height: 2500, thumburl: 'https://wm/wide.jpg' }] },
+      } } } }),
+    };
+    const u = await I.unsplashCandidates('battle painting');
+    assert.strictEqual(u[0].url, 'https://images.unsplash.com/photo-1?ixid=a&w=1920&q=75&fm=jpg&fit=max');
+    assert.strictEqual(u[0].w, 1920);
+    calls.length = 0;
+    const w = await I.wikimediaCandidates('battle painting');
+    assert.strictEqual(calls[0].params.iiurlwidth, 1920);
+    assert.deepStrictEqual(w.map((c) => c.url), ['https://wm/wide.jpg', 'https://wm/portrait.jpg']);
+  } finally { delete process.env.UNSPLASH_ACCESS_KEY; }
 });

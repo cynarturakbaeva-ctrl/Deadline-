@@ -36,11 +36,11 @@ const short = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
  */
 function makePhotoJudge(ctx = {}) {
   const subject = [short(ctx.topic, 160), short(ctx.title, 140), ctx.background ? 'bg' : 'frame'].join(' / ');
+  const key = (c) => subject + '|' + c.url;
   let calls = 0;
   const maxCalls = ctx.maxCalls || 3;
-  return async function judge(cands, q) {
+  async function judge(cands, q) {
     if (!process.env.DEEPSEEK_API_KEY || !Array.isArray(cands) || !cands.length) return null;
-    const key = (c) => subject + '|' + c.url;
     const todo = cands.filter((c) => !cache.has(key(c)));
     if (todo.length) {
       if (calls >= maxCalls) return null; // шектен асты → сөздік тексеру
@@ -62,7 +62,10 @@ function makePhotoJudge(ctx = {}) {
       .filter((x) => x.s != null && x.s >= MIN_SCORE)
       .sort((a, b) => b.s - a.s || a.i - b.i)
       .map((x) => x.i);
-  };
+  }
+  /** Кандидаттың баллы (тексерілмесе null) — images.js бірнеше көздің ең жақсысын таңдау үшін */
+  judge.scoreOf = (c) => (c && cache.has(key(c)) ? cache.get(key(c)) : null);
+  return judge;
 }
 
 module.exports = { makePhotoJudge, SYSTEM, MIN_SCORE };

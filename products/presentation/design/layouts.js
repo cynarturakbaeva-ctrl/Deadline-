@@ -141,7 +141,7 @@ const L = {};
 L.cover = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const rc = ctx.plan && ctx.plan.refCover;
-  const bleedOK = !rc && a.hasPhoto && I.sharpEnough(a.img, 1400);
+  const bleedOK = !rc && a.hasPhoto && I.bleedOK(a.img);
   let bg = '<div class="plate plate-cover"></div>' + AURORA + '<div class="halo" aria-hidden="true"><i></i></div>';
   let fgCls = 'cover-plain';
   if (rc) {
@@ -300,11 +300,19 @@ L.imageFocus = (ctx) => {
   const a = ctx.a;
   const flip = ctx.plan.flip;
   const tw = GRID.span(4);
-  const sharp = I.sharpEnough(a.img, 1100);
+  // 8 бағандық панель ≈ 1300px: ≤1.3× үлкейту ғана (sharpEnough-тың 0.6-сы 700px суретті 1.8× созатын → бұлыңғыр)
+  const sharp = I.sharpEnough(a.img, 1660) && !(a.img.h && a.img.w && a.img.w / a.img.h < 0.9);
+  // Сурет үлкен панельге жарамаса — 8 баған бос қалмайды: жақтаулы кіші фото (6 баған ≈ 900px), ол да болмаса тек мәтін
+  const framed = !sharp && a.hasPhoto && I.sharpEnough(a.img, 1070);
   const bg = '<div class="plate"></div>' + (sharp ? photoBleed(ctx, flip ? 'right' : 'left', 8) : '');
   const txt = flip ? [1, 4] : [9, 12];
+  if (!sharp && !framed) return L.statement(ctx);
   const support = a.subtitle || a.body;
-  const fg = '<div class="canvas g12 focus">' +
+  const frame = framed
+    ? '<div class="cell photo-cell" style="' + cols(...(flip ? [6, 11] : [2, 7])) + ';align-self:center">' +
+      I.framedPhoto(a.photo, a.img, ctx.palette, { ratio: '4 / 3', focus: a.focus }) + '</div>'
+    : '';
+  const fg = '<div class="canvas g12 focus">' + frame +
     '<div class="cell text-cell end" style="' + cols(...txt) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) + rule(ctx, 48) +
       titleH1(ctx, a.title, { width: tw, maxLines: 5, scale: [64, 56, 50, 44, 40] }) +
@@ -609,7 +617,7 @@ L.quote = (ctx) => {
 
 L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
-  const hasP = a.hasPhoto;
+  const hasP = a.hasPhoto && I.bleedOK(a.img); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
   const bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
     : '<div class="plate plate-section"></div>' + AURORA;

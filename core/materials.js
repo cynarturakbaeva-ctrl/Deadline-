@@ -172,7 +172,7 @@ function visionAvailable() {
 async function imageAnthropic(b64, name, mime) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  const model = process.env.VISION_ANTHROPIC_MODEL || process.env.VISUAL_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const model = process.env.VISION_ANTHROPIC_MODEL || process.env.VISUAL_ANTHROPIC_MODEL || 'claude-haiku-5-5';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
   try {
