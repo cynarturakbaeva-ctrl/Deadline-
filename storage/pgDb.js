@@ -1,4 +1,5 @@
 'use strict';
+const designMemory = require('../core/designMemory');
 
 /**
  * PostgreSQL дерекқоры (Railway). db.js-тің ашық API-ін толық сақтайды.
@@ -75,7 +76,7 @@ const SCHEMA = {
       partner_paid INTEGER NOT NULL DEFAULT 0
     )`,
     cols: {
-      name: 'TEXT', username: 'TEXT',
+      name: 'TEXT', username: 'TEXT', design_memory: 'TEXT',
       tester_until: 'BIGINT', tester_credits: 'INTEGER DEFAULT 0', tester_day: 'TEXT', tester_pending: 'TEXT',
       partner_status: 'TEXT', partner_balance: 'INTEGER DEFAULT 0', partner_earned: 'INTEGER DEFAULT 0', partner_paid: 'INTEGER DEFAULT 0',
       credits: 'INTEGER DEFAULT 0', total: 'INTEGER DEFAULT 0', free_used: 'BOOLEAN DEFAULT FALSE', free_used_at: 'BIGINT DEFAULT 0', source: 'TEXT', blocked: 'BOOLEAN DEFAULT FALSE',
@@ -917,6 +918,19 @@ async function setUserProfile(chatId, { name = null, username = null } = {}) {
     [String(chatId), name ? String(name).slice(0, 80) : null, username ? String(username).slice(0, 40) : null]);
 }
 
+/** Студенттің дизайн жады (core/designMemory) — JSON мәтін; жоқ болса бос жад */
+async function getDesignMemory(chatId) {
+  const r = await q('SELECT design_memory FROM users WHERE chat_id = $1', [String(chatId)]);
+  return designMemory.parse(r.rows[0] && r.rows[0].design_memory);
+}
+/** Жадқа жаңа дизайн/суреттерді қосу (оқу → біріктіру → жазу; бір студенттің параллель жұмысы сирек, соңғысы жеңеді) */
+async function pushDesignMemory(chatId, add) {
+  const cur = await getDesignMemory(chatId);
+  const next = designMemory.merge(cur, add);
+  await q('UPDATE users SET design_memory = $2 WHERE chat_id = $1', [String(chatId), JSON.stringify(next)]);
+  return next;
+}
+
 const GEN_COLS = ['chat_id', 'mode', 'topic', 'title', 'slides', 'language', 'free', 'tester', 'status', 'error', 'cost_tg', 'tokens', 'duration_ms', 'quality', 'created_at', 'finished_at'];
 /** Генерация журналын жазу/жаңарту (тек берілген өрістер өзгереді) */
 async function logGen(jobId, fields = {}) {
@@ -1075,6 +1089,8 @@ module.exports = {
   countFreeDecksSince,
   freeFunnel,
   setUserProfile,
+  getDesignMemory,
+  pushDesignMemory,
   logGen,
   logPayment,
   adminData,

@@ -415,6 +415,7 @@ async function generatePresentation(userInput, options = {}) {
   // 2e. Colour theme + decoration are chosen by CODE (the LLM always copied the same dark/gold example)
   // Дизайн жүйесі + палитра: студенттің соңғы дизайндары қайталанбайды (options.designAvoid — server.js береді)
   design = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, avoid: options.designAvoid });
+  if (typeof options.onDesign === 'function' && !refTheme) { try { options.onDesign(design); } catch {} }
   console.log(`[Pipeline] Design: system=${design.system} mood=${design.mood}${options.designAvoid ? ` (avoid ${[].concat(options.designAvoid.systems || []).join('/')})` : ''}`);
 
   // 2f. Референс құрылымын слайдтарға қолдану (макет түрі + мазмұнды сәйкестендіру).

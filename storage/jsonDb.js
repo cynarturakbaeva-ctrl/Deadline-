@@ -1,4 +1,5 @@
 'use strict';
+const designMemory = require('../core/designMemory');
 
 /**
  * Local JSON database for Termux.
@@ -707,6 +708,17 @@ async function setUserProfile(chatId, { name = null, username = null } = {}) {
   saveDB(db);
 }
 
+async function getDesignMemory(chatId) {
+  const u = db.users[String(chatId)];
+  return designMemory.parse(u && u.design_memory);
+}
+async function pushDesignMemory(chatId, add) {
+  const u = db.users[String(chatId)];
+  const next = designMemory.merge(u && u.design_memory, add);
+  if (u) { u.design_memory = next; saveDB(db); }
+  return next;
+}
+
 async function logGen(jobId, fields = {}) {
   const g = db.gen_log || (db.gen_log = {});
   const cur = g[String(jobId)] || { job_id: String(jobId) };
@@ -834,6 +846,8 @@ module.exports = {
   countFreeDecksSince,
   freeFunnel,
   setUserProfile,
+  getDesignMemory,
+  pushDesignMemory,
   logGen,
   logPayment,
   adminData,
