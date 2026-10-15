@@ -19,7 +19,7 @@ const axios = require('axios');
 
 const UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)';
 const PER = 8;
-const TIMEOUT = Number(process.env.OPEN_IMAGE_TIMEOUT_MS) || 6000;
+const TIMEOUT = Number(process.env.OPEN_IMAGE_TIMEOUT_MS) || 9000; // Openverse кейде 6–13 с жауап береді
 const tidy = (t) => String(t || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
 const clip = (q) => String(q || '').trim().slice(0, 80);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -16,13 +16,13 @@
  */
 const axios = require('axios');
 const { geminiJson, hasGoogleKey } = require('../../core/googleAi');
+const { imageUA } = require('./unsplash');
 
 const MIN_FIT = Number(process.env.PHOTO_VISION_MIN_FIT) || 7;
 const MIN_APPEAL = Number(process.env.PHOTO_VISION_MIN_APPEAL) || 5;
 const MIN_BG = 6;
 const MAX_PER_CALL = Number(process.env.PHOTO_VISION_BATCH) || 12;
 const THUMB_MAX_BYTES = 700_000; // музей «web» нұсқасы ~600KB; токен саны пиксельге байланысты, байтқа емес
-const UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)';
 
 const SYSTEM = `You are the photo editor of a student presentation. You SEE numbered candidate photos for ONE slide and score each one. Return JSON only:
 {"photos":[{"i":0,"fit":0,"appeal":0,"bg":0,"focus":"50% 40%","flaw":""}, ...]} — one entry per photo, same numbers.
@@ -49,15 +49,17 @@ async function fetchThumb(url) {
   try {
     const res = await axios.get(url, {
       responseType: 'arraybuffer', timeout: 8000, maxContentLength: THUMB_MAX_BYTES * 3,
-      headers: { 'User-Agent': UA, Accept: 'image/jpeg,image/png,image/webp,image/*;q=0.8' },
+      headers: { 'User-Agent': imageUA(url), Accept: 'image/jpeg,image/png,image/webp,image/*;q=0.8' },
       validateStatus: (s) => s === 200,
     });
     const type = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     const buf = Buffer.from(res.data);
     if (/^image\/(jpeg|png|webp)$/.test(type) && buf.length <= THUMB_MAX_BYTES) out = { mime: type, data: buf.toString('base64') };
   } catch { /* кандидат өткізіледі */ }
-  thumbCache.set(url, out);
-  if (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+  if (out) { // сәтсіздік кэштелмейді: уақытша 429/желі қатесі сол суретті мәңгі «улап» тастамасын
+    thumbCache.set(url, out);
+    if (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+  }
   return out;
 }
 

@@ -522,7 +522,7 @@ function interleave(lists) {
 
 const VISION_BATCH = Number(process.env.PHOTO_VISION_BATCH) || 12;
 const OPEN_SEARCHES_PER_PHOTO = Number(process.env.OPEN_SEARCHES_PER_PHOTO) || 8;
-const PROVIDER_TIMEOUT_MS = Number(process.env.IMAGE_PROVIDER_TIMEOUT_MS) || 7000;
+const PROVIDER_TIMEOUT_MS = Number(process.env.IMAGE_PROVIDER_TIMEOUT_MS) || 10000;
 
 /** Бір суреттің әртүрлі URL-дері (Openverse арқылы Wikimedia, ?w= параметрлі Unsplash) бір кілтке келеді */
 function canonKey(url) {
