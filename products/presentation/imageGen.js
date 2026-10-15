@@ -14,7 +14,8 @@ const { checkGenerated } = require('./photoVision');
 
 const short = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
 const genEnabled = () => hasGoogleKey() && process.env.IMAGE_GEN !== '0';
-const deckBudget = (free) => ({ left: Math.max(0, Number(free ? process.env.IMAGE_GEN_MAX_FREE : process.env.IMAGE_GEN_MAX) || (free ? 1 : 2)) });
+const envInt = (v, d) => (v != null && String(v).trim() !== '' && Number.isFinite(Number(v)) ? Math.max(0, Math.floor(Number(v))) : d);
+const deckBudget = (free) => ({ left: free ? envInt(process.env.IMAGE_GEN_MAX_FREE, 1) : envInt(process.env.IMAGE_GEN_MAX, 2) });
 
 /**
  * @param {{topic?:string, title?:string, text?:string, query?:string, background?:boolean, side?:'left'|'right'}} ctx
@@ -30,7 +31,7 @@ function buildPrompt(ctx = {}) {
     `Presentation topic: ${short(ctx.topic, 200)}.`,
     'If the topic is about Kazakhstan or Central Asia, show an authentic Kazakh / Central Asian setting, people and landscape.',
     calm,
-    'Natural light, vivid but realistic colours, sharp focus, high detail, shot on a full-frame camera, 16:9.',
+    'Natural light, vivid but realistic colours, sharp focus, high detail, shot on a full-frame camera.',
     'Absolutely NO text, letters, numbers, captions, labels, signs, logos, watermarks, charts, diagrams, UI or borders.',
     'No collage, no split screen, no illustration or cartoon style, no distorted hands or faces.',
   ].join(' ');
@@ -46,7 +47,7 @@ async function generateSlideImage(ctx, budget) {
   if (ctx.named) { console.log(`[ImageGen] skip named subject "${short(ctx.query, 60)}" (no fake history)`); return null; }
   budget.left -= 1; // сәтсіз болса да есептеледі: ақшаның шегі
   const t0 = Date.now();
-  const img = await geminiImage(buildPrompt(ctx), { aspectRatio: '16:9', label: 'image:gen' });
+  const img = await geminiImage(buildPrompt(ctx), { aspectRatio: ctx.background ? '16:9' : '4:3', label: 'image:gen', timeoutMs: 40_000 });
   if (!img) return null;
   const check = await checkGenerated(img.dataUri, ctx).catch(() => null);
   if (check && !check.ok) {

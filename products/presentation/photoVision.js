@@ -21,7 +21,7 @@ const MIN_FIT = Number(process.env.PHOTO_VISION_MIN_FIT) || 7;
 const MIN_APPEAL = Number(process.env.PHOTO_VISION_MIN_APPEAL) || 5;
 const MIN_BG = 6;
 const MAX_PER_CALL = Number(process.env.PHOTO_VISION_BATCH) || 12;
-const THUMB_MAX_BYTES = 350_000;
+const THUMB_MAX_BYTES = 700_000; // музей «web» нұсқасы ~600KB; токен саны пиксельге байланысты, байтқа емес
 const UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)';
 
 const SYSTEM = `You are the photo editor of a student presentation. You SEE numbered candidate photos for ONE slide and score each one. Return JSON only:
@@ -91,6 +91,7 @@ function makeVisionChooser(ctx = {}) {
   const subject = [short(ctx.topic, 160), short(ctx.title, 140), ctx.background ? 'bg' : 'frame'].join(' / ');
   const cache = new Map(); // url → scores (осы слайд үшін)
   let calls = 0;
+  let apiFailures = 0;
   const maxCalls = ctx.maxCalls || 3;
 
   async function scoreBatch(batch) {
@@ -111,7 +112,7 @@ function makeVisionChooser(ctx = {}) {
     });
     const out = await geminiJson(parts, { label: 'photo:vision', maxTokens: 60 * shown.length + 200 });
     const rows = Array.isArray(out && out.photos) ? out.photos : (Array.isArray(out) ? out : []);
-    if (!rows.length) return; // шақыру сәтсіз → бағаланбады (кэшке «жоқ» деп жазылмайды, шақырушы резервке өтеді)
+    if (!rows.length) { apiFailures += 1; return; } // шақыру сәтсіз → бағаланбады (кэшке «жоқ» деп жазылмайды)
     const num = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0; };
     shown.forEach((x, k) => {
       const r = rows.find((q) => q && Number(q.i) === k) || rows[k] || null;
@@ -129,7 +130,9 @@ function makeVisionChooser(ctx = {}) {
     for (let k = 0; k < todo.length && calls < maxCalls; k += MAX_PER_CALL) {
       try { await scoreBatch(todo.slice(k, k + MAX_PER_CALL)); } catch (err) { console.warn(`[PhotoVision] failed: ${err.message}`); }
     }
-    if (todo.length && todo.every((c) => !cache.has(c.url))) return null; // бірде-біреуі бағаланбады → резерв
+    // API шынымен сәтсіз болып, бірде-біреуі бағаланбаса ғана → резерв (мәтіндік тексеру). Кішірейтілген нұсқа
+    // жүктелмесе не шақыру шегі бітсе — «сай сурет жоқ» ([]), vision-мен жұмыс істеп тұрған слайд резервке түспейді.
+    if (apiFailures && todo.length && todo.every((c) => !cache.has(c.url))) return null;
     return cands
       .map((c, i) => ({ i, s: cache.get(c.url) }))
       .filter((x) => x.s && x.s.fit >= MIN_FIT && x.s.appeal >= MIN_APPEAL && (!ctx.background || x.s.bg >= MIN_BG))

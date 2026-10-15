@@ -141,7 +141,7 @@ const L = {};
 L.cover = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const rc = ctx.plan && ctx.plan.refCover;
-  const bleedOK = !rc && a.hasPhoto && I.bleedOK(a.img);
+  const bleedOK = !rc && a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI);
   let bg = '<div class="plate plate-cover"></div>' + AURORA + '<div class="halo" aria-hidden="true"><i></i></div>';
   let fgCls = 'cover-plain';
   if (rc) {
@@ -328,8 +328,12 @@ L.editorial = (ctx) => {
   const lw = GRID.span(4); const rw = GRID.span(7);
   const L_ = flip ? [9, 12] : [1, 4];
   const R_ = flip ? [1, 7] : [6, 12];
-  const twoCol = a.bodyWords > 90;
-  const size = twoCol ? 26 : a.bodyWords <= 48 ? 36 : a.bodyWords <= 75 ? 32 : 28;
+  // Мәтіні жоқ слайд (ырғақ үшін points → editorial болған) — пункттер абзац болып ТОЛЫҚ шығады
+  // (бұрын тек алғашқы 2 пункт көрінетін, 3–4-сі үнсіз жоғалатын)
+  const paras = a.body ? a.body.split(/\n+/).filter(Boolean) : a.bullets.slice(0, 6);
+  const words = a.body ? a.bodyWords : a.bulletWords;
+  const twoCol = words > 90;
+  const size = twoCol ? 26 : words <= 48 ? 36 : words <= 75 ? 32 : 28;
   const small = a.hasPhoto && I.sharpEnough(a.img, 700)
     ? '<div class="cell-photo">' + I.framedPhoto(a.photo, a.img, p, { ratio: '4 / 3', focus: a.focus }) + '</div>' : '';
   const fg = '<div class="canvas g12 edit">' +
@@ -339,8 +343,8 @@ L.editorial = (ctx) => {
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') + small +
     '</div></div>' +
     '<div class="cell edit-r" style="' + cols(...R_) + '">' +
-      (a.body ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), a.body.split(/\n+/).map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
-      notes(ctx, a.bullets.slice(0, 2), 26) +
+      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), paras.map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
+      (a.body ? notes(ctx, a.bullets.slice(0, 4), 26) : '') +
     '</div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
@@ -617,7 +621,7 @@ L.quote = (ctx) => {
 
 L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
-  const hasP = a.hasPhoto && I.bleedOK(a.img); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
+  const hasP = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
   const bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
     : '<div class="plate plate-section"></div>' + AURORA;

@@ -108,7 +108,7 @@ test('AI image: named subjects never generated; budget caps; generated image is 
   assert.strictEqual(ok.dataUri, 'data:image/jpeg;base64,' + img);
   assert.match(sent[0].url, /\/interactions$/);
   assert.strictEqual(sent[0].body.model, 'gemini-3.1-flash-lite-image');
-  assert.strictEqual(sent[0].body.response_format.aspect_ratio, '16:9');
+  assert.strictEqual(sent[0].body.response_format.aspect_ratio, '4:3', 'жақтау орны → 4:3');
   assert.match(sent[0].body.input, /NO text, letters/);
   assert.match(sent[0].body.input, /Арал теңізі/);
 

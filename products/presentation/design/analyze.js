@@ -154,7 +154,7 @@ function analyzeSlide(slide, index, total) {
     bulletWords, bodyWords, textWords, labeled, dated,
     longestBullet: bullets.reduce((m, b) => Math.max(m, String(b).length), 0),
     hasVisual: isVisualSvg(s.visualSvg),
-    photo: photoUrl, img, hasPhoto: !!photoUrl,
+    photo: photoUrl, img, hasPhoto: !!photoUrl, imgAI: s.imageSource === 'ai',
     purpose,
     nodes: { timeline: nodeSrc(timelineNodes), steps: nodeSrc(stepNodes), hierarchy: nodeSrc(hierNodes) },
     explicit: {
