@@ -9,7 +9,7 @@ const os   = require('os');
 const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch, applyCoverCredits, coverCreditItems } = require('./gemini');
 const { analyzeTemplate, schemaRuleLine } = require('./templateSchema');
 const { writeSlots } = require('./templateWriter');
-const { findImage, fallbackQueries, isLatinQuery } = require('./images');
+const { findImage, findImageVision, fallbackQueries, isLatinQuery, isNamedQuery } = require('./images');
 const { limitTables, limitInfographics, applyDeckTheme } = require('./deckPolish');
 const { analyzeReference, referenceItems } = require('../../design-dna');
 const REQ = require('../../requirements');
@@ -34,6 +34,8 @@ const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
 const { validateInfographic } = require('./design/infographics');
 const { planPhotoSlides } = require('./photoPlan');
 const { makePhotoJudge } = require('./photoJudge');
+const { makeVisionChooser } = require('./photoVision');
+const { generateSlideImage, deckBudget } = require('./imageGen');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
@@ -53,6 +55,31 @@ function shortTopicKeyword(topic) {
   );
   if (line) return line.replace(/^Тақырып\s*[:：]\s*/i, '').slice(0, 60);
   return topic.slice(0, 40);
+}
+
+/**
+ * Бір фото-слайдқа сурет — VISION жолы (Google кілті бар болса):
+ *   1) слайдтың ӨЗ сұранысы (+ латынша тақырып) бойынша барлық көздерден кандидат → vision көріп таңдайды;
+ *   2) ештеңе сай болмаса → AI сурет (атаулы тұлға/оқиға емес болса, лимит ішінде);
+ *   3) ол да болмаса → суретсіз (типографиялық слайд). Басқа слайдтың сұранысы ЕШҚАШАН алынбайды.
+ * vision шақыруы сәтсіз болса (желі/кілт) → { fallback: true }: ескі мәтіндік тексеру жолы қолданылады.
+ */
+async function fetchPhotoVision(slide, ctx) {
+  const queries = [];
+  const add = (q) => { const t = String(q || '').trim(); if (t && isLatinQuery(t) && !queries.includes(t)) queries.push(t); };
+  add(ctx.query);
+  if (!ctx.query) add(fallbackQueries('', ctx.topic, [])[0]);
+  for (const q of queries) {
+    const hit = await findImageVision(q, { used: ctx.used, free: ctx.free, budget: ctx.budget, vision: ctx.vision, maxVariants: 2 });
+    if (hit && hit.failed) return { fallback: true };
+    if (hit && hit.dataUri) return { dataUri: hit.dataUri, focus: hit.focus || '', source: hit.source };
+  }
+  const named = queries.some((q) => isNamedQuery(q));
+  const gen = await generateSlideImage({
+    topic: ctx.topicTitle, title: slide.title, text: ctx.text, query: queries[0] || '', background: ctx.background, named,
+  }, ctx.genBudget).catch((err) => { console.warn(`[ImageGen] failed: ${err.message}`); return null; });
+  if (gen) return { dataUri: gen.dataUri, focus: '', source: 'ai' };
+  return { dataUri: null };
 }
 
 // Бір слайдқа сурет: сұраныстарды кезекпен сынап, табылған суретті жүктеп, data: URI ретінде қайтарады.
@@ -544,6 +571,7 @@ async function generatePresentation(userInput, options = {}) {
   const photoBudget = options.free ? (Number(process.env.PHOTO_BUDGET_FREE) || 3) : (Number(process.env.PHOTO_BUDGET) || 4);
   const photoPlan = planPhotoSlides(slides, { budget: photoBudget });
   console.log(`[Pipeline] Photo plan: ${photoPlan.indexes.size}/${slides.length} slides → [${[...photoPlan.indexes].map((i) => i + 1).join(',')}]`);
+  const genBudget = deckBudget(!!options.free); // AI сурет: бір презентацияға ең көбі 2 (тегін — 1)
   const imagesTask = mapLimit(slides, 3, async (slide, idx) => {
     if (!photoPlan.indexes.has(idx)) return null;
     // Сурет іздеу тек ағылшынша (латын) сұранысқа. Қазақша/орысша сұраныс ЕШҚАШАН жіберілмейді.
@@ -556,15 +584,30 @@ async function generatePresentation(userInput, options = {}) {
     if (validateInfographic(slide.infographic)) return null;
     console.log(`[Image] query="${query}"`);
     try {
-      // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
       const layout = photoPlan.planned[idx];
-      const judge = makePhotoJudge({
+      const slideCtx = {
         topic: title || topic, title: slide.title, query,
         text: [slide.subtitle, slide.body].concat(Array.isArray(slide.bullets) ? slide.bullets.slice(0, 3) : [])
           .map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).filter(Boolean).join(' · '),
         cover: layout === 'cover' || layout === 'closing' || idx === 0 || idx === slides.length - 1,
         background: layout === 'cover' || layout === 'closing' || layout === 'fullImage', // фото бүкіл слайдты жабады
-      });
+      };
+      // Суретті КӨЗБЕН таңдау (Gemini Flash-Lite): кілт бар болса — негізгі жол
+      const vision = makeVisionChooser(slideCtx);
+      if (vision) {
+        const got = await fetchPhotoVision(slide, {
+          query, topic, topicTitle: title || topic, text: slideCtx.text, background: slideCtx.background,
+          used: usedImages, free: !!options.free, vision, genBudget,
+          budget: { left: Number(process.env.IMAGE_SEARCHES_PER_PHOTO) || 5 },
+        });
+        if (!got.fallback) {
+          if (got.dataUri && got.focus) slide.imageFocus = got.focus; // басты нысан кесілмесін
+          return got.dataUri || null;
+        }
+        console.warn('[Image] vision unavailable for this slide — text judge fallback');
+      }
+      // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
+      const judge = makePhotoJudge(slideCtx);
       return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free, judge });
     } catch (err) {
       // Бір слайдтың суреті ешқашан бүкіл презентацияны құлатпауы керек

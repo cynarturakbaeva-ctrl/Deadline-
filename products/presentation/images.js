@@ -237,6 +237,16 @@ const tidy = (t) => String(t || '').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/
 
 // ── Провайдерлер: әрқайсысы кандидаттар массивін қайтарады [{url, credit, source, w}] ──
 
+/** upload.wikimedia.org сурет URL-і → сол файлдың `width`px кішірейтілген нұсқасы (vision-модельге) */
+function wikiThumb(url, width) {
+  const u = String(url || '');
+  const t = u.match(/^(https:\/\/upload\.wikimedia\.org\/wikipedia\/[^/]+\/thumb\/.+\/)\d+px-([^/]+)$/);
+  if (t) return t[1] + width + 'px-' + t[2];
+  const o = u.match(/^(https:\/\/upload\.wikimedia\.org\/wikipedia\/[^/]+\/)([0-9a-f]\/[0-9a-f]{2}\/)([^/]+)$/);
+  if (o) return o[1] + 'thumb/' + o[2] + o[3] + '/' + width + 'px-' + o[3];
+  return u;
+}
+
 async function wikimediaCandidates(query) {
   const q = clip(query);
   if (!q) return [];
@@ -269,6 +279,7 @@ async function wikimediaCandidates(query) {
       .filter(Boolean).map((v) => String(v).replace(/<[^>]+>/g, ' ')).join('. ');
     out.push({
       url,
+      thumb: wikiThumb(url, 480),
       credit: page.title ? String(page.title).replace(/^File:/i, '') : 'Wikimedia Commons',
       source: 'wikimedia',
       w: Math.min(info.width || 0, 1920),
@@ -299,6 +310,7 @@ async function pexelsCandidates(query) {
   return (response.data?.photos || [])
     .map((p) => ({
       url: p.src?.large2x || p.src?.large,
+      thumb: p.src?.medium || p.src?.small || '',
       credit: p.photographer || 'Pexels',
       source: 'pexels',
       w: p.width || 0,
@@ -329,6 +341,7 @@ async function unsplashCandidates(query) {
     .map((r) => ({
       // regular = 1080px — үлкен панельде бұлыңғыр; raw + w=1920 (Unsplash CDN өзі кішірейтеді)
       url: r.urls?.raw ? r.urls.raw + (r.urls.raw.includes('?') ? '&' : '?') + 'w=1920&q=75&fm=jpg&fit=max' : r.urls?.regular,
+      thumb: r.urls?.small || '',
       credit: r.user?.name || 'Unsplash',
       source: 'unsplash',
       w: r.urls?.raw ? Math.min(r.width || 0, 1920) : Math.min(r.width || 0, 1080),
@@ -349,6 +362,7 @@ async function pixabayCandidates(query) {
   return (response.data?.hits || [])
     .map((h) => ({
       url: h.largeImageURL || h.webformatURL, // 1280px; webformatURL тек 640px
+      thumb: h.webformatURL || '',
       credit: h.user ? `Pixabay/${h.user}` : 'Pixabay',
       source: 'pixabay',
       w: h.largeImageURL ? Math.min(1280, h.imageWidth || 1280) : 640,
@@ -357,11 +371,13 @@ async function pixabayCandidates(query) {
     .filter((c) => c.url);
 }
 
+const { OPEN_PROVIDERS, routeOpen } = require('./openImages');
 const PROVIDERS = {
   pexels: pexelsCandidates,
   unsplash: unsplashCandidates,
   pixabay: pixabayCandidates,
   wikimedia: wikimediaCandidates,
+  ...OPEN_PROVIDERS,
 };
 
 /**
@@ -473,6 +489,68 @@ async function findImage(query, opts = {}) {
   return null;
 }
 
+/** Әр көздің тізімінен кезекпен бір-бірден: топтамада бір көз басым болмайды (ең жақсылары алдымен) */
+function interleave(lists) {
+  const out = []; const seen = new Set();
+  const max = Math.max(0, ...lists.map((l) => l.length));
+  for (let k = 0; k < max; k++) {
+    for (const l of lists) {
+      const c = l[k];
+      if (c && c.url && !seen.has(c.url)) { seen.add(c.url); out.push(c); }
+    }
+  }
+  return out;
+}
+
+const VISION_BATCH = Number(process.env.PHOTO_VISION_BATCH) || 12;
+const OPEN_SEARCHES_PER_PHOTO = Number(process.env.OPEN_SEARCHES_PER_PHOTO) || 8;
+
+/**
+ * VISION жолы: бір сұраныс нұсқасы бойынша барлық лайықты көздерден (стоктар + архив + ашық базалар) кандидат
+ * ПАРАЛЛЕЛЬ жиналады, vision-модель кішірейтілген нұсқаларын КӨРІП бағалайды, ең жақсысы толық өлшемде жүктеледі.
+ * Сай сурет болмаса — келесі нұсқа (ең көбі opts.maxVariants), сосын null (шақырушы AI суретке/суретсізге өтеді).
+ * @param {string} query
+ * @param {{used?:Set<string>, free?:boolean, budget?:{left:number}, vision:Function, maxVariants?:number}} opts
+ * @returns {Promise<{dataUri:string,url:string,credit:string,source:string,desc:string,focus:string,fit:number,appeal:number}|null|{failed:true}>}
+ *   {failed:true} → vision шақыруы сәтсіз (желі/кілт): шақырушы мәтіндік тексеру жолына өтеді
+ */
+async function findImageVision(query, opts = {}) {
+  if (!isLatinQuery(query) || typeof opts.vision !== 'function') return null;
+  const used = opts.used instanceof Set ? opts.used : new Set();
+  const named = isNamedQuery(query);
+  const keyed = providerOrder({ free: !!opts.free, named });
+  const open = routeOpen(query, { named }).filter((n) => PROVIDERS[n] && !keyed.includes(n));
+  const order = keyed.concat(open);
+  const budget = opts.budget || { left: 4 };
+  const openBudget = { left: OPEN_SEARCHES_PER_PHOTO };
+  const variants = queryVariants(query).slice(0, opts.maxVariants || 2);
+  let attempts = 0;
+  for (const q of variants) {
+    const lists = await Promise.all(order.map((name) => searchProvider(name, q, KEYED[name] ? budget : openBudget)
+      .catch((err) => { console.warn(`[Image:${name}] search failed (${err.response?.status || err.code || err.message}) q="${q.slice(0, 40)}"`); return []; })));
+    const pool = interleave(lists).filter((c) => !used.has(c.url) && !(c.w && c.w < MIN_W) && !tooDark(c));
+    if (!pool.length) continue;
+    const batch = pool.slice(0, VISION_BATCH);
+    if (pool.length > batch.length) console.log(`[Image] vision batch ${batch.length}/${pool.length} (rest not shown) q="${q.slice(0, 50)}"`);
+    const ranked = await opts.vision(batch);
+    if (ranked === null) return { failed: true };
+    for (const r of ranked) {
+      const c = batch[r.i];
+      if (!c || used.has(c.url)) continue;
+      if (attempts >= MAX_DOWNLOAD_ATTEMPTS) return null;
+      attempts += 1;
+      used.add(c.url);
+      const dataUri = await downloadCached(c.url);
+      if (dataUri) {
+        console.log(`[Image] ok source=${c.source} vision fit=${r.fit} appeal=${r.appeal} q="${q.slice(0, 50)}"${c.desc ? ` photo="${c.desc.slice(0, 80)}"` : ''}`);
+        return { dataUri, url: c.url, credit: c.credit, source: c.source, desc: c.desc || '', focus: r.focus || '', fit: r.fit, appeal: r.appeal };
+      }
+    }
+  }
+  console.log(`[Image] vision: nothing fits "${String(query).slice(0, 60)}"`);
+  return null;
+}
+
 // ── Ескі API (үйлесімділік үшін): бірінші кандидатты ғана қайтарады ──
 async function firstOf(fn, query) {
   try {
@@ -528,6 +606,9 @@ module.exports = {
   isLatinQuery,
   fallbackQueries,
   findImage,
+  findImageVision,
+  interleave,
+  wikiThumb,
   searchImageMulti,
   searchWikimedia,
   searchPexels,
