@@ -3,7 +3,8 @@
  * ТЕХНО — инженерлік сызба тілі: Arial Bold тақырып, Calibri мәтін, барлық белгі-жазулар Courier New Bold (моно),
  * нөмірлер [01], кілт сөздің астында маркер жолағы, «өлшем сызығы» |—| (тақырып белгісі), пунктир бөлгіштер мен
  * байланыс сызықтары, ақ қағаз-карточкалар қарама-қарсы бұрыштарында акцент «қысқыш» белгілерімен,
- * фото ығыстырылған акцент контурымен, торлы (миллиметровка) фон. Атмосфера/жылтыр жоқ — тек сызба.
+ * фото ығыстырылған акцент контурымен, торлы (миллиметровка) фон, «сызғыш» тақырып белгісі. Мұқаба: фото таза әрі
+ * ашық, тақырып — сызбаның «штампы» сияқты торлы қағаз блокта. Атмосфера/жылтыр жоқ — тек сызба.
  *
  * Ескерту: ::before/::after ішіндегі МӘТІН PPTX-ке түспейді (textLayer тек DOM мәтінін оқиды) —
  * сондықтан псевдо-элементтер тек графика (сызық, бұрыш, тор).
@@ -20,9 +21,10 @@ const GRID_LINES = (pct) => `linear-gradient(color-mix(in srgb,var(--text) ${pct
 const A = 'linear-gradient(var(--accent),var(--accent))';
 // карточка бұрыштары: сол-жоғары және оң-төмен «қысқыш» (фонның бөлігі → PPTX-те суретпен бірге)
 const TICKS = `${A} 0 0/26px 4px no-repeat,${A} 0 0/4px 26px no-repeat,${A} 100% 100%/26px 4px no-repeat,${A} 100% 100%/4px 26px no-repeat`;
-// сызғыш белгісі: негізгі сызық + шеттерінде биік, ортасында орташа, ширектерінде қысқа бөліктер
-const DIM = `${A} 0 100%/100% 2px no-repeat,${A} 0 100%/2px 100% no-repeat,${A} 100% 100%/2px 100% no-repeat,` +
-  `${A} 50% 100%/2px 70% no-repeat,${A} 25% 100%/2px 42% no-repeat,${A} 75% 100%/2px 42% no-repeat`;
+// сызғыш белгісі (линейка): негізгі сызық + бөліктер — шеттері толық, ортасы ~3/4, ширектері ~1/2, сегізден бірі ~1/3
+const TICK = (x, h) => `${A} ${x}% 100%/2px ${h}% no-repeat`;
+const DIM = [`${A} 0 100%/100% 2px no-repeat`, TICK(0, 100), TICK(100, 100), TICK(50, 78),
+  TICK(25, 56), TICK(75, 56), TICK(12.5, 36), TICK(37.5, 36), TICK(62.5, 36), TICK(87.5, 36)].join(',');
 
 module.exports = {
   id: 'mono',
@@ -49,7 +51,7 @@ module.exports = {
       // ── моно белгі-жазулар: Courier New Bold, бас әріпсіз, контрасты ──
       `${sel('.kicker,.folio,.row-n,.meta-k,.stat-ix,.concept-n,.hn-n,.data-table th,.ig-source,.cover-org,.ref-n,.qwho,.st-n')}{font-family:${MONO};letter-spacing:0;text-transform:none}`,
       `${S} .kicker{font-size:22px;font-weight:700;color:var(--accent)}`,
-      `${S} .meta-k{font-size:20px;font-weight:700;color:var(--text2)}${S} .meta-row.is-dense .meta-k{font-size:20px}`,
+      `${S} .meta-k{font-size:20px;font-weight:700;color:color-mix(in srgb,var(--text) 72%,transparent)}${S} .meta-row.is-dense .meta-k{font-size:20px}`,
       `${S} .cover-org{font-size:24px;font-weight:700;color:var(--text)}`,
       `${S} .stat-ix{font-size:20px;font-weight:700;color:var(--text2)}`,
       `${S} .concept-n,${S} .hn-n{font-size:22px;font-weight:700;color:var(--accent)}`,
@@ -73,14 +75,14 @@ module.exports = {
       `${S} .slide .on-accent .title .hl{text-decoration:none}`,
 
       // ── өлшем сызығы |———| (тақырып белгісі, дәйексөз белгісі) ──
-      `${S} .rule,${S} .qrule{height:16px;border:0;border-radius:0;background:${DIM}!important}`,
-      `${S} .rule{width:112px!important}`,
+      `${S} .rule,${S} .qrule{height:18px;border:0;border-radius:0;background:${DIM}!important}`,
+      `${S} .rule{width:130px!important}`,
 
       // ── қосалқы мәтін: базалық сұрдан қоюырақ (дауыстап оқылады), мөлдірлікпен → кез келген бетте дұрыс ──
       `${sel('.lead,.para,.row-d,.concept-d,.stat-l,.tl-txt,.notes li')}{color:color-mix(in srgb,var(--text) ${light ? 80 : 84}%,transparent)}`,
       // мәтін абзацтары: бос шаршы маркер (уақыт сызығының түйіні сияқты)
       `${S} .prose p{position:relative;padding-left:40px}`,
-      `${S} .prose p::before{content:'';position:absolute;left:0;top:.62em;width:10px;height:10px;border:2px solid var(--accent)}`,
+      `${S} .prose p::before{content:'';position:absolute;left:0;top:.6em;width:12px;height:12px;border:2px solid var(--accent)}`,
 
       // ── тізім: [01] моно нөмір мәтіннің бірінші жолымен бір сызықта, пунктир бөлгіштер ──
       `${S} .row{align-items:baseline;border-bottom:1px dashed var(--line)}${S} .rows{border-top:0}${S} .row:first-child{border-top:1px dashed var(--line)}`,
