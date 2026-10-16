@@ -779,8 +779,9 @@ async function generatePresentation(userInput, options = {}) {
       }
     }
 
-    // Vision Art Director: look at rendered PNGs → redesign → optional re-render
-    try {
+    // Ескі Vision Art Director: тек VISION_CRITIC=1 болғанда. Кілтсіз ол PNG көлеміне қарап «бос» деп шешіп,
+    // слайд мазмұнын қиып қайта рендерлейтін (+30 с, композицияларды бұзады) — оның орнын DeepSeek визуал тексерісі басты.
+    if (process.env.VISION_CRITIC === '1') try {
       await onProgress('vision', 'Визуал сын (Art Director)...');
       const vision = await runVisionCritic({ slides, pngPaths, title, topic });
       visionMeta = {
