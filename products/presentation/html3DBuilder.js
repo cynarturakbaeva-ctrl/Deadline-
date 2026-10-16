@@ -262,6 +262,8 @@ function buildNew(slides, presentationTitle, opts) {
     const c0 = (list[0] && list[0].composition) || {};
     ctxDeck.decorUsed = new Set();
     ctxDeck.compEnv = { used: ctxDeck.decorUsed, comps: new Set(), recent: opts.recentComps || [], seed: Number(c0.layoutSeed) >>> 0 || 0 };
+    // бекітілген (pin) композициялар алдын ала «қолданылған» — қайта жасалған слайд оларды қайталамайды
+    list.forEach((s) => { const pin = s && s.composition && s.composition.cx && s.composition.cx.pin; if (pin) ctxDeck.compEnv.comps.add(pin); });
   }
   const cut0 = A.truncate.count;
   // инфографика мәтінін өлшеу жүйенің мәтін қарпімен (Arial Calibri-ден кеңірек)

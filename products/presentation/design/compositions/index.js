@@ -340,12 +340,14 @@ function compose(ctx, env) {
   if (!sh) return null;
   const cx = (ctx.a.slideRef && ctx.a.slideRef.composition && ctx.a.slideRef.composition.cx) || {};
   const avoid = Array.isArray(cx.avoid) ? cx.avoid : [];
-  const cands = COMPS.filter((c) => c.kind === sh.kind && !avoid.includes(c.id) && !(c.systems && !c.systems.includes(ctx.sys && ctx.sys.id)) && safeFits(c, ctx.a, sh, ctx.sys));
+  // визуал тексерістен кейін: тексеруден өткен слайд сол композицияда қалады (pin)
+  const pinned = cx.pin ? COMPS.find((c) => c.id === cx.pin && c.kind === sh.kind && safeFits(c, ctx.a, sh, ctx.sys)) : null;
+  const cands = pinned ? [pinned] : COMPS.filter((c) => c.kind === sh.kind && !avoid.includes(c.id) && !(c.systems && !c.systems.includes(ctx.sys && ctx.sys.id)) && safeFits(c, ctx.a, sh, ctx.sys));
   if (!cands.length) return null;
-  const fresh = cands.filter((c) => !env.comps.has(c.id));
+  const fresh = pinned ? cands : cands.filter((c) => !env.comps.has(c.id));
   const pool0 = fresh.length ? fresh : (sh.kind === 'concepts' ? [] : cands);
   if (!pool0.length) return null;
-  const notRecent = pool0.filter((c) => !(env.recent || []).includes(c.id));
+  const notRecent = pinned ? pool0 : pool0.filter((c) => !(env.recent || []).includes(c.id));
   const pool = notRecent.length ? notRecent : pool0;
   const c = pool[Math.abs((env.seed || 0) + ctx.a.index * 7 + (cx.seed || 0)) % pool.length];
   const v = variantFor(env, ctx.a, c.id, cx);
