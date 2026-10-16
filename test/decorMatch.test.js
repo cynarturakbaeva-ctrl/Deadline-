@@ -7,7 +7,7 @@ const tags = (t) => Object.keys(D.THEMES).filter((k) => D.THEMES[k].test(t));
 const icons = (t) => D.pickIconDecor(t, new Set(), 2).map((x) => x.name);
 
 test('decor themes match word stems, not fragments inside other words', () => {
-  for (const t of ['Клиент портреті', 'Алгоритм сортировки', 'Start the chart', 'We have been there', 'Тауар нарығы', 'Жергілікті нарық', 'Ала алмау', 'Pressure', 'Свою работу']) {
+  for (const t of ['Клиент портреті', 'Алгоритм сортировки', 'Start the chart', 'We have been there', 'Тауар нарығы', 'Жергілікті нарық', 'Ала алмау', 'Pressure', 'Свою работу', 'Абай кемелдікті көреді']) {
     assert.deepStrictEqual(tags(t), [], t);
   }
   assert.ok(tags('Қазақ хандығы').includes('crown'));

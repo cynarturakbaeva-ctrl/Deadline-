@@ -47,6 +47,10 @@ function shapeOf(a) {
       return { date: ym ? ym[1] : m.label, label: ym && ym[2] ? ym[2].replace(/^[—–:-]\s*/, '') : '', detail: m.detail };
     }) };
   }
+  if (!items.length) {
+    const text = String(a.body || a.subtitle || '').trim();
+    return text.length <= 260 && a.title ? { kind: 'statement', text } : null;
+  }
   if (a.body) return null;
   const short = items.every((m) => m.label.length <= 34 && (m.detail || '').length <= 110);
   if (a.hasPhoto && items.length >= 3 && items.length <= 5 && items.every((m) => (m.label + ' ' + (m.detail || '')).length <= 130)) return { kind: 'photoList', items };
@@ -295,6 +299,8 @@ def({
     return { bg, fg: fg + H.folio(ctx), cls: 'cx-slide' };
   },
 });
+
+require('./more')(def, { P, H, I, esc, t, tb, fs, disp, wrap, wrapB, MX, MT, MB, W, HH });
 
 /**
  * Композиция таңдау. env: { used:Set (әшекей), comps:Set (колодада қолданылған), recent:string[], seed:number }
