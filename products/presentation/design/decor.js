@@ -139,6 +139,58 @@ function pickDecorSet(text, used, seed = 0, max = 2) {
   return out;
 }
 
+
+// ── Заманауи жүйелер үшін: мағынасына сай ірі жіңішке белгіше (Lucide, ISC) ──
+const ICON_THEMES = [
+  [/бағдарлама|код|программ|код |software|code|programming|developer/i, ['code-xml', 'braces', 'terminal']],
+  [/жасанды интеллект|нейрон|машиналық оқыту|ии |искусственн|нейросет|машинн|artificial intelligence|\bai\b|neural|machine learning/i, ['brain-circuit', 'bot', 'cpu']],
+  [/дерек|база|деректер|данн|база данных|data|database|big data/i, ['database', 'chart-scatter', 'server']],
+  [/желі|интернет|бұлт|сеть|интернет|облак|network|internet|cloud/i, ['network', 'cloud', 'globe']],
+  [/қауіпсіздік|киберқауіп|шифр|безопасн|кибер|шифр|security|cyber|encrypt/i, ['shield-check', 'lock-keyhole', 'fingerprint']],
+  [/робот|автоматтандыру|автоматизац|robot|automation/i, ['bot', 'cog', 'workflow']],
+  [/инженер|құрылыс|механика|жобалау|инженер|строител|механик|проектир|engineer|construction|mechanic|design/i, ['drafting-compass', 'ruler', 'hard-hat']],
+  [/энергия|электр|мұнай|газ|энерг|электр|нефт|energy|electric|oil|gas|power/i, ['zap', 'fuel', 'battery-charging']],
+  [/теңіз|кеме|порт|навигация|море|судно|корабл|порт|навигац|sea|ship|maritime|port|navigation/i, ['ship', 'anchor', 'compass']],
+  [/ғарыш|спутник|космос|спутник|space|satellite|rocket/i, ['rocket', 'satellite', 'orbit']],
+  [/нарық|бәсеке|маркетинг|сату|рынок|конкурен|маркетинг|продаж|market|competit|marketing|sales/i, ['target', 'megaphone', 'chart-pie']],
+  [/қаржы|табыс|пайда|инвестиция|бюджет|финанс|доход|прибыл|инвестиц|бюджет|financ|revenue|profit|invest|budget/i, ['trending-up', 'wallet', 'coins']],
+  [/бизнес|кәсіпкер|компания|стартап|бизнес|предприним|компани|стартап|business|entrepreneur|company|startup/i, ['briefcase-business', 'rocket', 'building-2']],
+  [/менеджмент|басқару|ұйым|команда|менеджмент|управлен|организац|команд|management|leadership|organization|team/i, ['users', 'network', 'layers']],
+  [/туризм|саяхат|маршрут|туризм|путешеств|маршрут|tourism|travel|route/i, ['map', 'plane', 'mountain-snow']],
+  [/логистика|жеткізу|көлік|логистик|достав|транспорт|logistic|delivery|transport/i, ['truck', 'package', 'route']],
+  [/экономика|жіө|инфляция|экономик|ввп|инфляц|econom|gdp|inflation/i, ['chart-line', 'landmark', 'scale']],
+  [/статистика|талдау|зерттеу|статист|анализ|исследован|statistic|analys|research/i, ['chart-column', 'search', 'microscope']],
+  [/медицина|денсаулық|ауру|медицин|здоров|болезн|medic|health|disease/i, ['heart-pulse', 'stethoscope', 'pill']],
+  [/экология|қоршаған орта|климат|эколог|окружающ|климат|ecolog|environment|climate/i, ['leaf', 'sprout', 'recycle']],
+  [/білім|оқу|сабақ|университет|образован|обучен|урок|университет|education|learning|university/i, ['graduation-cap', 'book-open', 'school']],
+  [/идея|инновация|шешім|идея|инновац|решени|idea|innovation|solution/i, ['lightbulb', 'sparkles', 'puzzle']],
+];
+const ICON_DIR = path.join(A, 'icons', 'lucide.json');
+let LUC = null;
+/** Мағынасына сай белгішелер (1–2): [{name}] не бос */
+function pickIconDecor(text, used, max = 2) {
+  const t = String(text || '');
+  if (!LUC) { try { LUC = JSON.parse(fs.readFileSync(ICON_DIR, 'utf8')); } catch { LUC = {}; } }
+  const out = [];
+  for (const [re, names] of ICON_THEMES) {
+    if (!re.test(t)) continue;
+    const name = names.find((n) => LUC[n] && !(used && used.has('ic:' + n)));
+    if (!name) continue;
+    if (used) used.add('ic:' + name);
+    out.push({ name, role: out.length ? 'pair' : 'main' });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+/** Белгіше → data URI (жіңішке сызық, берілген түс) */
+function iconUri(name, color, stroke = 1.1) {
+  if (!LUC) { try { LUC = JSON.parse(fs.readFileSync(ICON_DIR, 'utf8')); } catch { LUC = {}; } }
+  const body = LUC[name];
+  if (!body) return '';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="480" height="480" fill="none" stroke="' + color + '" stroke-width="' + stroke + '" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+  return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+}
+
 const cache = new Map();
 function decorUri(file) {
   if (cache.has(file)) return cache.get(file);
@@ -199,7 +251,8 @@ function placeDecor(only) {
         for (var q = 0; q < spots.length; q++) if (fits(spots[q][0], spots[q][1])) { placed = { x: spots[q][0], y: spots[q][1], w: pw, h: ph }; break; }
       }
       if (!full && !placed) {
-        var sizes = [400, 340, 280, 220, 170];
+        var mx = parseFloat(img.getAttribute('data-max')) || 400;
+        var sizes = [400, 340, 280, 220, 170].filter(function (v) { return v <= mx; });
         outer: for (var s = 0; s < sizes.length; s++) {
           var h = sizes[s]; var w = Math.min(h * ar, 560); h = w / ar;
           // бұрыштарға жақын орындар бірінші (оң-төмен → оң-жоғары → сол-төмен → сол-жоғары), сосын шеттер бойымен
@@ -231,4 +284,4 @@ function placeDecor(only) {
 }
 /* eslint-enable no-var */
 
-module.exports = { pickDecor, pickDecorSet, decorUri, placeDecor, THEMES, PAIRS };
+module.exports = { pickDecor, pickDecorSet, decorUri, placeDecor, pickIconDecor, iconUri, THEMES, PAIRS };

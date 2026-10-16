@@ -173,6 +173,15 @@ function renderSlide(slide, index, plan, ctxDeck) {
     out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   }
   // Мағыналы әшекей (Мұра): слайд мазмұнына сай ескі гравюра; сай тақырып жоқ → әшекей жоқ. Орнын рендер өлшейді.
+  // Заманауи жүйелер: мағынасына сай ірі жіңішке белгіше (Lucide), орнын рендер өлшейді
+  if (ctxDeck.sys && ctxDeck.sys.iconDecor && out && !/^(fullImage|table|infographic|split|imageFocus)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2) && !(index === 0 && plan.a.hasPhoto)) {
+    const D = require('./design/decor');
+    ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
+    const s = slide || {};
+    const text = (index === 0 ? deckTitle + ' ' : '') + [s.title, s.subtitle].concat(Array.isArray(s.bullets) ? s.bullets : []).map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).join(' ');
+    const imgs = D.pickIconDecor(text, ctxDeck.decorUsed, 2).map((h) => '<img class="decor decor-icon" data-max="' + (ctxDeck.sys.iconMax || 300) + '" data-decor="' + h.role + '" alt="" aria-hidden="true" src="' + D.iconUri(h.name, palette.accent, ctxDeck.sys.iconStroke || 1.1) + '">').join('');
+    if (imgs) { ctxDeck.lastDecor2 = ctxDeck.lastDecor; ctxDeck.lastDecor = index; out = { ...out, bg: (out.bg || '') + imgs }; }
+  }
   if (ctxDeck.sys && ctxDeck.sys.decor && out && !/^(fullImage|table|infographic)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2)) {
     const D = require('./design/decor');
     ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
