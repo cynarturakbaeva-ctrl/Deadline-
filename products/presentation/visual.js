@@ -38,11 +38,11 @@ function flag(v, d) {
   return !/^(0|false|no|off)$/i.test(String(v).trim());
 }
 
-// Бағалар: $/1M токен. Anthropic — ресми құжаттан (Sonnet 5: $2/$10).
+// Бағалар: $/1M токен. Anthropic — ресми құжаттан (Sonnet 5.5: $2/$10).
 // DeepSeek — peak кезіндегі (қымбат) баға, консервативті есеп үшін.
 const PROVIDER_DEFAULTS = {
-  deepseek:  { model: 'deepseek-v4-flash', priceIn: 0.30, priceOut: 1.20,  maxTokens: 6000 },
-  anthropic: { model: 'claude-sonnet-5',   priceIn: 2.00, priceOut: 10.00, maxTokens: 4500 },
+  deepseek:  { model: 'deepseek-flash', priceIn: 0.30, priceOut: 1.20,  maxTokens: 6000 },
+  anthropic: { model: 'claude-sonnet-5-5', priceIn: 2.00, priceOut: 10.00, maxTokens: 4500 },
 };
 
 function providerConfig(name, env) {
@@ -56,7 +56,7 @@ function providerConfig(name, env) {
     priceIn: num(env[`VISUAL_${P}_PRICE_IN`], d.priceIn),
     priceOut: num(env[`VISUAL_${P}_PRICE_OUT`], d.priceOut),
     maxTokens: Math.floor(num(env[`VISUAL_${P}_MAX_TOKENS`], d.maxTokens)),
-    // Sonnet 5-те adaptive thinking әдепкіде ҚОСУЛЫ (ресми құжат) — өшірмесек, thinking токендері де ақыланады.
+    // Sonnet 5.5-те adaptive thinking әдепкіде ҚОСУЛЫ (ресми құжат) — өшірмесек, thinking токендері де ақыланады.
     sendThinkingDisabled: flag(env[`VISUAL_${P}_THINKING_DISABLED`], true),
   };
 }

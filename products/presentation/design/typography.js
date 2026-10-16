@@ -10,6 +10,8 @@ const { TYPE_SCALE } = require('./tokens');
 function glyphEm(kind, weight) {
   // measured on Kazakh text with the deck fonts (Calibri ≈ Carlito, Times New Roman ≈ Liberation Serif) + ~2% margin
   if (kind === 'serif') return weight >= 600 ? 0.55 : 0.515;
+  // Arial (Liberation Sans) Calibri-ден ~8% кең: fontMetrics бойынша 0.532 / 0.578 + қор
+  if (kind === 'arial') return weight >= 600 ? 0.6 : 0.56;
   return weight >= 600 ? 0.535 : 0.515;
 }
 

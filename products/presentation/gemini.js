@@ -10,7 +10,7 @@ const { recordApiUsage } = require('../../core/cost');
 // (≈4₸) түседі, өзіндік rate limit те әлдеқайда жоғары (RPM/TPM шегі
 // ресми жарияланбаған, бірақ Groq-тың тегін 6000 TPM-нен әлдеқайда кең).
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_MODEL   = 'deepseek-v4-flash';
+const DEEPSEEK_MODEL   = 'deepseek-flash';
 
 // Ескерту: batch-архитектура (SLIDES_PER_BATCH, MAX_TOKENS_PER_CALL) Groq-тың
 // тар 6000 TPM лимитін айналып өту үшін жасалған еді. DeepSeek-те бұл шектеу
@@ -452,7 +452,7 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 - VARIETY WITH RHYTHM: do NOT repeat the same image type for 3+ consecutive slides. Alternate full_background, split (left/right_half), strip, and none. Cover and closing may use full_background.
 - Avoid: identical card grids every slide, pointless corner decorations, random gradients, walls of text, tiny text, generic stock clichés ("handshake business").
 - Simple content → simple powerful composition (center, large title, one idea). Dense content → full width, stronger overlay, fewer competing elements.
-- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, no baked-in text/charts/screens. Name the LITERAL thing a photo of THIS slide must show (who / what / where), so a stranger could check the photo against it — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes), never a metaphor (crossroads, puzzle, light bulb, chess, compass, ladder) and never a generic stand-in (smiling students, handshake, laptop, office) for a specific subject. Abstract slide (psychology, values, theory) → a real scene where it happens, e.g. "career counselor talking with student", "volunteers planting trees". The query must match THIS slide's point, not the student's faculty or the cover details. NO lighting, mood, colour or camera words (no "golden hour", "warm light", "inspiring mood", "cinematic", "documentary style") — they make search engines return off-topic photos.
+- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, no baked-in text/charts/screens. Name the LITERAL thing a photo of THIS slide must show (who / what / where), so a stranger could check the photo against it — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes), never a metaphor (crossroads, puzzle, light bulb, chess, compass, ladder) and never a generic stand-in (smiling students, handshake, laptop, office) for a specific subject. Abstract slide (psychology, values, theory) → a real scene where it happens, e.g. "career counselor talking with student", "volunteers planting trees". The query must match THIS slide's point, not the student's faculty or the cover details. ONE subject per query: never join two people/places with "and" (no photo shows Abai and Al-Farabi together — pick the one this slide is about) and never ask for a collage, diagram, comparison, chart or infographic (those are not photos). NO lighting, mood, colour or camera words (no "golden hour", "warm light", "inspiring mood", "cinematic", "documentary style") — they make search engines return off-topic photos.
   • Named subject (a person, historical event, battle, artwork, building, city, organisation, scientific term): write its exact English name first, plus what kind of image fits — e.g. "Florence Nightingale portrait", "Battle of Balaclava painting", "Khoja Ahmed Yasawi mausoleum", "Max Weber portrait", "enzyme substrate molecular model". Real historical events get period paintings, archive photos or maps — never modern reenactors.
   • General subject: concrete scene with the key object — e.g. "elementary pupils raising hands classroom", "landfill aerial view", "geologist examining rock outcrop".
   Translate the slide idea into English yourself; required on EVERY slide, also on infographic/table slides with image "none" (the code may still give that slide a photo).
@@ -461,10 +461,11 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 
 const CONTENT_RULES = `CONTENT & LANGUAGE (teach, do not encyclopedia-dump):
 - title: 4-8 words, concrete, no vague "Introduction/Overview/Basics" alone
-- READABLE SLIDES: students present by reading the slide aloud, and teachers grade a slide with only 2-word labels as empty. Every content slide must carry complete, informative sentences — but never a wall of text. (When TEMPLATE SLOT rules are given above, their slot types and lengths win over this.)
-- subtitle: always present, 1-2 complete sentences (12-30 words) that explain the slide's point in plain words
-- body: optional; 1-2 sentences when bullets cannot carry the point
-- bullets: 3-4 items, each ONE complete sentence of 8-16 words with a concrete fact, cause or example (subject + verb), e.g. "Партиялар қаражатының қайдан келгенін жыл сайын жария түрде есеп береді", NOT a bare label like "Қаржы ашықтығы" — one idea each, no filler
+- A SLIDE IS NOT A PAGE: at most ~30 words of visible text per slide. The full explanation the student reads aloud goes to the speaker notes (generated separately) — never pack it onto the slide. (When TEMPLATE SLOT rules are given above, their slot types and lengths win over this.)
+- subtitle: always present, ONE short sentence (6-14 words) — the slide's takeaway
+- body: null (do not write body text on slides)
+- bullets: 3-4 items, each "Key term — short fact" (2-3 word term, " — ", then 3-8 words), e.g. "Ақыл — білім мен ойлау қабілеті", NOT a full sentence of 15 words and NOT a bare label alone — one idea each, no filler
+- STEP / LEVEL / DATE slides (visualPurpose "process", "hierarchy" or "timeline"): write every bullet as "short label — phrase": a 1-4 word label, a spaced dash " — ", then 4-9 words, e.g. "Деректерді жинау — спутниктер мен далалық өлшеулер учаскенің шекарасын нақтылайды". Timeline labels are the date or year ("1997 — ...").
 - stats: ONLY real numbers from the client brief or universally known facts; labels 2-5 words. If unsure, set stats null
 - table: ONLY for a true side-by-side comparison of 2+ things across the same attributes; at most ONE table per 4 slides and NEVER on two adjacent slides. Everything else is bullets, stats, body text or a diagram — a deck where most slides are tables is a failure. Default for "table" is null.
 - Vary slide forms across the deck: mix bullets, one big stat, short statement, quote, process/timeline, comparison — never the same form 3 slides in a row.
@@ -504,7 +505,7 @@ const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram lib
   • prosCons — advantages vs disadvantages: items with group "pro" or "con" (2-5 each); headers = 2 column titles.
   • roadmap — 3-6 milestones in time: value = date/year, label = milestone, detail = 1 short line.
   • iconGrid — 3-6 key aspects/features/directions with an icon each; detail = 1 sentence.
-- label ≤ 4 words, detail ≤ 12 words, value keeps its unit as text ("72%", "4,2 млн", "2019"). Write labels in the presentation language.
+- label ≤ 4 words, value keeps its unit as text ("72%", "4,2 млн", "2019"). detail length depends on the kind (the drawing has little room): venn, funnel, pyramid, cycle, roadmap → detail ≤ 8 words; matrix, iconGrid → detail ≤ 12 words. A longer detail does not fit the drawing. Write labels in the presentation language.
 - icon (optional, English): one of users, user, graduation-cap, book-open, school, briefcase, building-2, landmark, factory, globe, map-pin, leaf, tree-pine, sun, droplets, flame, zap, cpu, monitor, smartphone, wifi, database, cloud, shield, lock, heart-pulse, stethoscope, microscope, flask-conical, atom, dna, brain, lightbulb, target, trophy, award, star, flag, rocket, trending-up, trending-down, coins, wallet, shopping-cart, truck, car, plane, house, wrench, settings, scale, file-text, calendar, clock, message-circle, megaphone, handshake, puzzle, layers, network, recycle, wheat, mountain, waves, music, palette, camera, history, crown, swords, castle, baby, apple, sprout, church, scroll, newspaper, vote, bot.
 - Numbers: use real, well-established figures you are confident about (statistics, dates, shares); add "source" (organisation + year) when you know it.
 - A slide with an infographic still has title + subtitle; the subtitle is a 1-2 sentence takeaway that reads the data aloud (what it shows and why it matters, e.g. "2015 жылдан бері индекс 28-ден 39 балға өсті: бұл реформалардың нәтижесі"); bullets may be null. Default for "infographic" is null.`;
@@ -616,7 +617,21 @@ Each slideTopics entry must be specific enough to guide detailed content generat
   if (!parsed?.slideTopics || !Array.isArray(parsed.slideTopics)) {
     throw new Error('Outline missing slideTopics array');
   }
-
+  // Студент сұраған слайд санын алуы керек (8 сұрап 7 алғаны — нақты шағым): көп болса — қорытынды сақталып
+  // ортасы қысқарады; аз болса — модельден бір рет толықтыру сұралады.
+  const clean = (list) => (Array.isArray(list) ? list.filter((t) => typeof t === 'string' && t.trim()) : []);
+  let topics = clean(parsed.slideTopics);
+  if (topics.length > slideCount) topics = topics.slice(0, slideCount - 1).concat(topics[topics.length - 1]);
+  if (topics.length < slideCount) {
+    console.warn(`[Pipeline] outline has ${topics.length}/${slideCount} slides — asking to complete it`);
+    const fix = user + `\n\nIMPORTANT: your previous outline had only ${topics.length} slides: ${JSON.stringify(topics)}. `
+      + `Return exactly ${slideCount} slideTopics: keep these, and add ${slideCount - topics.length} more content slide(s) before the closing slide.`;
+    try {
+      const again = clean(parseJSON(await groqChat(system, fix, 'generateOutline:fix'))?.slideTopics);
+      if (again.length >= slideCount) topics = again.slice(0, slideCount - 1).concat(again[again.length - 1]);
+    } catch (err) { console.warn(`[Pipeline] outline fix failed: ${err.message}`); }
+  }
+  parsed.slideTopics = topics;
   return parsed;
 }
 
@@ -817,14 +832,14 @@ ${batchJSON}
 Fix only:
 - Text readability over images (fix overlay or textPosition)
 - Title too long (>10 words) → shorten
-- Subtitle longer than 35 words → trim to at most 2 sentences
-- Body longer than 40 words → trim
+- Subtitle longer than 16 words → trim to one short sentence
+- Body present → remove it (slides carry no paragraphs; details live in speaker notes)
 - full_background + dark_gradient_left → textPosition must be center_left
 - full_background + dark_gradient_right → textPosition must be center_right
 - Too many bullets (>5) → keep the strongest 3-4
-- Each bullet >20 words → shorten slightly (keep it a complete sentence; never cut bullets down to bare labels)
+- Each bullet >12 words → shorten to "Key term — short fact" (never a bare 1-word label)
 - full_background + overlay=none → add dark_gradient_bottom
-- Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words
+- Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words; two subjects joined by "and" → keep only the one this slide is about
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"
 - If 2+ stats with right_half/left_half image → change image to full_background
 - Do NOT touch the "visual" field (leave it exactly as given)
@@ -875,5 +890,5 @@ async function reviewAndImproveSlides(presentation) {
   return { ...presentation, slides: allReviewed };
 }
 
-module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, coverCreditItems, ensureIntroSlide, introTitleFor, languageMismatch };
+module.exports = { generateSlides, generateOutline, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, coverCreditItems, ensureIntroSlide, introTitleFor, languageMismatch };
                                                                                                                                        

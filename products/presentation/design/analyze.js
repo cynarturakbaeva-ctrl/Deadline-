@@ -17,6 +17,9 @@ function splitLabelDetail(text) {
   const s = String(text == null ? '' : text);
   const idx = s.indexOf(':');
   if (idx > 0 && idx < 42) return { label: s.slice(0, idx).trim(), detail: s.slice(idx + 1).trim() };
+  // «Ақыл — білім мен ойлау қабілеті»: қысқа термин + бос орынды сызықша (жаңа мазмұн пішімі)
+  const m = s.match(/^(.{2,40}?)\s+[—–]\s+(.+)$/);
+  if (m && m[1].split(/\s+/).length <= 5) return { label: m[1].trim(), detail: m[2].trim() };
   return { label: s.trim(), detail: '' };
 }
 function toNode(raw) {
@@ -32,13 +35,24 @@ function toNode(raw) {
   const m = String(raw == null ? '' : raw).match(/^(.{4,48}?)\s+[—–-]\s+(.{6,})$/);
   return m ? { label: m[1].trim(), detail: m[2].trim() } : sp;
 }
+/**
+ * Shorten text to maxLen WITHOUT an ellipsis: prefer the end of a sentence/clause, else a word boundary.
+ * Layouts are chosen so this rarely fires; every cut is counted (truncate.count) and reported by the QA log,
+ * because a shortened sentence is still lost content.
+ */
 function truncate(text, maxLen) {
-  const s = String(text || '');
+  const s = String(text || '').trim();
   if (s.length <= maxLen) return s;
-  const cut = s.slice(0, maxLen);
+  truncate.count += 1;
+  const cut = s.slice(0, maxLen + 1);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (end >= maxLen * 0.5) return cut.slice(0, end + 1).trim();
+  const clause = Math.max(cut.lastIndexOf(', '), cut.lastIndexOf('; '), cut.lastIndexOf(' — '), cut.lastIndexOf(' – '));
+  if (clause >= maxLen * 0.55) return cut.slice(0, clause).replace(/[\s,;:–—-]+$/, '').trim();
   const sp = cut.lastIndexOf(' ');
-  return (sp > maxLen * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:–—-]+$/, '') + '…';
+  return (sp > maxLen * 0.5 ? cut.slice(0, sp) : s.slice(0, maxLen)).replace(/[\s,;:–—-]+$/, '').trim();
 }
+truncate.count = 0;
 
 /** Numeric value that is safe to count-up (dates, ranges, centuries are NOT). */
 function parseStatNumber(v) {
@@ -96,7 +110,7 @@ function imageMeta(url) {
 
 const RE = {
   conclusion: /қорытынды|conclusion|резюме|takeaway|итог|заключен|summary/i,
-  references: /әдебиет|reference|пайдаланылған|библиограф|литератур|источник|sources/i,
+  references: /әдебиет|\breferences?\b|пайдаланылған|библиограф|литератур|источник|\bsources\b/i,
   section: /^(бөлім|тарау|раздел|глава|part|section|chapter)\b/i,
 };
 
@@ -143,7 +157,7 @@ function analyzeSlide(slide, index, total) {
     bulletWords, bodyWords, textWords, labeled, dated,
     longestBullet: bullets.reduce((m, b) => Math.max(m, String(b).length), 0),
     hasVisual: isVisualSvg(s.visualSvg),
-    photo: photoUrl, img, hasPhoto: !!photoUrl,
+    photo: photoUrl, img, hasPhoto: !!photoUrl, imgAI: s.imageSource === 'ai',
     purpose,
     nodes: { timeline: nodeSrc(timelineNodes), steps: nodeSrc(stepNodes), hierarchy: nodeSrc(hierNodes) },
     explicit: {
@@ -199,7 +213,8 @@ function classify(a) {
   // Short definition-like slide without bullets
   if (!a.bullets.length && a.bodyWords > 0 && a.bodyWords < 28) return a.hasPhoto ? 'split' : 'statement';
   // Photo + text
-  if (a.hasPhoto && a.bulletWords + a.bodyWords <= 60) return 'split';
+  // subtitle да бағанға кіреді: сыймайтын мәтінді фотомен бір бағанға тықпаймыз (QA соңғы буллетті жасыратын)
+  if (a.hasPhoto && a.bulletWords + a.bodyWords + wc(a.subtitle) <= 56) return 'split';
   // Bullets (with or without body)
   if (a.bullets.length >= 2 || a.bullets.length === 1) return 'points';
   return a.hasPhoto ? 'split' : 'statement';
@@ -246,11 +261,15 @@ function planDeck(slides) {
     return base;
   });
 
+  // Колоданың ырғақ «тұқымы» (applyDeckTheme жазады): бір мазмұн әр генерацияда басқа ырғақпен құрылады —
+  // фото қай жақтан басталады, қатар келген бірдей слайдтың баламасы қайсы. Тұқымсыз → бұрынғыдай (детерминді).
+  const c0 = (slides[0] && slides[0].composition) || {};
+  const seed = Number.isFinite(Number(c0.layoutSeed)) ? Number(c0.layoutSeed) >>> 0 : 0;
   // Alternatives that keep meaning but change the composition.
   const ALT = {
-    points: ['editorial', 'split'],
+    points: seed & 4 ? ['split', 'editorial'] : ['editorial', 'split'],
     editorial: ['points'],
-    split: ['imageFocus', 'points'],
+    split: seed & 8 ? ['points', 'imageFocus'] : ['imageFocus', 'points'],
     imageFocus: ['split'],
     statement: ['imageFocus'],
   };
@@ -267,12 +286,17 @@ function planDeck(slides) {
     }
   }
 
-  // Alternate image side for image-bearing layouts; number sections.
-  let flip = false; let sec = 0;
+  // Сурет жағы фото-слайдтар арасында, тақырып жағы мәтін-слайдтар арасында ӨЗ АЛДЫНА кезектеседі
+  // (бұрын бір ортақ санауыш еді: «split L, points R, split L» — екі фото бір жақта, editorial бәрі бір жақта).
+  const side = { photo: !!(seed & 1), text: !!(seed & 2) };
+  const fam = (l) => (l === 'split' || l === 'imageFocus' ? 'photo' : l === 'editorial' || l === 'points' ? 'text' : null);
+  let sec = 0;
   plan.forEach((p) => {
     if (p.layout === 'section') { sec += 1; p.section = sec; }
-    if (p.flipLocked) { flip = !p.flip; return; }
-    if (['split', 'imageFocus', 'editorial', 'points'].includes(p.layout)) { p.flip = flip; flip = !flip; }
+    const f = fam(p.layout);
+    if (!f) return;
+    if (p.flipLocked) { side[f] = !p.flip; return; }
+    p.flip = side[f]; side[f] = !side[f];
   });
   return plan;
 }

@@ -4,7 +4,8 @@ const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
 const { pathToFileURL } = require('url');
-const { extractTextLayer, hideText } = require('./textLayer');
+const { extractTextLayer, hideText, textLeaks } = require('./textLayer');
+const { fitSvgLabels } = require('./svgFit');
 
 const SLIDE_W = 1920;
 const SLIDE_H = 1080;
@@ -80,6 +81,7 @@ async function renderHtmlToPngs(htmlPath) {
   const bgPaths = [];      // мәтінсіз фон (өңделетін PPTX үшін)
   const textLayers = [];   // әр слайдтың мәтін блоктары (орны, жолдары, стилі)
   const overflowWarnings = [];
+  const bgLeaks = [];       // PPTX фонында жасырылмай қалған мәтін (болмауы керек)
 
   const browser = await launchBrowser(puppeteer);
 
@@ -107,6 +109,14 @@ async function renderHtmlToPngs(htmlPath) {
       } else if (rep.fs < 1 || rep.dropped) {
         console.log('[Render] слайд ' + rep.index + ' авто-түзетілді: fs=' + rep.fs + (rep.dropped ? ' trimmed=' + rep.dropped : ''));
       }
+    }
+
+    // Модель салған сызбадағы жазу өз пішінінен (таблетка/шеңбер) шықса — сол жазудың қаріпі кішірейеді
+    try {
+      const fixed = (await page.evaluate(fitSvgLabels)) || [];
+      fixed.forEach((r) => console.log('[Render] сызба ' + (r.figure + 1) + (r.error ? ' тексерілмеді: ' + r.error : ': ' + r.labels + ' жазу пішініне сыйғызылды')));
+    } catch (e) {
+      console.warn('[Render] svg fit unavailable:', e.message);
     }
 
     // Экспортқа кедергі болатын интерфейсті жасырамыз (батырмалар, нүктелер, подсказка, прогресс).
@@ -213,6 +223,12 @@ async function renderHtmlToPngs(htmlPath) {
       try {
         layer = await page.evaluate(extractTextLayer, i);
         await page.evaluate(hideText, true);
+        // фон суретінде мәтін қалмауы керек (әйтпесе PPTX-те сөз екі рет шығады)
+        const leaks = await page.evaluate(textLeaks, i).catch(() => []);
+        if (leaks.length) {
+          bgLeaks.push({ slide: i + 1, leaks });
+          console.warn('[Render] ⚠️ слайд ' + (i + 1) + ' фонында мәтін қалды: ' + leaks.slice(0, 3).join(' | '));
+        }
         bgPath = path.join(tmpDir, 'bg-' + String(i + 1).padStart(3, '0') + '.png');
         await stage.screenshot({ path: bgPath, type: 'png' });
       } catch (e) {
@@ -228,7 +244,7 @@ async function renderHtmlToPngs(htmlPath) {
     await browser.close();
   }
 
-  return { pngPaths, bgPaths, textLayers, tmpDir, overflowWarnings };
+  return { pngPaths, bgPaths, textLayers, tmpDir, overflowWarnings, bgLeaks };
 }
 
-module.exports = { renderHtmlToPngs };
+module.exports = { renderHtmlToPngs, launchBrowser };

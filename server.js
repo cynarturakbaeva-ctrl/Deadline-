@@ -20,7 +20,9 @@ const {
   cleanupOldJobs, REFERRALS_PER_BONUS, incrementRefCount, closeDB, backend: DB_BACKEND, saveLearnedTemplate, addLearnUse, setFeedback, getFeedbackForJob,
   scheduleRatePrompt, takeDueRatePrompts, logEvent, setUserProfile, logGen, adminData, addCredits,
   getTester, findUser, setTester, addTesterCredits, useTesterCredit, refundTesterCredit, setTesterPending, testerData,
+  getDesignMemory, pushDesignMemory,
 } = require('./db');
+const designMemory = require('./core/designMemory');
 const testerCore = require('./core/tester');
 const adminCalc = require('./core/admin');
 
@@ -31,6 +33,7 @@ const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^
 // Админ (ADMIN_CHAT_ID): Mini App-та «Админ» бөлімі ашылады, /api/admin/* тек соған
 const ADMIN_IDS = String(process.env.ADMIN_CHAT_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
 const isAdminId = (id) => ADMIN_IDS.includes(String(id));
+const MAINTENANCE = /^(1|true|on)$/i.test(String(process.env.MAINTENANCE || ''));
 const WEBAPP_URL = process.env.WEBAPP_URL || `http://localhost:${PORT}`;
 
 const templateNudged = new Set();
@@ -398,6 +401,10 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     // Тестер: күніне 3 тегін презентация (жиналмайды); алдыңғысына пікір жазылмайынша келесісі жоқ
     let isTester = false;
     const tst = await getTester(chatId).catch(() => null);
+    // Жаңарту режимі (MAINTENANCE=1): өнім «топ» деңгейге жеткенше тек админ мен белсенді тестерлер жасатады
+    if (MAINTENANCE && !isAdminId(chatId) && !testerCore.isActive(tst)) {
+      return res.status(503).json({ error: 'maintenance', message: '🛠 DeadLine жаңартылып жатыр — жақында әлдеқайда әдемі презентациялармен ораламыз!' });
+    }
     if (testerCore.isActive(tst)) {
       const block = await testerBlock(tst);
       if (block) return res.status(409).json(block);
@@ -927,7 +934,13 @@ async function executeJob(jobId) {
     if (job.payload?.refId) {
       try { referencePptx = fs.readFileSync(path.join(REF_DIR, job.payload.refId + '.pptx')); } catch {}
     }
+    // Студенттің дизайн жады: соңғы жүйелер/палитралар/суреттер қайталанбайды (оқу сәтсіз → бос жад, генерация жалғасады)
+    const memory = await getDesignMemory(chatId).catch(() => null);
+    const avoid = designMemory.avoidOptions(memory);
     const result = await generatePresentation(userInput, {
+      ...avoid,
+      // таңдалған сәтте жадқа жазамыз — студенттің қатар жіберген екінші тапсырысы сол дизайнды алмасын
+      onDesign: (d) => { if (d && d.system) pushDesignMemory(chatId, { system: d.system, mood: d.mood }).catch(() => {}); },
       language: job.payload?.language,
       mode: job.payload?.mode || 'presentation',
       materialText: job.payload?.materialText || null,
@@ -1010,6 +1023,7 @@ async function executeJob(jobId) {
       cost_tg: result.cost && result.cost.estimatedCostTg != null ? result.cost.estimatedCostTg : null,
       tokens: result.cost ? result.cost.totalTokens || null : null, duration_ms: result.durationMs || null, finished_at: Date.now(),
     }).catch(() => {});
+    if (Array.isArray(result.photoKeys) && result.photoKeys.length) pushDesignMemory(chatId, { photos: result.photoKeys }).catch(() => {});
     await markGenerationSuccess(chatId, !!result.expensiveVisuals);
     await countReferral(chatId);
     await addHistory(chatId, {

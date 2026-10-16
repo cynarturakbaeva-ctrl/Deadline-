@@ -12,6 +12,7 @@ const { fitSize, bodySize } = require('./typography');
 const { splitLabelDetail, toNode, truncate, parseStatNumber } = require('./analyze');
 const I = require('./imagery');
 const IG = require('./infographics');
+const { formatNum } = require('./systems/numbers');
 
 const esc = (v) => (v == null ? '' : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -33,16 +34,20 @@ function statShares(items) {
 }
 
 // ── shared building blocks ────────────────────────────────────────────────
-function makeCtx(a, plan, palette, ts, deckTitle) {
-  const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
+const BASE_SYS = { id: 'aurora', num: 'pad', folio: { title: true, total: true, pad: true, cover: true }, cover: 'classic', closing: 'rows' };
+function makeCtx(a, plan, palette, ts, deckTitle, sys) {
+  const head = ts.display.split(',')[0];
+  const serif = /Times|DisplayFace|serif/i.test(head);
   let i = 0;
   return {
-    a, plan, palette, ts, deckTitle, serif,
+    a, plan, palette, ts, deckTitle, serif, sys: sys || BASE_SYS,
     rv() { i += 1; return 'class="rv" style="--i:' + i + '"'; },
     rvAttr() { i += 1; return { cls: 'rv', style: '--i:' + i }; },
-    kind: serif ? 'serif' : 'sans',
+    kind: serif ? 'serif' : /Arial/i.test(head) ? 'arial' : 'sans',
   };
 }
+/** Дизайн жүйесі бойынша нөмір (01 / 1 / 1. / I / [01]) */
+const num = (ctx, n) => formatNum((ctx.sys || BASE_SYS).num, n);
 
 function el(ctx, tag, cls, inner, o = {}) {
   ctx._n = (ctx._n || 0) + 1;
@@ -85,10 +90,20 @@ const kicker = (ctx, text) => (text ? el(ctx, 'div', 'kicker', esc(text), { role
 const lead = (ctx, text, size, o = {}) => (text ? el(ctx, 'p', 'lead' + (o.cls ? ' ' + o.cls : ''), esc(text), { role: 'lead', style: '--ls:' + (size || TYPE_SCALE.lead) + 'px' + (o.maxw ? ';max-width:' + o.maxw + 'px' : '') }) : '');
 const para = (ctx, text, size, o = {}) => (text ? el(ctx, 'p', 'para' + (o.cls ? ' ' + o.cls : ''), esc(text), { role: 'text', style: '--bs:' + size + 'px' + (o.maxw ? ';max-width:' + o.maxw + 'px' : '') }) : '');
 
+/** Running title for the folio: the whole title, or its part before ':' / '—', else nothing (never a cut title). */
+function runningTitle(title, max = 46) {
+  const t = String(title || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const head = t.split(/\s*[:—–]\s+|\s*:\s*/)[0].trim();
+  return head.length >= 6 && head.length <= max ? head : '';
+}
 function folio(ctx) {
   const a = ctx.a;
-  return '<div class="folio" data-role="folio"><span class="folio-l">' + esc(truncate(ctx.deckTitle, 46)) + '</span>' +
-    '<span class="folio-r"><b>' + pad2(a.index + 1) + '</b><span class="of"> / ' + pad2(a.total) + '</span></span></div>';
+  const f = (ctx.sys && ctx.sys.folio) || BASE_SYS.folio;
+  if (a.index === 0 && f.cover === false) return '';
+  const n = (v) => (f.pad === false ? String(v) : pad2(v));
+  return '<div class="folio" data-role="folio"><span class="folio-l">' + (f.title === false ? '' : esc(runningTitle(ctx.deckTitle))) + '</span>' +
+    '<span class="folio-r"><b>' + n(a.index + 1) + '</b>' + (f.total === false ? '' : '<span class="of"> / ' + n(a.total) + '</span>') + '</span></div>';
 }
 const sectionLabel = (ctx) => {
   const s = ctx.a.slideRef || {};
@@ -105,7 +120,7 @@ function listRows(ctx, items, o = {}) {
     const p = splitLabelDetail(raw);
     const hasDetail = !!p.detail;
     const lab = hasDetail ? p.label : p.label;
-    return '<li class="row drop" data-role="row"><span class="row-n">' + pad2(k + 1) + '</span><div class="row-b">' +
+    return '<li class="row drop" data-role="row"><span class="row-n">' + num(ctx, k + 1) + '</span><div class="row-b">' +
       '<div class="row-l' + (hasDetail ? ' strong' : '') + '" style="--rl:' + L + 'px">' + esc(lab) + '</div>' +
       (hasDetail ? '<div class="row-d" style="--rd:' + D + 'px">' + esc(p.detail) + '</div>' : '') + '</div></li>';
   }).join('');
@@ -131,10 +146,39 @@ function photoBleed(ctx, side, spanCols) {
 // ── Layouts ───────────────────────────────────────────────────────────────
 const L = {};
 
+/** Мұқабаның ортақ бөліктері: титул деректері (факультет, орындаған…), ұйым атауы, лид */
+function coverParts(ctx, metaMax) {
+  const a = ctx.a;
+  const meta = a.bullets.map(splitLabelDetail);
+  // Титул деректері: «Кілт: мән» жолдары (факультет, кафедра, орындаған, тексерген, топ) + кілтсіз ұйым атауы (университет).
+  // Барлығы көрсетіледі (бұрын 3–4-ке қиылатын), 3-тен көп болса — ықшам тор.
+  const keyed = meta.filter((m) => m.detail);
+  const plain = meta.filter((m) => !m.detail).map((m) => m.label);
+  const labeled = keyed.length > 0 && plain.length <= 2;
+  const org = labeled && plain.length
+    ? el(ctx, 'div', 'cover-org', esc(plain.join(' · ')), { role: 'meta' })
+    : '';
+  const dense = labeled && keyed.length > (metaMax || 3);
+  const metaHtml = meta.length
+    ? el(ctx, 'div', 'meta-row' + (dense ? ' is-dense' : ''), (labeled
+      ? keyed.slice(0, 6).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
+      : '<div class="meta-i" data-role="meta"><span class="meta-v">' + esc(a.bullets.slice(0, 3).join('  ·  ')) + '</span></div>'), { role: 'meta-row' })
+    : '';
+  return { org, metaHtml, labeled };
+}
+
 L.cover = (ctx) => {
+  const v = (ctx.sys && ctx.sys.cover) || 'classic';
+  if (!(ctx.plan && ctx.plan.refCover) && COVER[v]) return COVER[v](ctx);
+  return COVER.classic(ctx);
+};
+
+const COVER = {};
+/** Классикалық: үлкен тақырып төменгі сол жақта, фото бүкіл фонда (аврора, техно) */
+COVER.classic = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   const rc = ctx.plan && ctx.plan.refCover;
-  const bleedOK = !rc && a.hasPhoto && I.sharpEnough(a.img, 1400);
+  const bleedOK = !rc && a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI);
   let bg = '<div class="plate plate-cover"></div>' + AURORA + '<div class="halo" aria-hidden="true"><i></i></div>';
   let fgCls = 'cover-plain';
   if (rc) {
@@ -147,20 +191,7 @@ L.cover = (ctx) => {
     fgCls = 'cover-photo';
   }
   const w = GRID.span(10);
-  const meta = a.bullets.map(splitLabelDetail);
-  // Титул деректері: «Кілт: мән» жолдары (факультет, кафедра, орындаған, тексерген, топ) + кілтсіз ұйым атауы (университет).
-  // Барлығы көрсетіледі (бұрын 3–4-ке қиылатын), 3-тен көп болса — ықшам тор.
-  const keyed = meta.filter((m) => m.detail);
-  const plain = meta.filter((m) => !m.detail).map((m) => m.label);
-  const labeled = keyed.length > 0 && plain.length <= 2;
-  const org = labeled && plain.length
-    ? el(ctx, 'div', 'cover-org', esc(plain.join(' · ')), { role: 'meta' })
-    : '';
-  const metaHtml = meta.length
-    ? el(ctx, 'div', 'meta-row' + (labeled && keyed.length > 3 ? ' is-dense' : ''), (labeled
-      ? keyed.slice(0, 6).map((m) => '<div class="meta-i" data-role="meta"><span class="meta-k">' + esc(m.label) + '</span><span class="meta-v">' + esc(m.detail) + '</span></div>').join('')
-      : '<div class="meta-i" data-role="meta"><span class="meta-v">' + esc(a.bullets.slice(0, 3).join('  ·  ')) + '</span></div>'), { role: 'meta-row' })
-    : '';
+  const { org, metaHtml, labeled } = coverParts(ctx);
   const fg = '<div class="canvas cover">' +
     '<div class="cover-top">' + (sectionLabel(ctx) ? rule(ctx, 56) + kicker(ctx, sectionLabel(ctx)) : '') + org + '</div>' +
     '<div class="block cover-block">' +
@@ -172,14 +203,101 @@ L.cover = (ctx) => {
   return { bg, fg: fg + folio(ctx), cls: fgCls };
 };
 
+/** Ортаға тураланған: тақырып пен деректер ортада, фото бүкіл фонда біркелкі қараңғыланып (академия, ателье) */
+COVER.center = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const bleedOK = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI);
+  // фото үстінде мәтін әрқашан ақ, фото қараңғыланады (ашық палитрада бұрын фото «ағарып» көрінбей қалатын)
+  const bg = bleedOK
+    ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:radial-gradient(120% 90% at 50% 50%,rgba(8,10,14,.48) 0%,rgba(8,10,14,.66) 100%)"></div>'
+    : '<div class="plate plate-cover"></div>' + AURORA_SOFT;
+  const w = GRID.span(10);
+  const { org, metaHtml, labeled } = coverParts(ctx, 3);
+  const fg = '<div class="canvas cover cover-c' + (bleedOK ? ' on-photo' : '') + '">' +
+    '<div class="cover-top">' + org + '</div>' +
+    '<div class="block cover-block">' +
+      rule(ctx, 64) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 3, cls: 'center', hl: true, scale: [128, 112, 98, 86, 76, 66] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 36, { maxw: GRID.span(8), cls: 'center' }) +
+    '</div>' +
+    '<div class="cover-foot">' + metaHtml + '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: bleedOK ? 'cover-photo cover-center' : 'cover-plain cover-center' };
+};
+
+/** Панель: сол жақта түсті тұтас панель (тақырып ішінде), оң жақта фото (швейцар) */
+COVER.panel = (ctx) => {
+  const a = ctx.a;
+  const panelW = Math.round(GRID.marginX + GRID.span(7) + GRID.gutter / 2);
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 1100);
+  const bg = '<div class="plate plate-cover"></div>' +
+    (photoOK ? photoBleed(ctx, 'right', 5) : '<div class="panel-pattern" aria-hidden="true"></div>') +
+    '<div class="cover-panel" style="width:' + panelW + 'px"></div>';
+  const w = GRID.span(6);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas g12 cover-p">' +
+    '<div class="cell on-accent cover-p-l" style="' + cols(1, 6) + '">' +
+      '<div class="cover-top">' + org + '</div>' +
+      '<div class="block">' +
+        titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 5, hl: true, scale: [112, 98, 86, 76, 66, 58] }) +
+        lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      '</div>' +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-panel-slide' };
+};
+
+/** Доға мұқаба (heritage): сол жақта ірі тақырып, оң жақта доға пішінді фото + күн-шеңбер + түсті табан */
+COVER.arch = (ctx) => {
+  const a = ctx.a;
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 700);
+  const bg = '<div class="plate plate-cover"></div>' +
+    (photoOK
+      ? '<div class="arch-line" aria-hidden="true"></div><div class="arch-photo" data-role="photo">' + I.imgTag(a.photo, a.img, ctx.palette, { focus: a.focus }) + '</div>'
+      : '<div class="cover-frame" aria-hidden="true"></div>') +
+    '<div class="orn orn-cover" aria-hidden="true"></div>';
+  const w = GRID.span(photoOK ? 6 : 9);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas cover cover-arch">' +
+    '<div class="block cover-block" style="width:' + w + 'px">' +
+      (org || kicker(ctx, sectionLabel(ctx))) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 6, hl: true, scale: [112, 100, 90, 80, 72, 64] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' + (photoOK ? ' has-arch' : ' no-arch') };
+};
+
+/** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
+COVER.masthead = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 760);
+  const bg = '<div class="plate plate-cover"></div>';
+  const tw = photoOK ? GRID.span(7) : GRID.span(11);
+  const { org, metaHtml, labeled } = coverParts(ctx, photoOK ? 2 : 3);
+  const photo = photoOK
+    ? '<div class="cell mast-photo" style="' + cols(9, 12) + '">' + I.framedPhoto(a.photo, a.img, p, { fill: true, focus: a.focus }) + '</div>'
+    : '';
+  const fg = '<div class="canvas g12 cover-m">' +
+    '<div class="cell mast-l" style="' + cols(1, photoOK ? 7 : 12) + '">' +
+      '<div class="mast-top">' + (org || '<div class="cover-org">&nbsp;</div>') + '</div>' +
+      '<div class="block">' +
+        titleH1(ctx, a.title, { role: 'display', width: tw, maxLines: 4, hl: true, scale: [124, 108, 94, 82, 72, 62] }) +
+        lead(ctx, labeled ? '' : a.subtitle, 34, { maxw: tw }) +
+      '</div>' +
+      metaHtml +
+    '</div>' + photo + '</div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-mast' };
+};
+
 L.section = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
-  const num = ctx.plan.section ? pad2(ctx.plan.section) : pad2(a.index);
+  const sn = ctx.plan.section || a.index;
+  const numTxt = ['roman', 'plain', 'dot'].includes(ctx.sys.num) ? formatNum(ctx.sys.num === 'dot' ? 'plain' : ctx.sys.num, sn) : pad2(sn);
   const hasP = a.hasPhoto && I.sharpEnough(a.img, 900);
-  const bg = '<div class="plate plate-section"></div>' + AURORA_SOFT + (hasP ? photoBleed(ctx, 'right', 5) : ghost('ghost-num', num));
+  const bg = '<div class="plate plate-section"></div>' + AURORA_SOFT + (hasP ? photoBleed(ctx, 'right', 5) : ghost('ghost-num', numTxt));
   const textW = hasP ? GRID.span(6) : GRID.span(9);
   const fg = '<div class="canvas sect">' +
-    el(ctx, 'div', 'numeral-xl', num, { role: 'numeral' }) +
+    el(ctx, 'div', 'numeral-xl', numTxt, { role: 'numeral' }) +
     '<div class="block sect-block">' + rule(ctx, 56) +
       titleH1(ctx, a.title, { role: 'display', width: textW, maxLines: 3, scale: [120, 104, 92, 80, 68], hl: true }) +
       lead(ctx, a.subtitle || a.body, 34, { maxw: textW }) +
@@ -293,11 +411,19 @@ L.imageFocus = (ctx) => {
   const a = ctx.a;
   const flip = ctx.plan.flip;
   const tw = GRID.span(4);
-  const sharp = I.sharpEnough(a.img, 1100);
+  // 8 бағандық панель ≈ 1300px: ≤1.3× үлкейту ғана (sharpEnough-тың 0.6-сы 700px суретті 1.8× созатын → бұлыңғыр)
+  const sharp = I.sharpEnough(a.img, 1660) && !(a.img.h && a.img.w && a.img.w / a.img.h < 0.9);
+  // Сурет үлкен панельге жарамаса — 8 баған бос қалмайды: жақтаулы кіші фото (6 баған ≈ 900px), ол да болмаса тек мәтін
+  const framed = !sharp && a.hasPhoto && I.sharpEnough(a.img, 1070);
   const bg = '<div class="plate"></div>' + (sharp ? photoBleed(ctx, flip ? 'right' : 'left', 8) : '');
   const txt = flip ? [1, 4] : [9, 12];
+  if (!sharp && !framed) return L.statement(ctx);
   const support = a.subtitle || a.body;
-  const fg = '<div class="canvas g12 focus">' +
+  const frame = framed
+    ? '<div class="cell photo-cell" style="' + cols(...(flip ? [6, 11] : [2, 7])) + ';align-self:center">' +
+      I.framedPhoto(a.photo, a.img, ctx.palette, { ratio: '4 / 3', focus: a.focus }) + '</div>'
+    : '';
+  const fg = '<div class="canvas g12 focus">' + frame +
     '<div class="cell text-cell end" style="' + cols(...txt) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) + rule(ctx, 48) +
       titleH1(ctx, a.title, { width: tw, maxLines: 5, scale: [64, 56, 50, 44, 40] }) +
@@ -313,19 +439,23 @@ L.editorial = (ctx) => {
   const lw = GRID.span(4); const rw = GRID.span(7);
   const L_ = flip ? [9, 12] : [1, 4];
   const R_ = flip ? [1, 7] : [6, 12];
-  const twoCol = a.bodyWords > 90;
-  const size = twoCol ? 26 : a.bodyWords <= 48 ? 36 : a.bodyWords <= 75 ? 32 : 28;
+  // Мәтіні жоқ слайд (ырғақ үшін points → editorial болған) — пункттер абзац болып ТОЛЫҚ шығады
+  // (бұрын тек алғашқы 2 пункт көрінетін, 3–4-сі үнсіз жоғалатын)
+  const paras = a.body ? a.body.split(/\n+/).filter(Boolean) : a.bullets.slice(0, 6);
+  const words = a.body ? a.bodyWords : a.bulletWords;
+  const twoCol = words > 90;
+  const size = twoCol ? 26 : words <= 48 ? 36 : words <= 75 ? 32 : 28;
   const small = a.hasPhoto && I.sharpEnough(a.img, 700)
     ? '<div class="cell-photo">' + I.framedPhoto(a.photo, a.img, p, { ratio: '4 / 3', focus: a.focus }) + '</div>' : '';
   const fg = '<div class="canvas g12 edit">' +
-    '<div class="cell edit-l" style="' + cols(...L_) + '"><div class="block">' +
+    '<div class="cell edit-l ' + (flip ? 'at-r' : 'at-l') + '" style="' + cols(...L_) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: lw, maxLines: 5, scale: [72, 64, 56, 50, 44] }) +
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') + small +
     '</div></div>' +
     '<div class="cell edit-r" style="' + cols(...R_) + '">' +
-      (a.body ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), a.body.split(/\n+/).map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
-      notes(ctx, a.bullets.slice(0, 2), 26) +
+      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), paras.map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
+      (a.body ? notes(ctx, a.bullets.slice(0, 4), 26) : '') +
     '</div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
@@ -344,7 +474,7 @@ L.points = (ctx) => {
   const Rr = flip ? [1, 6] : [7, 12];
   const longest = a.longestBullet;
   const fg = '<div class="canvas g12 pts">' +
-    '<div class="cell pts-l" style="' + cols(...Lr) + '"><div class="block">' +
+    '<div class="cell pts-l ' + (flip ? 'at-r' : 'at-l') + '" style="' + cols(...Lr) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: lw, maxLines: 4, scale: [84, 74, 66, 58, 52, 46] }) +
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') +
@@ -359,7 +489,7 @@ L.points = (ctx) => {
 function pointsColumns(ctx, parsed) {
   const a = ctx.a; const n = parsed.length;
   const tw = GRID.span(8);
-  const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + pad2(k + 1) + '</span>' +
+  const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + num(ctx, k + 1) + '</span>' +
     '<div class="concept-l" style="--rl:' + (n <= 3 ? 40 : n === 4 ? 36 : 32) + 'px">' + esc(m.label) + '</div>' +
     (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 24) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas conc"><div class="block conc-head">' +
@@ -397,16 +527,16 @@ L.stats = (ctx) => {
   const cells = items.map((s, k) => {
     const raw = String(s.value);
     const m = raw.match(/^([^\d-]*)(-?[\d][\d\s.,]*)(.*)$/);
-    const num = m ? parseStatNumber(m[2]) : null;
+    const val = m ? parseStatNumber(m[2]) : null;
     let valHtml;
-    if (m && num != null && isFinite(num)) {
+    if (m && val != null && isFinite(val)) {
       const numTxt = m[2].trim();
       valHtml = (m[1] ? '<span class="sfx">' + esc(m[1]) + '</span>' : '') +
-        '<span data-count="' + num + '" data-raw="' + esc(numTxt) + '">' + esc(numTxt) + '</span>' +
+        '<span data-count="' + val + '" data-raw="' + esc(numTxt) + '">' + esc(numTxt) + '</span>' +
         (m[3] ? '<span class="sfx">' + esc(m[3].trim()) + '</span>' : '');
     } else valHtml = esc(raw);
     const meter = shares[k] != null ? '<div class="meter" aria-hidden="true"><i style="--p:' + shares[k].toFixed(3) + ';--k:' + k + '"></i></div>' : '';
-    return '<li class="stat" data-role="stat"><span class="stat-ix">' + pad2(k + 1) + '</span><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
+    return '<li class="stat" data-role="stat"><span class="stat-ix">' + num(ctx, k + 1) + '</span><div class="stat-v" style="--ns:' + fit.size + 'px">' + valHtml + '</div>' +
       meter + '<div class="stat-l">' + esc(s.label || '') + '</div></li>';
   }).join('');
   const support = a.subtitle || a.body;
@@ -456,7 +586,11 @@ function nodeList(a, field, max) {
 
 L.timeline = (ctx) => {
   const a = ctx.a;
-  const nodes = nodeList(a, 'timeline', 6);
+  // «1890 — Ағартушылық: …» → жыл бөлек белгі болады (бұрын «01» нөмір шығып, жыл мәтінге кетіп қалатын)
+  const nodes = nodeList(a, 'timeline', 6).map((nd) => {
+    const ym = String(nd.label || '').match(/^(\d{3,4}(?:\s*[–-]\s*\d{2,4})?)\s+[—–-]\s+(.+)$/);
+    return ym ? { label: ym[1], detail: ym[2] + (nd.detail ? ': ' + nd.detail : '') } : nd;
+  });
   const n = nodes.length;
   const dateSize = n <= 3 ? 64 : n === 4 ? 54 : 44;
   // қысқа детал ("2 млрд", "Іске қосу") — ұсақ жазу емес, санға ұқсап ірі тұрады (слайд бос көрінбейді)
@@ -486,10 +620,17 @@ L.process = (ctx) => {
   const grid = n <= 4 ? n : 3;
   const labS = n <= 3 ? 42 : n === 4 ? 36 : 32;
   const detS = n <= 4 ? 28 : 25;
-  const items = nodes.map((nd, i) => '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + pad2(i + 1) + '</span>' +
-    (i < n - 1 && n <= 4 ? '<i class="st-arrow"></i>' : '') + '</div>' +
-    '<div class="st-l" style="--rl:' + labS + 'px">' + esc(truncate(nd.label, 64)) + '</div>' +
-    (nd.detail ? '<div class="st-d" style="--rd:' + detS + 'px">' + esc(truncate(nd.detail, 170)) + '</div>' : '') + '</li>').join('');
+  // Тек сөйлем (жапсырмасыз) түйін: қалың «тақырып» ұясына сыймайды → толық сөйлем оқылатын өлшеммен, кесілмей
+  const sentS = n <= 3 ? 32 : n === 4 ? 29 : 26;
+  const items = nodes.map((nd, i) => {
+    const sentence = !nd.detail && nd.label.length > 40;
+    return '<li class="st drop" data-role="step"><div class="st-mark"><span class="st-n">' + num(ctx, i + 1) + '</span>' +
+      (i < n - 1 && n <= 4 ? '<i class="st-arrow"></i>' : '') + '</div>' +
+      (sentence
+        ? '<div class="st-d st-s" style="--rd:' + sentS + 'px">' + esc(truncate(nd.label, 240)) + '</div>'
+        : '<div class="st-l" style="--rl:' + labS + 'px">' + esc(truncate(nd.label, 64)) + '</div>' +
+          (nd.detail ? '<div class="st-d" style="--rd:' + detS + 'px">' + esc(truncate(nd.detail, 200)) + '</div>' : '')) + '</li>';
+  }).join('');
   const fg = '<div class="canvas proc-canvas"><div class="proc-head g12"><div class="block" style="' + cols(1, 8) + '">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: GRID.span(8), maxLines: 2, scale: [84, 74, 66, 58, 52] }) + '</div>' +
@@ -502,9 +643,14 @@ L.hierarchy = (ctx) => {
   const a = ctx.a;
   const nodes = nodeList(a, 'hierarchy', 6);
   const n = nodes.length;
-  const kids = nodes.map((nd, i) => '<li class="hn drop" data-role="node"><span class="hn-n">' + pad2(i + 1) + '</span>' +
-    '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
-    (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 23) + 'px">' + esc(truncate(nd.detail, 130)) + '</div>' : '') + '</li>').join('');
+  const kids = nodes.map((nd, i) => {
+    const sentence = !nd.detail && nd.label.length > 40; // тек сөйлем → кесілмей, оқылатын өлшеммен
+    return '<li class="hn drop" data-role="node"><span class="hn-n">' + num(ctx, i + 1) + '</span>' +
+      (sentence
+        ? '<div class="hn-d hn-s" style="--rd:' + (n <= 3 ? 30 : n === 4 ? 28 : 25) + 'px">' + esc(truncate(nd.label, 220)) + '</div>'
+        : '<div class="hn-l" style="--rl:' + (n <= 3 ? 38 : n === 4 ? 34 : 30) + 'px">' + esc(truncate(nd.label, 56)) + '</div>' +
+          (nd.detail ? '<div class="hn-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 23) + 'px">' + esc(truncate(nd.detail, 170)) + '</div>' : '')) + '</li>';
+  }).join('');
   const fg = '<div class="canvas hier"><div class="block hier-root">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: GRID.span(9), maxLines: 2, scale: [80, 70, 62, 54, 48], cls: 'center' }) +
@@ -588,9 +734,26 @@ L.quote = (ctx) => {
   return { bg: '<div class="plate"></div>' + AURORA_SOFT + ghost('ghost-quote', '”'), fg: fg + folio(ctx), cls: 'quote-slide' };
 };
 
+/** Қорытынды — «бөлінген»: фото бір жақта (толық биіктік), тақырып пен түйіндер екінші жақта (журнал, академия, ателье) */
+function closingSplit(ctx) {
+  const a = ctx.a;
+  const items = a.bullets.slice(0, 4);
+  const lw = GRID.span(6);
+  const bg = '<div class="plate plate-section"></div>' + photoBleed(ctx, 'left', 5);
+  const fg = '<div class="canvas g12 close close-split">' +
+    '<div class="cell close-r" style="' + cols(7, 12) + '"><div class="block">' +
+      rule(ctx, 56) +
+      titleH1(ctx, a.title, { role: 'display', width: lw, maxLines: 2, scale: [96, 84, 74, 64, 56], hl: true }) +
+      (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') +
+      (items.length ? listRows(ctx, items, { compact: items.length > 3, labelSize: 30, detailSize: 24 }) : para(ctx, a.body || '', 30, { maxw: lw })) +
+    '</div></div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'closing-slide' };
+}
+
 L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
-  const hasP = a.hasPhoto;
+  if (ctx.sys && ctx.sys.closing === 'split' && a.hasPhoto && I.sharpEnough(a.img, 900)) return closingSplit(ctx);
+  const hasP = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
   const bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
     : '<div class="plate plate-section"></div>' + AURORA;

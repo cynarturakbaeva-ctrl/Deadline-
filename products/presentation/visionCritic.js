@@ -18,7 +18,9 @@ const path = require('path');
 const { recordApiUsage } = require('../../core/cost');
 const { repairSlideComposition, ensureComposition } = require('./composition');
 
-const VISION_ENABLED = process.env.VISION_CRITIC !== '0';
+// Әдепкіде ӨШІРУЛІ: кілт қосылғанда өздігінен іске қосылмасын (оның «redesign» әрекеттері жаңа қозғалтқышта әсер етпейді,
+// ал буллетті қиюы зиянды). Тек VISION_CRITIC=1 болғанда.
+const VISION_ENABLED = process.env.VISION_CRITIC === '1';
 const MAX_SLIDES_TO_VISION = Math.max(1, Math.min(8, parseInt(process.env.VISION_MAX_SLIDES || '6', 10) || 6));
 const MIN_SCORE_ACCEPT = Number(process.env.VISION_ACCEPT_SCORE) || 72;
 
@@ -91,7 +93,7 @@ function heuristicFromPng(pngPath, slide, index) {
 async function criticAnthropic(slides, pngPaths, title, topic) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  const model = process.env.VISION_ANTHROPIC_MODEL || process.env.VISUAL_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const model = process.env.VISION_ANTHROPIC_MODEL || process.env.VISUAL_ANTHROPIC_MODEL || 'claude-haiku-5-5';
 
   const n = Math.min(pngPaths.length, slides.length, MAX_SLIDES_TO_VISION);
   // Sample: cover, middle, conclusion + weakest by heuristic size
@@ -177,7 +179,7 @@ Prefer redesign actions that change composition, not full content rewrite.`,
 async function criticGemini(slides, pngPaths, title, topic) {
   const key = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (!key) return null;
-  const model = process.env.VISION_GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.VISION_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
   const indices = pickSlideIndices(Math.min(pngPaths.length, MAX_SLIDES_TO_VISION), pngPaths.length);
   const parts = [

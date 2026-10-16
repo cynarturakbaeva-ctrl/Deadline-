@@ -19,10 +19,12 @@
 
 const axios = require('axios');
 const { downloadAsDataUri } = require('./unsplash');
+const { imageMeta } = require('./design/analyze');
 
 const MAX_Q = 80;
 const PER_PROVIDER = 5;
 const MAX_DOWNLOAD_ATTEMPTS = 6;
+const STRONG_SCORE = 9; // осындай баллды сурет табылса, келесі көзді сұрамаймыз
 const MIN_W = Number(process.env.IMAGE_MIN_WIDTH) || 900;
 const UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)'; // Wikimedia саясаты: байланыс көрсетілсін
 const DEFAULT_ORDER = ['pexels', 'unsplash', 'pixabay', 'wikimedia'];
@@ -152,12 +154,18 @@ const STYLE_WORDS = new Set([
 const STOP_WORDS = new Set(['with', 'and', 'the', 'a', 'an', 'at', 'in', 'on', 'of', 'for', 'to', 'from', 'into', 'over', 'under', 'by', 'or', 'its', 'their', 'his', 'her', 'each', 'other', 'together', 'while', 'during', 'through', 'across', 'about', 'some', 'two', 'three', 'group', 'people']);
 const isStyleWord = (w) => STYLE_WORDS.has(w.toLowerCase()) || STOP_WORDS.has(w.toLowerCase());
 
+// Фотосы болмайтын нәрселер: іздеу жүйесі бұларға кездейсоқ бизнес-слайд, флипчарт, коллаж қайтарады
+const NO_PHOTO_WORDS = /\b(collages?|diagrams?|infographics?|charts?|graphs?|comparisons?|montages?|split[- ]screen|side[- ]by[- ]side)\b/gi;
+const NAME = "[A-Z][A-Za-z'’-]+(?:\\s+[A-Z][A-Za-z'’-]+)*";
+// «Abai Kunanbayev and Al-Farabi portraits» — екі атаулы адамның бірге түскен суреті жоқ → біріншісі ғана қалады
+const TWO_NAMED = new RegExp(`(${NAME})\\s+(?:and|&|vs\\.?|versus)\\s+${NAME}`);
+
 /** «subject, warm golden hour lighting, inspiring mood» → «subject»: тек стиль сөздерінен тұратын бөліктер алынады. */
 function cleanQuery(query) {
   const parts = String(query || '').split(',').map((p) => p.trim()).filter(Boolean);
   if (!parts.length) return '';
   const keep = parts.filter((p, i) => i === 0 || p.split(/\s+/).some((w) => w.length > 2 && !isStyleWord(w.replace(/[^A-Za-z-]/g, ''))));
-  return keep.join(' ').replace(/\s+/g, ' ').trim();
+  return keep.join(' ').replace(TWO_NAMED, '$1').replace(NO_PHOTO_WORDS, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -185,6 +193,19 @@ function namedPhrases(query) {
 const VAGUE_WORDS = new Set(['historical', 'history', 'ancient', 'classic', 'classical', 'traditional', 'old', 'famous', 'national', 'historic', 'vintage', 'real']);
 const MEDIUM_WORDS = new Set(['painting', 'portrait', 'map', 'manuscript', 'engraving', 'photograph', 'statue', 'monument', 'battle', 'fresco', 'mosaic', 'sculpture', 'building', 'mosque', 'mausoleum', 'fortress', 'museum']);
 const isNamedQuery = (query) => namedPhrases(query).length > 0;
+// Жер/халық атаулары — «нақты тұлға/оқиға» емес: «Kazakh steppe», «Almaty street» AI-мен жасалуы мүмкін
+const PLACE_OK = new Set(('kazakh kazakhs kazakhstan almaty astana shymkent karaganda aktobe taraz pavlodar semey atyrau turkistan '
+  + 'asia asian central europe european africa african america american russia russian china chinese japan japanese korea korean '
+  + 'india indian turkey turkish uzbek uzbekistan kyrgyz kyrgyzstan mongolia mongolian arab arabic islamic muslim english british '
+  + 'french german italian spanish earth sun moon mars caspian aral altai tian shan balkhash').split(' '));
+/**
+ * Нақты тұлға / оқиға / туынды ма (AI-мен ЖАСАУҒА болмайды — жалған тарих болады)?
+ * Жыл, екі+ сөзді атау («Crimean War», «Abai Kunanbayev») немесе жер/халық емес жалғыз атау («Abai», «Napoleon»).
+ */
+function isRealSubject(query) {
+  return namedPhrases(query).some((n) => /^(1[0-9]{3}|20[0-2][0-9])s?$/.test(n)
+    || !n.split(' ').every((w) => PLACE_OK.has(w.toLowerCase())));
+}
 
 function queryVariants(query) {
   const raw = cleanQuery(query);
@@ -236,19 +257,33 @@ const tidy = (t) => String(t || '').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/
 
 // ── Провайдерлер: әрқайсысы кандидаттар массивін қайтарады [{url, credit, source, w}] ──
 
+/**
+ * Wikimedia сурет URL-і (upload./thumb. хост, ?utm сұраныс жолымен де) → сол файлдың стандарт енді нұсқасы.
+ * Wikimedia енді тек 330/500/960/1280/1920 енін береді (480/640 → HTTP 400). Танылмаса — URL өзгеріссіз.
+ */
+function wikiThumb(url, width) {
+  return wmSized(url, width) || String(url || '');
+}
+
 async function wikimediaCandidates(query) {
   const q = clip(query);
   if (!q) return [];
-  const response = await axios.get('https://commons.wikimedia.org/w/api.php', {
+  let response;
+  try {
+    response = await axios.get('https://commons.wikimedia.org/w/api.php', {
     params: {
       action: 'query', format: 'json', origin: '*',
       generator: 'search', gsrsearch: q, gsrlimit: 10, gsrnamespace: 6,
-      prop: 'imageinfo', iiprop: 'url|mime|size|extmetadata', iiurlwidth: 1280,
+      prop: 'imageinfo', iiprop: 'url|mime|size|extmetadata', iiurlwidth: 1920,
       iiextmetadatafilter: 'ImageDescription|ObjectName', iiextmetadatalanguage: 'en',
     },
-    timeout: 12000,
-    headers: { 'User-Agent': UA },
-  });
+      timeout: 8000,
+      headers: { 'User-Agent': UA },
+    });
+  } catch (err) {
+    if (err.response && err.response.status === 429) noteLimited('wikimedia', err.response.headers); // үзіліс, қайта-қайта ұрмаймыз
+    throw err;
+  }
   const pages = Object.values(response.data?.query?.pages || {});
   pages.sort((a, b) => (a.index || 0) - (b.index || 0)); // релевантылық ретімен
   const out = [];
@@ -260,19 +295,24 @@ async function wikimediaCandidates(query) {
     const url = info.thumburl || info.url;
     if (!url || !/^https?:\/\//i.test(url)) continue;
     if (!info.thumburl && info.size && info.size > 2_500_000) continue;
+    // скан бет, ұзын плакат, тік жолақ — слайдқа сыймайды (портрет кадрға ғана жарайды)
+    if (info.width && info.height && info.height > info.width * 1.6) continue;
     const meta = info.extmetadata || {};
     const name = String(page.title || '').replace(/^File:/i, '').replace(/\.[a-z0-9]{2,4}$/i, '').replace(/_/g, ' ');
     const about = [meta.ObjectName && meta.ObjectName.value, meta.ImageDescription && meta.ImageDescription.value]
       .filter(Boolean).map((v) => String(v).replace(/<[^>]+>/g, ' ')).join('. ');
     out.push({
       url,
+      thumb: wikiThumb(url, 500),
       credit: page.title ? String(page.title).replace(/^File:/i, '') : 'Wikimedia Commons',
       source: 'wikimedia',
-      w: info.width || 0,
+      w: Math.min(info.width || 0, 1920),
+      h: info.width && info.height ? Math.round(info.height * Math.min(1, 1920 / info.width)) : 0,
       desc: tidy(name + (about ? '. ' + about : '')),
     });
   }
-  return out;
+  // тұрақты сұрыптау: көлденең кадр алдымен (фон/үлкен панельге жарайды), релевант реті сақталады
+  return out.map((c, i) => ({ c, i, tall: c.h > c.w ? 1 : 0 })).sort((a, b) => a.tall - b.tall || a.i - b.i).map((x) => x.c);
 }
 
 async function pexelsCandidates(query) {
@@ -294,6 +334,7 @@ async function pexelsCandidates(query) {
   return (response.data?.photos || [])
     .map((p) => ({
       url: p.src?.large2x || p.src?.large,
+      thumb: p.src?.medium || p.src?.small || '',
       credit: p.photographer || 'Pexels',
       source: 'pexels',
       w: p.width || 0,
@@ -322,10 +363,12 @@ async function unsplashCandidates(query) {
   noteHeaders('unsplash', response.headers);
   return (response.data?.results || [])
     .map((r) => ({
-      url: r.urls?.regular,
+      // regular = 1080px — үлкен панельде бұлыңғыр; raw + w=1920 (Unsplash CDN өзі кішірейтеді)
+      url: r.urls?.raw ? r.urls.raw + (r.urls.raw.includes('?') ? '&' : '?') + 'w=1920&q=75&fm=jpg&fit=max' : r.urls?.regular,
+      thumb: r.urls?.small || '',
       credit: r.user?.name || 'Unsplash',
       source: 'unsplash',
-      w: r.width || 0,
+      w: r.urls?.raw ? Math.min(r.width || 0, 1920) : Math.min(r.width || 0, 1080),
       avg: r.color,
       desc: tidy([r.alt_description, r.description, (r.tags || []).map((t) => t && t.title).filter(Boolean).join(', ')].filter(Boolean).join('. ')),
     }))
@@ -343,6 +386,7 @@ async function pixabayCandidates(query) {
   return (response.data?.hits || [])
     .map((h) => ({
       url: h.largeImageURL || h.webformatURL, // 1280px; webformatURL тек 640px
+      thumb: h.webformatURL || '',
       credit: h.user ? `Pixabay/${h.user}` : 'Pixabay',
       source: 'pixabay',
       w: h.largeImageURL ? Math.min(1280, h.imageWidth || 1280) : 640,
@@ -351,11 +395,13 @@ async function pixabayCandidates(query) {
     .filter((c) => c.url);
 }
 
+const { OPEN_PROVIDERS, routeOpen, wmSized } = require('./openImages');
 const PROVIDERS = {
   pexels: pexelsCandidates,
   unsplash: unsplashCandidates,
   pixabay: pixabayCandidates,
   wikimedia: wikimediaCandidates,
+  ...OPEN_PROVIDERS,
 };
 
 /**
@@ -415,8 +461,12 @@ async function findImage(query, opts = {}) {
   let attempts = 0;
   let rejected = 0;
 
+  const judged = typeof opts.judge === 'function';
   for (const q of variants) {
     if (budget.left <= 0 && ![...order].some((n) => searchCache.has(n + '|' + q.toLowerCase()))) break;
+    // Бір нұсқа бойынша бірнеше көздің мақұлданған кандидаттары бір жерге жиналады, ең жоғары баллдысы алынады
+    // (бұрын бірінші мақұлданған көздің бірінші суреті алынатын, келесі көздегі 10 балдық сурет қаралмайтын).
+    const pool = [];
     for (const name of order) {
       let cands = [];
       try {
@@ -425,34 +475,156 @@ async function findImage(query, opts = {}) {
         console.warn(`[Image:${name}] search failed (${err.response?.status || err.code || err.message}) q="${q.slice(0, 40)}"`);
         continue;
       }
-      let fresh = cands.filter((c) => c.url && !used.has(c.url) && !(c.w && c.w < MIN_W) && !tooDark(c));
+      let fresh = cands.filter((c) => c.url && !used.has(c.url) && !pool.some((x) => x.c.url === c.url) && !(c.w && c.w < MIN_W) && !tooDark(c));
       if (!fresh.length) continue;
-      if (typeof opts.judge === 'function') {
-        let pick = null;
-        try { pick = await opts.judge(fresh, query); } catch (err) { console.warn(`[Image] judge failed: ${err.message}`); }
-        if (!Array.isArray(pick)) pick = lexicalFit(fresh, query);
-        const chosen = pick.filter((i) => Number.isInteger(i) && fresh[i]).map((i) => fresh[i]);
-        rejected += fresh.length - chosen.length;
-        if (!chosen.length) { console.log(`[Image] off-topic ×${fresh.length} source=${name} q="${q.slice(0, 50)}" e.g. "${String(fresh[0].desc || '').slice(0, 60)}"`); continue; }
-        fresh = chosen;
+      if (!judged) { fresh.forEach((c) => pool.push({ c, s: 0, k: pool.length })); break; }
+      let pick = null;
+      try { pick = await opts.judge(fresh, query); } catch (err) { console.warn(`[Image] judge failed: ${err.message}`); }
+      const lexical = !Array.isArray(pick);
+      // модель бар, бірақ жауап бермеді (шек бітті/қате) → сөздік сәйкестікке сенбейміз: «Kazakhstan» сөзі бар
+      // шоколад қорабы, «portraits» сөзі бар кеңес басшыларының суреті осылай кіретін. Сайы дәлелденбеген сурет — жоқ.
+      if (lexical && typeof opts.judge.live === 'function' && opts.judge.live()) {
+        console.log(`[Image] judge unavailable — ${fresh.length} unverified photo(s) skipped source=${name} q="${q.slice(0, 50)}"`);
+        rejected += fresh.length;
+        continue;
       }
-      for (const c of fresh) {
-        if (used.has(c.url)) continue;
-        if (attempts >= MAX_DOWNLOAD_ATTEMPTS) {
-          console.log(`[Image] gave up after ${attempts} download attempts for "${String(query).slice(0, 60)}"`);
-          return null;
-        }
-        attempts += 1;
-        used.add(c.url); // параллель тапсырмалар бір URL-ді алмауы үшін — жүктемес бұрын белгілейміз
-        const dataUri = await downloadCached(c.url);
-        if (dataUri) {
-          console.log(`[Image] ok source=${c.source} q="${q.slice(0, 50)}"${c.desc ? ` photo="${c.desc.slice(0, 80)}"` : ''}`);
-          return { dataUri, url: c.url, credit: c.credit, source: c.source, desc: c.desc || '' };
-        }
+      if (lexical) pick = lexicalFit(fresh, query);
+      const chosen = pick.filter((i) => Number.isInteger(i) && fresh[i]).map((i) => fresh[i]);
+      rejected += fresh.length - chosen.length;
+      if (!chosen.length) { console.log(`[Image] off-topic ×${fresh.length} source=${name} q="${q.slice(0, 50)}" e.g. "${String(fresh[0].desc || '').slice(0, 60)}"`); continue; }
+      // сөздік тексерудің «баллы» жоқ — модель мақұлдағандардан төмен тұрады
+      chosen.forEach((c) => {
+        const sc = !lexical && typeof opts.judge.scoreOf === 'function' ? opts.judge.scoreOf(c) : null;
+        pool.push({ c, s: sc == null ? 6.5 : sc, k: pool.length });
+      });
+      if (Math.max(...pool.map((x) => x.s)) >= STRONG_SCORE) break; // нақты сай сурет табылды — артық іздемейміз
+    }
+    pool.sort((a, b) => b.s - a.s || a.k - b.k);
+    if (judged && pool.length) console.log(`[Image] pool ${pool.length} best=${pool[0].s} source=${pool[0].c.source} q="${q.slice(0, 50)}"`);
+    for (const { c } of pool) {
+      if (used.has(c.url)) continue;
+      if (attempts >= MAX_DOWNLOAD_ATTEMPTS) {
+        console.log(`[Image] gave up after ${attempts} download attempts for "${String(query).slice(0, 60)}"`);
+        return null;
+      }
+      attempts += 1;
+      used.add(c.url); // параллель тапсырмалар бір URL-ді алмауы үшін — жүктемес бұрын белгілейміз
+      const dataUri = await downloadCached(c.url);
+      if (dataUri) {
+        console.log(`[Image] ok source=${c.source} q="${q.slice(0, 50)}"${c.desc ? ` photo="${c.desc.slice(0, 80)}"` : ''}`);
+        return { dataUri, url: c.url, credit: c.credit, source: c.source, desc: c.desc || '' };
       }
     }
   }
   console.log(`[Image] no image for "${String(query).slice(0, 60)}"${rejected ? ` (${rejected} off-topic rejected)` : ''}`);
+  return null;
+}
+
+/** Әр көздің тізімінен кезекпен бір-бірден: топтамада бір көз басым болмайды (ең жақсылары алдымен) */
+function interleave(lists) {
+  const out = []; const seen = new Set();
+  const max = Math.max(0, ...lists.map((l) => l.length));
+  for (let k = 0; k < max; k++) {
+    for (const l of lists) {
+      const c = l[k];
+      if (c && c.url && !seen.has(c.url)) { seen.add(c.url); out.push(c); }
+    }
+  }
+  return out;
+}
+
+const VISION_BATCH = Number(process.env.PHOTO_VISION_BATCH) || 12;
+const OPEN_SEARCHES_PER_PHOTO = Number(process.env.OPEN_SEARCHES_PER_PHOTO) || 8;
+const PROVIDER_TIMEOUT_MS = Number(process.env.IMAGE_PROVIDER_TIMEOUT_MS) || 10000;
+
+/** Бір суреттің әртүрлі URL-дері (Openverse арқылы Wikimedia, ?w= параметрлі Unsplash) бір кілтке келеді */
+function canonKey(url) {
+  const u = String(url || '');
+  let m = u.match(/wikimedia\.org\/wikipedia\/[^/]+\/(?:thumb\/)?[0-9a-f]\/[0-9a-f]{2}\/([^/?]+)/);
+  if (m) { try { return 'wm:' + decodeURIComponent(m[1]).toLowerCase(); } catch { return 'wm:' + m[1].toLowerCase(); } }
+  if ((m = u.match(/pexels\.com\/photos\/(\d+)/))) return 'px:' + m[1];
+  if ((m = u.match(/images\.unsplash\.com\/(photo-[\w-]+)/))) return 'us:' + m[1];
+  if ((m = u.match(/staticflickr\.com\/\d+\/(\d+)_/))) return 'fl:' + m[1];
+  if ((m = u.match(/inaturalist-open-data\.s3\.amazonaws\.com\/photos\/(\d+)\//))) return 'in:' + m[1];
+  if ((m = u.match(/images-assets\.nasa\.gov\/image\/([^/]+)\//))) return 'na:' + m[1];
+  if ((m = u.match(/pixabay\.com\/get\/([\w]+)/))) return 'pb:' + m[1];
+  return u.split('?')[0];
+}
+
+/** Орынға жарамдылық: фон (бүкіл слайд) ≥1536px әрі көлденең; жақтау — MIN_W. Өлшемі белгісіз → жүктелген соң тексеріледі */
+function fitsPlace(meta, place) {
+  if (!meta || !meta.w) return true;
+  if (place === 'bg') return meta.w >= 1536 && !(meta.h && meta.w / meta.h < 1.15);
+  return meta.w >= MIN_W;
+}
+
+function withTimeout(promise, ms, label) {
+  let t;
+  return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(`timeout ${ms}ms ${label}`)), ms); })])
+    .finally(() => clearTimeout(t));
+}
+
+/**
+ * VISION жолы: бір сұраныс нұсқасы бойынша барлық лайықты көздерден (стоктар + архив + ашық базалар) кандидат
+ * ПАРАЛЛЕЛЬ жиналады (әр көзге уақыт шегі бар), vision-модель кішірейтілген нұсқаларын КӨРІП бағалайды,
+ * ең жақсысы толық өлшемде жүктеледі және нақты өлшемі орынға сай екені тексеріледі.
+ * Сай сурет болмаса — келесі нұсқа (ең көбі opts.maxVariants, мерзім ішінде), сосын null (шақырушы AI суретке/суретсізге өтеді).
+ * @param {string} query
+ * @param {{used?:Set<string>, avoid?:Set<string>, free?:boolean, budget?:{left:number}, vision:Function, maxVariants?:number,
+ *          place?:'bg'|'frame', deadline?:number}} opts
+ *   avoid — осы студенттің бұрынғы презентацияларындағы суреттер (canonKey): басқа таңдау болса қайталанбайды
+ * @returns {Promise<{dataUri:string,url:string,key:string,credit:string,source:string,desc:string,focus:string,fit:number,appeal:number}|null|{failed:true}>}
+ *   {failed:true} → vision шақыруы сәтсіз (желі/кілт): шақырушы мәтіндік тексеру жолына өтеді
+ */
+async function findImageVision(query, opts = {}) {
+  if (!isLatinQuery(query) || typeof opts.vision !== 'function') return null;
+  const used = opts.used instanceof Set ? opts.used : new Set();
+  const avoid = opts.avoid instanceof Set ? opts.avoid : new Set();
+  const place = opts.place === 'bg' ? 'bg' : 'frame';
+  const named = isNamedQuery(query);
+  const keyed = providerOrder({ free: !!opts.free, named });
+  const open = routeOpen(query, { named }).filter((n) => PROVIDERS[n] && !keyed.includes(n));
+  const order = keyed.concat(open);
+  const budget = opts.budget || { left: 4 };
+  const openBudget = { left: OPEN_SEARCHES_PER_PHOTO };
+  const variants = queryVariants(query).slice(0, opts.maxVariants || 2);
+  const taken = (c) => used.has(c.url) || used.has(canonKey(c.url));
+  let attempts = 0;
+  for (const q of variants) {
+    if (opts.deadline && Date.now() > opts.deadline) { console.log(`[Image] vision: deadline reached for "${String(query).slice(0, 50)}"`); break; }
+    const lists = await Promise.all(order.map((name) => withTimeout(searchProvider(name, q, KEYED[name] ? budget : openBudget), PROVIDER_TIMEOUT_MS, name)
+      .catch((err) => { console.warn(`[Image:${name}] search failed (${err.response?.status || err.code || err.message}) q="${q.slice(0, 40)}"`); return []; })));
+    const seenKey = new Set();
+    let pool = interleave(lists).filter((c) => {
+      const k = canonKey(c.url);
+      if (seenKey.has(k)) return false;
+      seenKey.add(k);
+      return !taken(c) && !(c.w && c.w < MIN_W) && fitsPlace(c, place) && !tooDark(c);
+    });
+    // студенттің бұрынғы суреттері — басқа таңдау жеткілікті болса шығарылады
+    const fresh = pool.filter((c) => !avoid.has(canonKey(c.url)));
+    if (fresh.length >= 4) pool = fresh;
+    if (!pool.length) continue;
+    const batch = pool.slice(0, VISION_BATCH);
+    if (pool.length > batch.length) console.log(`[Image] vision batch ${batch.length}/${pool.length} (rest not shown) q="${q.slice(0, 50)}"`);
+    const ranked = await opts.vision(batch);
+    if (ranked === null) return { failed: true };
+    for (const r of ranked) {
+      const c = batch[r.i];
+      if (!c || taken(c)) continue;
+      if (attempts >= MAX_DOWNLOAD_ATTEMPTS) return null;
+      attempts += 1;
+      const key = canonKey(c.url);
+      used.add(c.url); used.add(key); // параллель слайдтар бір суретті алмауы үшін — жүктемес бұрын белгілейміз
+      const dataUri = await downloadCached(c.url);
+      if (!dataUri) continue;
+      const meta = imageMeta(dataUri);
+      if (!fitsPlace(meta, place)) { console.log(`[Image] ${c.source} real size ${meta.w}x${meta.h} too small for ${place} — next`); continue; }
+      console.log(`[Image] ok source=${c.source} vision fit=${r.fit} appeal=${r.appeal} ${meta.w}x${meta.h} q="${q.slice(0, 50)}"${c.desc ? ` photo="${c.desc.slice(0, 80)}"` : ''}`);
+      return { dataUri, url: c.url, key, credit: c.credit || '', license: c.license || '', source: c.source, desc: c.desc || '', focus: r.focus || '', fit: r.fit, appeal: r.appeal };
+    }
+  }
+  console.log(`[Image] vision: nothing fits "${String(query).slice(0, 60)}" (${place})`);
   return null;
 }
 
@@ -511,6 +683,11 @@ module.exports = {
   isLatinQuery,
   fallbackQueries,
   findImage,
+  findImageVision,
+  interleave,
+  wikiThumb,
+  canonKey,
+  fitsPlace,
   searchImageMulti,
   searchWikimedia,
   searchPexels,
@@ -519,6 +696,9 @@ module.exports = {
   cleanQuery,
   namedPhrases,
   isNamedQuery,
+  isRealSubject,
   lexicalFit,
+  unsplashCandidates,
+  wikimediaCandidates,
   downloadAsDataUri,
 };

@@ -29,6 +29,8 @@ const pt = (px) => Math.round(px * PT_PER_PX * 100) / 100;
 /** Office font for a CSS family (our stacks start with the Office name already). */
 function officeFont(family) {
   const f = String(family || '');
+  if (/courier|mono/i.test(f)) return 'Courier New';
+  if (/arial|liberation sans|helvetica/i.test(f)) return 'Arial';
   if (/times|serif|lora|georgia|cambria|displayface/i.test(f) && !/sans/i.test(f)) return 'Times New Roman';
   return 'Calibri';
 }

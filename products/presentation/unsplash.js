@@ -83,6 +83,12 @@ async function searchImage(query) {
  * Сәтсіз болса null қайтарады (шақырушы fallback-ке түседі).
  */
 const DL_UA = 'DeadLinePresentationBot/3.2 (https://t.me/ai_presentation_ybot; educational project)';
+// Wikimedia саясаты: бот өзін байланыспен таныстыруы керек (әйтпесе 403/429). Ал Flickr «Bot» деген UA-ға 403 береді
+// (Openverse суреттерінің көбі сонда) → басқа хосттарға браузер пішінді, бірақ атымыз бар UA.
+const WEB_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 DeadLine/3.2';
+function imageUA(url) {
+  return /(^|\.)wikimedia\.org|(^|\.)wikipedia\.org/i.test((String(url).match(/^https?:\/\/([^/]+)/i) || [])[1] || '') ? DL_UA : WEB_UA;
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function downloadAsDataUri(url, attempt = 0) {
@@ -92,7 +98,7 @@ async function downloadAsDataUri(url, attempt = 0) {
       timeout: DL_TIMEOUT_MS,
       maxContentLength: MAX_IMAGE_BYTES * 3,   // тым үлкен файлды тоқтату
       // Wikimedia (upload.wikimedia.org) әдепкі axios User-Agent-ті 403/429-мен қайтарады
-      headers: { 'User-Agent': DL_UA, Accept: 'image/jpeg,image/png,image/webp,image/*;q=0.8' },
+      headers: { 'User-Agent': imageUA(url), Accept: 'image/jpeg,image/png,image/webp,image/*;q=0.8' },
       validateStatus: s => s === 200,
     });
     const type = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
@@ -125,4 +131,5 @@ async function fetchImage(query) {
   return r ? r.url : null;
 }
 
-module.exports = { fetchImage, searchImage, downloadAsDataUri };
+module.exports = {
+  imageUA, fetchImage, searchImage, downloadAsDataUri };

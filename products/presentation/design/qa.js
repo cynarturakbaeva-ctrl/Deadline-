@@ -61,7 +61,8 @@ function revise(slide){
   set(1);res=measure(slide);
   function hard(r){return r.issues.filter(function(i){return i.hard;});}
   report.initial=hard(res).map(function(i){return i.type+'('+i.detail+')';});
-  var plan=[.95,.9,'drop','photo',.95,.9,'drop','note',.86,.82,.78,.74,.68,.62];
+  // мазмұнды тастаудан бұрын — кішірейту (0.74-ке дейін ≈ 22–24px мәтін, әлі оқылады), сосын қосымша фото, сосын ғана пункт
+  var plan=[.95,.9,.86,.82,.78,'photo',.95,.9,.86,.82,.78,.74,'note',.9,.86,.82,.78,.74,'drop',.86,.82,.78,.74,.7,'drop',.74,.7,.66,.62];
   for(var p=0;p<plan.length&&hard(res).length;p++){
     var step=plan[p];report.iterations++;
     if(step==='photo'){

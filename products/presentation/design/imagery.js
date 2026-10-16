@@ -27,6 +27,16 @@ function sharpEnough(meta, boxW) {
   if (!meta.w) return true;
   return meta.w >= boxW * 0.6;
 }
+/**
+ * May the photo fill the WHOLE slide (cover / closing / fullImage)? At most ~1.25× upscale (a 1080/1280 px
+ * rendition stretched to 1920 turns into a blur) and not portrait (a portrait shows only ~40% of itself there).
+ */
+function bleedOK(meta, boxW = 1920, ai = false) {
+  if (!meta || !meta.w) return true;
+  // AI сурет (1K ≈ 1376px) таза, шусыз → 1.4× үлкейтуге шыдайды; фото-сайттың 1080/1280px суреті бұлыңғырланады
+  if (meta.w < boxW * (ai ? 0.7 : 0.8)) return false;
+  return !(meta.h && meta.w / meta.h < 1.15);
+}
 
 /**
  * Panel geometry for a framed photo placed in `cols` grid columns.
@@ -75,4 +85,4 @@ function scrim(kind, palette) {
   }
 }
 
-module.exports = { focalPoint, sharpEnough, panelRatio, imgTag, framedPhoto, scrim, radiusPx };
+module.exports = { focalPoint, sharpEnough, bleedOK, panelRatio, imgTag, framedPhoto, scrim, radiusPx };

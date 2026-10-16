@@ -78,6 +78,29 @@ function validateInfographic(raw) {
 // ── geometry helpers ───────────────────────────────────────────────────────
 const box = (x, y, w, h, extra) => 'left:' + Math.round(x) + 'px;top:' + Math.round(y) + 'px;width:' + Math.round(w) + 'px' + (h != null ? ';height:' + Math.round(h) + 'px' : '') + (extra ? ';' + extra : '');
 const txt = (cls, html, style, role) => '<div class="' + cls + '" data-role="' + (role || 'label') + '" style="' + style + '">' + html + '</div>';
+const { simulateLines } = require('./typography');
+// мәтін қарпінің орташа таңба ені (em): Calibri 0.515, Arial 0.56 — builder дизайн жүйесіне қарай орнатады
+let TEXT_EM = 0.515;
+function setTextEm(em) { TEXT_EM = Number(em) || 0.515; }
+/**
+ * Detail text that FITS its box: the largest font in [maxFs..minFs] at which the whole text fits w×h
+ * (line-height 1.38, sans glyph model); only if even minFs cannot hold it, the text is shortened at a
+ * sentence/clause boundary (no ellipsis). Returns { html, fs }.
+ */
+function fitDetail(text, w, h, maxFs, minFs) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  for (let fs = maxFs; fs >= minFs; fs -= 1) {
+    const { lines, longest } = simulateLines(t, fs, w, TEXT_EM, 0);
+    if (longest <= w && lines * fs * 1.38 <= h) return { html: esc(t), fs };
+  }
+  const perLine = Math.max(8, Math.floor(w / (minFs * 0.515)));
+  const maxLines = Math.max(1, Math.floor(h / (minFs * 1.38)));
+  return { html: esc(truncate(t, Math.floor(perLine * maxLines * 0.9))), fs: minFs };
+}
+const detTxt = (cls, text, x, y, w, h, maxFs, minFs, extra) => {
+  const f = fitDetail(text, w, h, maxFs, minFs);
+  return txt(cls, f.html, box(x, y, w, h, 'font-size:' + f.fs + 'px' + (extra ? ';' + extra : '')));
+};
 function hiIndex(d, values) {
   if (d.highlight != null && d.highlight >= 0 && d.highlight < values.length) return d.highlight;
   let k = 0; values.forEach((v, i) => { if (v != null && v > (values[k] == null ? -Infinity : values[k])) k = i; });
@@ -280,7 +303,7 @@ def('cycle', {
       const lx = right ? lx0 : x - nd / 2 - 24 - lw;
       if (pole) out += '<div class="ig-lead" style="' + box(x + nd / 2 + 8, y, lx0 - x - nd / 2 - 18, 2) + '"></div>';
       out += txt('ig-lab strong' + (right ? '' : ' right'), '<span class="ig-k">' + String(i + 1).padStart(2, '0') + '</span> ' + esc(it.label), box(lx, y - 46, lw, 44, 'font-size:28px')) +
-        (it.detail ? txt('ig-det' + (right ? '' : ' right'), esc(truncate(it.detail, 90)), box(lx, y + 6, lw, 70, 'font-size:21px')) : '');
+        (it.detail ? detTxt('ig-det' + (right ? '' : ' right'), it.detail, lx, y + 6, lw, 104, 24, 19) : '');
     });
     return out;
   },
@@ -298,8 +321,8 @@ def('funnel', {
       const inset = ((w0 - w1) / 2 / w0) * 100;
       out += '<div class="ig-band" style="' + box((fw - w0) / 2, y, w0, bh, 'background:' + fill + ';clip-path:polygon(0 0,100% 0,' + r1(100 - inset) + '% 100%,' + r1(inset) + '% 100%)') + '"></div>' +
         (it.display ? txt('ig-val center', esc(showValue(it, d)), box((fw - w1) / 2, y, w1, bh, 'font-size:' + Math.round(clamp(bh * 0.36, 24, 40)) + 'px;display:flex;align-items:center;justify-content:center;color:' + ink(fill, p))) : '') +
-        txt('ig-lab strong', esc(it.label), box(fw + 36, y, W - fw - 36, bh * 0.55, 'font-size:' + (n <= 4 ? 28 : 24) + 'px;display:flex;align-items:flex-end')) +
-        (it.detail ? txt('ig-det', esc(truncate(it.detail, 80)), box(fw + 36, y + bh * 0.56, W - fw - 36, bh * 0.44, 'font-size:20px')) : '');
+        txt('ig-lab strong', esc(it.label), box(fw + 36, y, W - fw - 36, it.detail ? 40 : bh * 0.55, 'font-size:' + (n <= 4 ? 28 : 24) + 'px;display:flex;align-items:flex-end')) +
+        (it.detail ? detTxt('ig-det', it.detail, fw + 36, y + 44, W - fw - 36, bh - 44, 24, 18) : '');
     });
     return out;
   },
@@ -318,7 +341,7 @@ def('pyramid', {
       out += '<div class="ig-band" style="' + box(0, y, pw, lh, 'background:' + fill + ';clip-path:polygon(' + r1(lT) + '% 0,' + r1(100 - lT) + '% 0,' + r1(100 - lB) + '% 100%,' + r1(lB) + '% 100%)') + '"></div>' +
         '<div class="ig-lead" style="' + box(pw * (1 - lB / 100) - 8, y + lh / 2, pw * 0.08 + W * 0.04, 2) + '"></div>' +
         txt('ig-lab strong', esc(it.label), box(pw + W * 0.07, y + lh * 0.08, W - pw - W * 0.07, lh * 0.46, 'font-size:' + (n <= 4 ? 28 : 25) + 'px;display:flex;align-items:flex-end')) +
-        (it.detail ? txt('ig-det', esc(truncate(it.detail, 90)), box(pw + W * 0.07, y + lh * 0.55, W - pw - W * 0.07, lh * 0.45, 'font-size:20px')) : '');
+        (it.detail ? detTxt('ig-det', it.detail, pw + W * 0.07, y + lh * 0.55, W - pw - W * 0.07, lh * 0.45, 24, 18) : '');
     });
     return out;
   },
@@ -337,7 +360,7 @@ def('venn', {
     d.items.forEach((it, i) => {
       const q = away(C[i]); const lw = R * 1.05;
       out += txt('ig-lab strong center', esc(truncate(it.label, 30)), box(q[0] - lw / 2, q[1] - 40, lw, 44, 'font-size:28px')) +
-        (it.detail ? txt('ig-det center', esc(truncate(it.detail, 60)), box(q[0] - lw / 2, q[1] + 6, lw, 60, 'font-size:20px')) : '');
+        (it.detail ? detTxt('ig-det center', it.detail, q[0] - lw / 2, q[1] + 6, lw, R * 0.62, 22, 17) : '');
     });
     if (d.center) out += '<div class="ig-dot" style="' + box(cx - 10, (n === 2 ? cy : cy - R * 0.03) - 10, 20, 20) + '"></div>' + txt('ig-center center', esc(d.center), box(cx - R * 0.5, (n === 2 ? cy : cy - R * 0.03) + 18, R, 50, 'font-size:24px'), 'title');
     return out;
@@ -357,7 +380,7 @@ def('matrix', {
         '<div class="ig-badge" style="' + box(x + 32, y + 32, 72, 72, 'background:' + cols[i] + ';color:' + ink(cols[i], p)) + '">' + (ic ? iconSvg(ic, 38, 2) : '') + '</div>' +
         (!ic ? txt('ig-n center', esc(letter), box(x + 32, y + 46, 72, 44, 'font-size:34px;color:' + ink(cols[i], p))) : '') +
         txt('ig-lab strong', esc(it.label), box(x + 128, y + 34, cw - 160, 70, 'font-size:32px;display:flex;align-items:center')) +
-        (it.detail ? txt('ig-det', esc(truncate(it.detail, 150)), box(x + 32, y + 124, cw - 64, ch - 150, 'font-size:24px')) : '');
+        (it.detail ? detTxt('ig-det', it.detail, x + 32, y + 124, cw - 64, ch - 150, 26, 19) : '');
     }).join('');
   },
 });
@@ -380,7 +403,7 @@ def('prosCons', {
       list.forEach((it, i) => {
         const y = hdr + 12 + i * rowH;
         o += '<div class="ig-mark ' + (good ? 'good' : 'bad') + '" style="' + box(x, y + 4, 44, 44) + '">' + iconSvg(good ? 'check' : 'x', 26, 3) + '</div>' +
-          txt('ig-lab', esc(it.label) + (it.detail ? '<span class="ig-det-in"> — ' + esc(truncate(it.detail, 90)) + '</span>' : ''), box(x + 64, y, cw - 64, rowH - 8, 'font-size:' + (it.detail ? 24 : 27) + 'px'));
+          txt('ig-lab', esc(it.label) + (it.detail ? '<span class="ig-det-in"> — ' + esc(truncate(it.detail, 160)) + '</span>' : ''), box(x + 64, y, cw - 64, rowH - 8, 'font-size:' + (it.detail ? 24 : 27) + 'px'));
       });
       return o;
     };
@@ -404,7 +427,7 @@ def('roadmap', {
         '<div class="ig-mile' + (on ? ' on' : '') + '" style="' + box(x - 17, ly - 17, 34, 34) + '"></div>' +
         txt('ig-date' + (up ? '' : ''), esc(it.display || it.label), box(cx, up ? ly - 70 - 150 : ly + 78, cardW, 46, 'font-size:34px;text-align:' + (cx === x - cardW / 2 ? 'center' : cx === 0 ? 'left' : 'right')), 'numeral') +
         txt('ig-lab strong', esc(it.display ? it.label : ''), box(cx, up ? ly - 70 - 104 : ly + 124, cardW, 40, 'font-size:26px;text-align:' + (cx === x - cardW / 2 ? 'center' : cx === 0 ? 'left' : 'right'))) +
-        (it.detail ? txt('ig-det', esc(truncate(it.detail, 80)), box(cx, up ? ly - 70 - 62 : ly + 166, cardW, 58, 'font-size:20px;text-align:' + (cx === x - cardW / 2 ? 'center' : cx === 0 ? 'left' : 'right'))) : '');
+        (it.detail ? detTxt('ig-det', it.detail, cx, up ? ly - 70 - 62 : ly + 166, cardW, up ? 58 : H - (ly + 166), 22, 17, 'text-align:' + (cx === x - cardW / 2 ? 'center' : cx === 0 ? 'left' : 'right')) : '');
     });
     return out;
   },
@@ -425,7 +448,7 @@ def('iconGrid', {
       return '<div class="ig-card" style="' + box(x, y, cw, ch) + '"></div>' +
         '<div class="ig-badge' + (on ? ' on' : '') + '" style="' + box(x + 36, y + 36, icS, icS) + '">' + iconOrNum(it, i, Math.round(icS * 0.5)) + '</div>' +
         txt('ig-lab strong', esc(it.label), box(x + 36, y + 56 + icS, cw - 72, big ? 90 : 46, 'font-size:' + (big ? 30 : 27) + 'px')) +
-        (it.detail ? txt('ig-det', esc(truncate(it.detail, big ? 150 : 100)), box(x + 36, y + (big ? 150 : 110) + icS, cw - 72, ch - (big ? 180 : 130) - icS, 'font-size:' + (big ? 23 : 21) + 'px')) : '');
+        (it.detail ? detTxt('ig-det', it.detail, x + 36, y + (big ? 150 : 110) + icS, cw - 72, ch - (big ? 180 : 130) - icS, big ? 26 : 24, 18) : '');
     }).join('');
   },
 });
@@ -457,4 +480,5 @@ function autoInfographic(slide) {
   return null;
 }
 
-module.exports = { KINDS, validateInfographic, renderInfographic, autoInfographic, KIND_NAMES: Object.keys(KINDS) };
+module.exports = {
+  setTextEm, KINDS, validateInfographic, renderInfographic, autoInfographic, KIND_NAMES: Object.keys(KINDS) };

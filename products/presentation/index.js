@@ -9,7 +9,7 @@ const os   = require('os');
 const { generateSlides, reviewAndImproveSlides, parseUserInput, ensureIntroSlide, languageMismatch, applyCoverCredits, coverCreditItems } = require('./gemini');
 const { analyzeTemplate, schemaRuleLine } = require('./templateSchema');
 const { writeSlots } = require('./templateWriter');
-const { findImage, fallbackQueries, isLatinQuery } = require('./images');
+const { findImage, findImageVision, fallbackQueries, isLatinQuery, isRealSubject } = require('./images');
 const { limitTables, limitInfographics, applyDeckTheme } = require('./deckPolish');
 const { analyzeReference, referenceItems } = require('../../design-dna');
 const REQ = require('../../requirements');
@@ -34,6 +34,8 @@ const { generateSpeakerNotes, applySpeakerNotes } = require('./speakerNotes');
 const { validateInfographic } = require('./design/infographics');
 const { planPhotoSlides } = require('./photoPlan');
 const { makePhotoJudge } = require('./photoJudge');
+const { makeVisionChooser } = require('./photoVision');
+const { generateSlideImage, deckBudget } = require('./imageGen');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
@@ -53,6 +55,34 @@ function shortTopicKeyword(topic) {
   );
   if (line) return line.replace(/^Тақырып\s*[:：]\s*/i, '').slice(0, 60);
   return topic.slice(0, 40);
+}
+
+/**
+ * Бір фото-слайдқа сурет — VISION жолы (Google кілті бар болса):
+ *   1) слайдтың ӨЗ сұранысы (+ латынша тақырып) бойынша барлық көздерден кандидат → vision көріп таңдайды;
+ *   2) ештеңе сай болмаса → AI сурет (атаулы тұлға/оқиға емес болса, лимит ішінде);
+ *   3) ол да болмаса → суретсіз (типографиялық слайд). Басқа слайдтың сұранысы ЕШҚАШАН алынбайды.
+ * vision шақыруы сәтсіз болса (желі/кілт) → { fallback: true }: ескі мәтіндік тексеру жолы қолданылады.
+ */
+async function fetchPhotoVision(slide, ctx) {
+  const queries = [];
+  const add = (q) => { const t = String(q || '').trim(); if (t && isLatinQuery(t) && !queries.includes(t)) queries.push(t); };
+  add(ctx.query);
+  if (!ctx.query) add(fallbackQueries('', ctx.topic, [])[0]);
+  const place = ctx.background ? 'bg' : 'frame';
+  const deadline = Date.now() + (Number(process.env.PHOTO_SLIDE_DEADLINE_MS) || 25_000); // бір слайдқа іздеу+таңдау шегі
+  for (const q of queries) {
+    const hit = await findImageVision(q, { used: ctx.used, avoid: ctx.avoid, free: ctx.free, budget: ctx.budget, vision: ctx.vision, maxVariants: 2, place, deadline });
+    if (hit && hit.failed) return { fallback: true };
+    if (hit && hit.dataUri) return { dataUri: hit.dataUri, focus: hit.focus || '', source: hit.source, key: hit.key, credit: hit.credit, license: hit.license };
+  }
+  // нақты тұлға/оқиға/жыл — AI-мен жасалмайды (жалған тарих); жер/халық атауы («Kazakh steppe») — жасалады
+  const named = queries.some((q) => isRealSubject(q));
+  const gen = await generateSlideImage({
+    topic: ctx.topicTitle, title: slide.title, text: ctx.text, query: queries[0] || '', background: ctx.background, named,
+  }, ctx.genBudget).catch((err) => { console.warn(`[ImageGen] failed: ${err.message}`); return null; });
+  if (gen) return { dataUri: gen.dataUri, focus: '', source: 'ai', key: '', credit: 'AI', license: '' };
+  return { dataUri: null };
 }
 
 // Бір слайдқа сурет: сұраныстарды кезекпен сынап, табылған суретті жүктеп, data: URI ретінде қайтарады.
@@ -111,6 +141,8 @@ async function mapLimit(items, limit, fn) {
 async function generatePresentation(userInput, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : async () => {};
   const genId = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  let design = { mood: null, system: null }; // дизайн жүйесі + палитра (студенттің жадына қайтарылады)
+  const photoKeys = []; // осы колодаға алынған суреттер (canonKey) → студенттің жадына (келесіде қайталанбайды)
   const t0 = Date.now();
   const cost = createCostTracker(genId);
   setActiveCostTracker(cost);
@@ -381,10 +413,10 @@ async function generatePresentation(userInput, options = {}) {
   }
 
   // 2e. Colour theme + decoration are chosen by CODE (the LLM always copied the same dark/gold example)
-  {
-    const mood = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme });
-    console.log(`[Pipeline] Theme: ${mood}`);
-  }
+  // Дизайн жүйесі + палитра: студенттің соңғы дизайндары қайталанбайды (options.designAvoid — server.js береді)
+  design = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, avoid: options.designAvoid, keep: options.designForce || undefined });
+  if (typeof options.onDesign === 'function' && !refTheme) { try { options.onDesign(design); } catch {} }
+  console.log(`[Pipeline] Design: system=${design.system} mood=${design.mood}${options.designAvoid ? ` (avoid ${[].concat(options.designAvoid.systems || []).join('/')})` : ''}`);
 
   // 2f. Референс құрылымын слайдтарға қолдану (макет түрі + мазмұнды сәйкестендіру).
   //     Template режимінде ӨТКІЗІЛЕДІ: бұл HTML-рендерге арналған (буллеттерді кестеге/санға айналдырады),
@@ -416,7 +448,7 @@ async function generatePresentation(userInput, options = {}) {
       if (reqQaResult.repaired.length) {
         // Слайдтар өзгерген соң тема мен композицияны қайта қолданамыз (жаңа слайдтар да безендірілсін)
         try {
-          applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme });
+          applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, keep: design });
           if (refAnalysis && refAnalysis.outline && mode !== 'template') applyReferencePlan(slides, refAnalysis.outline);
         } catch (e) { console.warn('[Pipeline] re-theme after QA failed:', e.message); }
       }
@@ -544,6 +576,9 @@ async function generatePresentation(userInput, options = {}) {
   const photoBudget = options.free ? (Number(process.env.PHOTO_BUDGET_FREE) || 3) : (Number(process.env.PHOTO_BUDGET) || 4);
   const photoPlan = planPhotoSlides(slides, { budget: photoBudget });
   console.log(`[Pipeline] Photo plan: ${photoPlan.indexes.size}/${slides.length} slides → [${[...photoPlan.indexes].map((i) => i + 1).join(',')}]`);
+  const genBudget = deckBudget(!!options.free); // AI сурет: бір презентацияға ең көбі 2 (тегін — 1)
+  // осы студенттің бұрынғы презентацияларындағы суреттер (басқа таңдау болса қайталанбайды) + осы колоданікі
+  const photoAvoid = new Set(Array.isArray(options.photoAvoid) ? options.photoAvoid : []);
   const imagesTask = mapLimit(slides, 3, async (slide, idx) => {
     if (!photoPlan.indexes.has(idx)) return null;
     // Сурет іздеу тек ағылшынша (латын) сұранысқа. Қазақша/орысша сұраныс ЕШҚАШАН жіберілмейді.
@@ -556,15 +591,34 @@ async function generatePresentation(userInput, options = {}) {
     if (validateInfographic(slide.infographic)) return null;
     console.log(`[Image] query="${query}"`);
     try {
-      // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
       const layout = photoPlan.planned[idx];
-      const judge = makePhotoJudge({
+      const slideCtx = {
         topic: title || topic, title: slide.title, query,
         text: [slide.subtitle, slide.body].concat(Array.isArray(slide.bullets) ? slide.bullets.slice(0, 3) : [])
           .map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).filter(Boolean).join(' · '),
         cover: layout === 'cover' || layout === 'closing' || idx === 0 || idx === slides.length - 1,
         background: layout === 'cover' || layout === 'closing' || layout === 'fullImage', // фото бүкіл слайдты жабады
-      });
+      };
+      // Суретті КӨЗБЕН таңдау (Gemini Flash-Lite): кілт бар болса — негізгі жол
+      const vision = makeVisionChooser(slideCtx);
+      if (vision) {
+        const got = await fetchPhotoVision(slide, {
+          query, topic, topicTitle: title || topic, text: slideCtx.text, background: slideCtx.background,
+          used: usedImages, avoid: photoAvoid, free: !!options.free, vision, genBudget,
+          budget: { left: Number(process.env.IMAGE_SEARCHES_PER_PHOTO) || 5 },
+        });
+        if (!got.fallback) {
+          if (got.dataUri) {
+            if (got.focus) slide.imageFocus = got.focus; // басты нысан кесілмесін
+            slide.imageSource = got.source; slide.imageCredit = got.credit || ''; slide.imageLicense = got.license || '';
+            if (got.key) photoKeys.push(got.key);
+          }
+          return got.dataUri || null;
+        }
+        console.warn('[Image] vision unavailable for this slide — text judge fallback');
+      }
+      // әр кандидат слайдқа сай ма — сипаттамасы бойынша тексеріледі (тақырыпқа қатысы жоқ сурет қойылмайды)
+      const judge = makePhotoJudge(slideCtx);
       return await fetchImageWithFallback(query, topic, usedImages, deckQueries, { free: !!options.free, judge });
     } catch (err) {
       // Бір слайдтың суреті ешқашан бүкіл презентацияны құлатпауы керек
@@ -779,6 +833,16 @@ async function generatePresentation(userInput, options = {}) {
       } catch (e) { console.warn(`[Notes] speech docx failed: ${e.message}`); speechPath = null; }
       console.log(`[Pipeline] Speaker notes: ${notesMeta.ok}/${slides.length} slides, study guide=${notesMeta.study}`);
     }
+    // Сурет авторы: CC BY / BY-SA лицензиясы атрибуцияны талап етеді → баяндамашы жазбасының соңына (слайдты бүлдірмейді)
+    {
+      const lab = /russian|рус/i.test(String(language || '')) ? 'Изображение' : /english/i.test(String(language || '')) ? 'Image' : 'Сурет';
+      const aiLab = /russian|рус/i.test(String(language || '')) ? 'создано ИИ' : /english/i.test(String(language || '')) ? 'AI-generated' : 'ЖИ жасаған';
+      slides.forEach((sl) => {
+        if (!sl || !sl.webImageUrl || !sl.imageSource) return;
+        const line = sl.imageSource === 'ai' ? `${lab}: ${aiLab}` : (sl.imageCredit ? `${lab}: ${String(sl.imageCredit).slice(0, 220)}${sl.imageLicense && !String(sl.imageCredit).includes(sl.imageLicense) ? ` (${sl.imageLicense})` : ''}` : '');
+        if (line) sl.speakerNotes = (sl.speakerNotes ? sl.speakerNotes + '\n\n' : '') + line;
+      });
+    }
     // Өңделетін PPTX: мәтінсіз фон + нативті мәтін қораптары (HTML тек ішкі «сурет салушы»)
     pptxPath = await exportToPptx(pngPaths, title, slides, { bgPaths, textLayers, language, badge });
   } catch (err) {
@@ -883,6 +947,8 @@ async function generatePresentation(userInput, options = {}) {
     narrativeScore: narrativeMeta.narrativeScore,
     visionScore: visionMeta.overallScore,
     visionSource: visionMeta.source,
+    photoKeys,
+    design,
   };
 }
 
