@@ -9,7 +9,7 @@ const M = require('../core/designMemory');
 
 test('merge: newest first, no duplicates, bounded; bad JSON → empty memory', () => {
   let m = M.parse('not json');
-  assert.deepStrictEqual(m, { systems: [], moods: [], photos: [] });
+  assert.deepStrictEqual(m, { systems: [], moods: [], photos: [], comps: [] });
   m = M.merge(m, { system: 'journal', mood: 'ivory' });
   m = M.merge(JSON.stringify(m), { system: 'swiss', mood: 'cloud', photos: ['wm:a.jpg', 'px:1'] });
   m = M.merge(m, { system: 'journal', mood: 'midnight', photos: ['px:1', 'fl:9'] });
@@ -28,12 +28,12 @@ test('json db: memory survives per student and feeds the next deck\'s choice', a
   const db = require('../storage/jsonDb');
   await db.initDB();
   await db.registerUser('77', null, null);
-  assert.deepStrictEqual(await db.getDesignMemory('77'), { systems: [], moods: [], photos: [] });
+  assert.deepStrictEqual(await db.getDesignMemory('77'), { systems: [], moods: [], photos: [], comps: [] });
   await db.pushDesignMemory('77', { system: 'academy', mood: 'mint' });
   await db.pushDesignMemory('77', { photos: ['wm:x.jpg'] });
   const mem = await db.getDesignMemory('77');
-  assert.deepStrictEqual(mem, { systems: ['academy'], moods: ['mint'], photos: ['wm:x.jpg'] });
-  assert.deepStrictEqual(await db.getDesignMemory('nobody'), { systems: [], moods: [], photos: [] });
+  assert.deepStrictEqual(mem, { systems: ['academy'], moods: ['mint'], photos: ['wm:x.jpg'], comps: [] });
+  assert.deepStrictEqual(await db.getDesignMemory('nobody'), { systems: [], moods: [], photos: [], comps: [] });
 
   const { applyDeckTheme } = require('../products/presentation/deckPolish');
   const avoid = M.avoidOptions(mem).designAvoid;
@@ -61,4 +61,34 @@ test('pg db: design_memory column is added and round-trips', { skip: !URL || !Po
     await db.pushDesignMemory(U, { system: 'atelier', mood: 'blush' });
     assert.deepStrictEqual(await db.getDesignMemory(U), { systems: ['atelier', 'mono'], moods: ['blush', 'cold'], photos: ['na:iss1'] });
   } finally { await pool.end(); }
+});
+
+test('design memory keeps recent compositions and hands them to the next deck', () => {
+  const M = require('../core/designMemory');
+  let m = M.merge(null, { comps: ['cover-arch', 'concepts-tickets'] });
+  m = M.merge(m, { comps: ['cover-band'] });
+  assert.deepStrictEqual(m.comps.slice(0, 3), ['cover-band', 'cover-arch', 'concepts-tickets']);
+  assert.deepStrictEqual(M.avoidOptions(m).recentComps.slice(0, 1), ['cover-band']);
+});
+
+test('builder avoids a student\'s recent compositions when an alternative fits', () => {
+  const { build3DPresentationHTML } = require('../products/presentation/html3DBuilder');
+  const deck = [{ title: 'Тақырып', subtitle: 'Сипаттама', bullets: ['Орындаған: Студент'] },
+    { title: 'Үш ұғым', bullets: ['Ақыл — білім мен ойлау', 'Қайрат — ерік пен еңбек', 'Жүрек — мейірім мен ар'] }];
+  const ids = (html) => [...html.matchAll(/data-layout="cx-([a-z0-9-]+)"/g)].map((x) => x[1]);
+  const first = ids(build3DPresentationHTML(deck, 'T', {}));
+  const second = ids(build3DPresentationHTML(deck, 'T', { recentComps: first }));
+  // фотосыз мұқабаға бір ғана композиция сай → қайталанады; ұғымдар слайдында баламалар көп → басқасы
+  assert.ok(first.length === 2 && second.length === 2, first.join(',') + ' → ' + second.join(','));
+  assert.notStrictEqual(second[1], first[1]);
+});
+
+test('composition variants: same content + different seed → different inner look; mirror keeps elements on the slide', () => {
+  const C = require('../products/presentation/design/compositions');
+  const vs = new Set();
+  for (let s = 0; s < 12; s++) { const v = C.variantFor({ seed: s }, { index: 2 }, 'concepts-arches', {}); vs.add(JSON.stringify(v)); }
+  assert.ok(vs.size >= 8, 'variants: ' + vs.size);
+  const m = C.mirrorHtml('<div style="position:absolute;left:100px;top:10px;width:300px">x</div><div style="position:absolute;right:0;width:5px"></div>');
+  assert.match(m, /left:1520px/);
+  assert.match(m, /right:0;width:5px/);
 });

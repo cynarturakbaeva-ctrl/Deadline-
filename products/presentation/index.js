@@ -674,7 +674,7 @@ async function generatePresentation(userInput, options = {}) {
   const buildAndRender = async (attempt) => {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
     restoreCover(slides);
-    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, badge: !!badge, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
+    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, badge: !!badge, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null, recentComps: options.recentComps || [] }), 'utf8');
     await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Өңделетін PPTX жасалуда...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
     cost.addRenderAttempt();
@@ -732,8 +732,56 @@ async function generatePresentation(userInput, options = {}) {
       throw new Error('Render produced zero PNGs');
     }
 
-    // Vision Art Director: look at rendered PNGs → redesign → optional re-render
-    try {
+    // DeepSeek визуал тексеріс: құрастырылған слайдтарды КӨЗБЕН қарау → проблемалыларын ғана қайта жасау,
+    // жаңа нұсқа проблема азайса ғана қабылданады (әйтпесе бұрынғысы қалады). DESIGN_REVIEW=0 — өшіру.
+    if (process.env.DESIGN_REVIEW !== '0') {
+      try {
+        const VR = require('./design/visualReview');
+        const layouts = VR.layoutsOf(htmlPath);
+        const cxIdx = layouts.map((l, i) => (/^cx-/.test(l) ? i : -1)).filter((i) => i >= 0);
+        if (cxIdx.length) {
+          await onProgress('vision', 'Дизайнды көзбен тексеру...');
+          const r1 = await VR.review({ pngPaths, idx: cxIdx, topic });
+          console.log(`[Pipeline] Design review: score=${r1 ? r1.score : '-'} flagged=${r1 ? (r1.flagged.map((f) => (f.i + 1) + ':' + f.problems.join('/')).join(' ') || 'none') : 'n/a'}`);
+          if (r1 && r1.flagged.length) {
+            const before = {
+              slides: slides.map((s) => JSON.parse(JSON.stringify(s))), htmlPath, pngPaths: pngPaths.slice(), bgPaths: bgPaths.slice(),
+              textLayers: textLayers.slice(), tmpDir, overflowWarnings: (overflowWarnings || []).slice(),
+            };
+            const changed = VR.applyFixes(slides, layouts, r1.flagged);
+            if (changed.length) {
+              attempt += 1;
+              const re = await buildAndRender(attempt);
+              const r2 = await VR.review({ pngPaths: re.pngPaths, idx: changed, topic });
+              const n1 = r1.flagged.filter((f) => changed.includes(f.i)).reduce((n, f) => n + f.problems.length, 0);
+              const n2 = r2 ? r2.flagged.reduce((n, f) => n + f.problems.length, 0) : n1;
+              const ovOk = (re.overflowWarnings || []).length <= before.overflowWarnings.length && re.pngPaths.length === before.pngPaths.length;
+              const drop = (h, pngs, dir) => {
+                try { fs.unlinkSync(h); } catch {}
+                for (const p of pngs) { try { fs.unlinkSync(p); } catch {} }
+                if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
+              };
+              if (r2 && n2 < n1 && ovOk) {
+                drop(before.htmlPath, before.pngPaths, before.tmpDir);
+                htmlPath = re.pathHtml; pngPaths = re.pngPaths; bgPaths = re.bgPaths || []; textLayers = re.textLayers || [];
+                tmpDir = re.tmpDir; overflowWarnings = re.overflowWarnings || [];
+                console.log(`[Pipeline] Design review: re-made slides ${changed.map((i) => i + 1).join(',')} accepted (problems ${n1}→${n2})`);
+              } else {
+                drop(re.pathHtml, re.pngPaths, re.tmpDir);
+                slides = before.slides;
+                console.log(`[Pipeline] Design review: re-made version rejected (problems ${n1}→${r2 ? n2 : '?'}${ovOk ? '' : ', render QA worse'}) — kept original`);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[Pipeline] Design review error (continuing): ${e.message}`);
+      }
+    }
+
+    // Ескі Vision Art Director: тек VISION_CRITIC=1 болғанда. Кілтсіз ол PNG көлеміне қарап «бос» деп шешіп,
+    // слайд мазмұнын қиып қайта рендерлейтін (+30 с, композицияларды бұзады) — оның орнын DeepSeek визуал тексерісі басты.
+    if (process.env.VISION_CRITIC === '1') try {
       await onProgress('vision', 'Визуал сын (Art Director)...');
       const vision = await runVisionCritic({ slides, pngPaths, title, topic });
       visionMeta = {
@@ -955,8 +1003,15 @@ async function generatePresentation(userInput, options = {}) {
     visionScore: visionMeta.overallScore,
     visionSource: visionMeta.source,
     photoKeys,
+    // колодада қолданылған композициялар → студенттің дизайн жадына (келесі колодада алдымен басқалары)
+    compIds: compIdsOf(htmlPath),
     design,
   };
+}
+
+/** HTML-дағы құрастырылған композиция идентификаторлары (data-layout="cx-…") */
+function compIdsOf(file) {
+  try { return [...new Set([...fs.readFileSync(file, 'utf8').matchAll(/data-layout="cx-([a-z0-9-]+)"/g)].map((m) => m[1]))]; } catch { return []; }
 }
 
 module.exports = { generatePresentation };

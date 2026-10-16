@@ -248,6 +248,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .prose p{margin:0 0 var(--s3);font-size:calc(var(--bs,28px)*var(--fs,1));line-height:1.62;color:var(--text);text-wrap:pretty}
 .prose p:first-child{color:var(--text)}
 .prose.two{column-count:2;column-gap:var(--s5)}
+.ed-terms .ed-item{padding:var(--s3) 0;border-top:1px solid var(--line)}
+.ed-terms .ed-item:first-child{border-top:0;padding-top:0}
+.ed-terms .ed-k{margin:0;font-family:var(--f-display);font-weight:var(--dw,600);font-size:calc(var(--bs,32px)*1.3*var(--fs,1));line-height:1.12;letter-spacing:-.01em;color:var(--text)}
+.ed-terms .ed-d{margin:.35em 0 0;font-size:calc(var(--bs,32px)*.86*var(--fs,1));line-height:1.45;color:var(--text2)}
 .prose.two p{break-inside:avoid-column}
 .notes{list-style:none;margin:var(--s4) 0 0;padding:0;display:grid;gap:var(--s3)}
 .notes li{padding-left:var(--s3);border-left:3px solid var(--accent);font-size:calc(var(--bs,24px)*var(--fs,1));line-height:1.45;color:var(--text2)}
@@ -262,7 +266,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .row-d{margin-top:10px;font-size:calc(var(--rd,26px)*var(--fs,1));line-height:1.45;color:var(--text2);text-wrap:pretty}
 
 /* concept columns (3–4 labelled ideas) */
-.conc{display:flex;flex-direction:column;justify-content:center;gap:var(--s8)}
+/* тақырып жоғарыда, ұғымдар төменгі жиекте: аралықтағы ауа — әдейі (асты бос қалмайды) */
+.conc{display:flex;flex-direction:column;justify-content:space-between;gap:var(--s8)}
 .concepts{list-style:none;margin:0;padding:0;display:grid;column-gap:var(--gut);align-items:start}
 .concepts.n2{grid-template-columns:repeat(2,1fr)}.concepts.n3{grid-template-columns:repeat(3,1fr)}.concepts.n4{grid-template-columns:repeat(4,1fr)}.concepts.n5,.concepts.n6{grid-template-columns:repeat(3,1fr);row-gap:var(--s5)}
 .concept{border-top:1px solid var(--line);padding-top:var(--s3);padding-right:var(--s2);position:relative}

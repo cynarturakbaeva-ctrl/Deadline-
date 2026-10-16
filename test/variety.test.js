@@ -63,6 +63,9 @@ test('one student: the next deck avoids his last 2 design systems and recent pal
 });
 
 test('every design system renders a full deck: its own fonts, numbering, folio and cover', () => {
+  // бұрынғы макеттер қозғалтқышы (композициялар сай келмегенде резерв) — өзінің белгілерімен тексеріледі
+  const prevC = process.env.DESIGN_COMPOSE; process.env.DESIGN_COMPOSE = '0';
+  try {
   const SYS = require('../products/presentation/design/systems');
   const { build3DPresentationHTML } = require('../products/presentation/html3DBuilder');
   const slides = [
@@ -80,6 +83,7 @@ test('every design system renders a full deck: its own fonts, numbering, folio a
   }
   assert.strictEqual(seen.size, Object.keys(SYS.SYSTEMS).length, 'әр жүйе өзгеше');
   assert.ok(build3DPresentationHTML(slides, 't', { system: 'swiss' }).includes("font-family:'Arial'"), 'Arial шрифті ендірілді');
+  } finally { if (prevC == null) delete process.env.DESIGN_COMPOSE; else process.env.DESIGN_COMPOSE = prevC; }
 });
 
 test('limitTables: <=1 table per 4 slides, never adjacent; extras become bullets', () => {

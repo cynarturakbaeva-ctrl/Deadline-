@@ -267,6 +267,24 @@ COVER.arch = (ctx) => {
   return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' + (photoOK ? ' has-arch' : ' no-arch') };
 };
 
+/** Дудл мұқаба (campus): сол жақта тақырып, оң жақта тақырыпқа сай қолмен салынған иллюстрация (Open Doodles, CC0) */
+COVER.doodle = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const D = require('./doodles');
+  const uri = D.doodleUri(D.pickDoodle(ctx.deckTitle + ' ' + a.title), p.accent, p.text);
+  const bg = '<div class="plate plate-cover"></div>' + (uri ? '<img class="doodle doodle-cover" alt="" src="' + uri + '">' : '');
+  const w = GRID.span(7);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas cover cover-doodle">' +
+    '<div class="block cover-block" style="width:' + w + 'px">' +
+      (org || kicker(ctx, sectionLabel(ctx))) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 5, hl: true, scale: [112, 100, 90, 80, 72, 64] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-doodle-slide' };
+};
+
 /** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
 COVER.masthead = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
@@ -444,6 +462,8 @@ L.editorial = (ctx) => {
   const paras = a.body ? a.body.split(/\n+/).filter(Boolean) : a.bullets.slice(0, 6);
   const words = a.body ? a.bodyWords : a.bulletWords;
   const twoCol = words > 90;
+  // мәтінсіз, «Термин — факт» түріндегі қысқа пункттер (2–5) → термин/факт жұбы
+  const terms = !a.body && !twoCol && paras.length >= 2 && paras.length <= 5 && paras.every((t) => / — /.test(t) && splitLabelDetail(t).label.split(/\s+/).length <= 5);
   const size = twoCol ? 26 : words <= 48 ? 36 : words <= 75 ? 32 : 28;
   const small = a.hasPhoto && I.sharpEnough(a.img, 700)
     ? '<div class="cell-photo">' + I.framedPhoto(a.photo, a.img, p, { ratio: '4 / 3', focus: a.focus }) + '</div>' : '';
@@ -454,7 +474,12 @@ L.editorial = (ctx) => {
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') + small +
     '</div></div>' +
     '<div class="cell edit-r" style="' + cols(...R_) + '">' +
-      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), paras.map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
+      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : '') + (terms ? ' ed-terms' : ''), paras.map((t, k) => {
+        if (!terms) return '<p style="--bs:' + size + 'px">' + esc(t) + '</p>';
+        // «Термин — қысқа факт»: термин ірі әрі дисплей қаріпте, факт астында — иерархия бар, бос орын толады
+        const m = splitLabelDetail(t);
+        return '<div class="ed-item" style="--bs:' + size + 'px"><p class="ed-k">' + esc(m.label) + '</p>' + (m.detail ? '<p class="ed-d">' + esc(m.detail) + '</p>' : '') + '</div>';
+      }).join(''), { role: 'text' }) : '') +
       (a.body ? notes(ctx, a.bullets.slice(0, 4), 26) : '') +
     '</div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
@@ -490,8 +515,8 @@ function pointsColumns(ctx, parsed) {
   const a = ctx.a; const n = parsed.length;
   const tw = GRID.span(8);
   const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + num(ctx, k + 1) + '</span>' +
-    '<div class="concept-l" style="--rl:' + (n <= 3 ? 40 : n === 4 ? 36 : 32) + 'px">' + esc(m.label) + '</div>' +
-    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 24) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
+    '<div class="concept-l" style="--rl:' + (n <= 3 ? 52 : n === 4 ? 46 : 38) + 'px">' + esc(m.label) + '</div>' +
+    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 30 : n === 4 ? 28 : 25) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas conc"><div class="block conc-head">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: tw, maxLines: 2, scale: [92, 80, 70, 62, 54] }) +
@@ -754,9 +779,14 @@ L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   if (ctx.sys && ctx.sys.closing === 'split' && a.hasPhoto && I.sharpEnough(a.img, 900)) return closingSplit(ctx);
   const hasP = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
-  const bg = hasP
+  let bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
     : '<div class="plate plate-section"></div>' + AURORA;
+  if (!hasP && ctx.sys && ctx.sys.doodles) { // фотосыз қорытынды — тақырыпқа сай екінші иллюстрация
+    const D = require('./doodles');
+    const uri = D.doodleUri(D.pickDoodle(ctx.deckTitle + ' ' + a.title, 1), p.accent, p.text);
+    if (uri) bg += '<img class="doodle doodle-close" alt="" src="' + uri + '">';
+  }
   const items = a.bullets.slice(0, 4);
   const lw = GRID.span(5);
   const fg = '<div class="canvas g12 close">' +
@@ -783,4 +813,4 @@ L.references = (ctx) => {
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
 
-module.exports = { L, makeCtx, esc };
+module.exports = { L, makeCtx, esc, H: { el, titleH1, kicker, lead, folio, num, sectionLabel, rule, coverParts, para } };

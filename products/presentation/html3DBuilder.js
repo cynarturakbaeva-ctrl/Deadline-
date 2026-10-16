@@ -165,12 +165,36 @@ function renderSlide(slide, index, plan, ctxDeck) {
   }
   if (ctxDeck.skin && ctxDeck.skin.photoShape === 'circle' && layoutName === 'imageFocus') layoutName = 'split';
   let out;
-  try {
+  // Құрастырылған композиция (compositions/): мазмұнға сай болса — бұрынғы макеттің орнына
+  if (ctxDeck.compEnv && !plan.locked) {
+    const got = require('./design/compositions').compose(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys), ctxDeck.compEnv);
+    if (got) { out = got.out; layoutName = 'cx-' + got.id; }
+  }
+  if (!out) try {
     out = (L[layoutName] || L.statement)(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   } catch (err) {
     console.warn('[Design] layout "' + layoutName + '" failed on slide ' + (index + 1) + ': ' + err.message + ' → statement');
     layoutName = 'statement';
     out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
+  }
+  // Мағыналы әшекей (Мұра): слайд мазмұнына сай ескі гравюра; сай тақырып жоқ → әшекей жоқ. Орнын рендер өлшейді.
+  // Заманауи жүйелер: мағынасына сай ірі жіңішке белгіше (Lucide), орнын рендер өлшейді
+  if (ctxDeck.sys && ctxDeck.sys.iconDecor && out && !/^(fullImage|table|infographic|split|imageFocus|cx-.*)$/.test(layoutName) && !(ctxDeck.sys.doodles && (index === 0 || layoutName === 'closing')) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2) && !(index === 0 && plan.a.hasPhoto)) {
+    const D = require('./design/decor');
+    ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
+    const s = slide || {};
+    const text = (index === 0 ? deckTitle + ' ' : '') + [s.title, s.subtitle].concat(Array.isArray(s.bullets) ? s.bullets : []).map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).join(' ');
+    const imgs = D.pickIconDecor(text, ctxDeck.decorUsed, 2).map((h) => '<img class="decor decor-icon" data-max="' + (ctxDeck.sys.iconMax || 300) + '" data-decor="' + h.role + '" alt="" aria-hidden="true" src="' + D.iconUri(h.name, palette.accent, ctxDeck.sys.iconStroke || 1.1) + '">').join('');
+    if (imgs) { ctxDeck.lastDecor2 = ctxDeck.lastDecor; ctxDeck.lastDecor = index; out = { ...out, bg: (out.bg || '') + imgs }; }
+  }
+  if (ctxDeck.sys && ctxDeck.sys.decor && out && !/^(fullImage|table|infographic|cx-.*)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2)) {
+    const D = require('./design/decor');
+    ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
+    const s = slide || {};
+    const text = (index === 0 ? deckTitle + ' ' : '') + [s.title, s.subtitle].concat(Array.isArray(s.bullets) ? s.bullets : []).map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).join(' ');
+    const set = index === 0 && plan.a.hasPhoto ? [] : D.pickDecorSet(text, ctxDeck.decorUsed, index, 2); // фотолы мұқабаға әшекей қоспаймыз
+    const imgs = set.map((h) => { const uri = D.decorUri(h.file); return uri ? '<img class="decor decor-' + h.tag + '" data-decor="' + h.role + '" alt="" aria-hidden="true" src="' + uri + '">' : ''; }).join('');
+    if (imgs) { ctxDeck.lastDecor2 = ctxDeck.lastDecor; ctxDeck.lastDecor = index; out = { ...out, bg: (out.bg || '') + imgs }; }
   }
   const cam = chooseCam(index);
   const accent = palette.accent;
@@ -233,6 +257,14 @@ function buildNew(slides, presentationTitle, opts) {
   const mt = mediaTable(skin);
   const serif = /Times|DisplayFace|serif/i.test(ts.display.split(',')[0]);
   const ctxDeck = { palette, ts, deckTitle, skin, serif, sys, total: list.length, mediaIds: mt.ids, roles: opts.refRoles || null };
+  // Композициялар: клиент үлгісі (skin) жоқ болса; DESIGN_COMPOSE=0 — өшіру
+  if (!skin && process.env.DESIGN_COMPOSE !== '0') {
+    const c0 = (list[0] && list[0].composition) || {};
+    ctxDeck.decorUsed = new Set();
+    ctxDeck.compEnv = { used: ctxDeck.decorUsed, comps: new Set(), recent: opts.recentComps || [], seed: Number(c0.layoutSeed) >>> 0 || 0 };
+    // бекітілген (pin) композициялар алдын ала «қолданылған» — қайта жасалған слайд оларды қайталамайды
+    list.forEach((s) => { const pin = s && s.composition && s.composition.cx && s.composition.cx.pin; if (pin) ctxDeck.compEnv.comps.add(pin); });
+  }
   const cut0 = A.truncate.count;
   // инфографика мәтінін өлшеу жүйенің мәтін қарпімен (Arial Calibri-ден кеңірек)
   IG.setTextEm(/Arial/i.test(ts.text.split(',')[0]) ? 0.56 : 0.515);
@@ -242,7 +274,7 @@ function buildNew(slides, presentationTitle, opts) {
   if (A.truncate.count > cut0) console.warn('[Design] text shortened ' + (A.truncate.count - cut0) + '× (layout too small for the content)');
   const total = String(Math.max(list.length, 1)).padStart(2, '0');
   return '<!DOCTYPE html><html lang="kk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + SYS.systemCss(sys, palette) + mt.css + '</style></head><body>' +
+    '<meta name="theme-color" content="' + palette.bg + '"><title>' + esc(deckTitle) + '</title><style>' + css(palette, ts) + SYS.systemCss(sys, palette) + mt.css + (ctxDeck.compEnv ? require('./design/compositions').CSS : '') + '</style></head><body>' +
     '<div id="frame"><div id="stage"' + skinStage(skin, palette, opts.badge, opts.skin ? '' : 'ds-' + sys.id) + '>' + slidesHTML +
     '<div id="topbar" hidden><span id="cur">01</span><span id="total">' + total + '</span></div>' +
     '<div id="dots"></div><div id="controls"><button class="ctrl" id="prev" type="button">‹</button><button class="ctrl" id="next" type="button">›</button><button class="ctrl" id="full" type="button">⛶</button></div>' +

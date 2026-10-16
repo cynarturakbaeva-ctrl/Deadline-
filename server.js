@@ -1024,6 +1024,7 @@ async function executeJob(jobId) {
       tokens: result.cost ? result.cost.totalTokens || null : null, duration_ms: result.durationMs || null, finished_at: Date.now(),
     }).catch(() => {});
     if (Array.isArray(result.photoKeys) && result.photoKeys.length) pushDesignMemory(chatId, { photos: result.photoKeys }).catch(() => {});
+    if (Array.isArray(result.compIds) && result.compIds.length) pushDesignMemory(chatId, { comps: result.compIds }).catch(() => {});
     await markGenerationSuccess(chatId, !!result.expensiveVisuals);
     await countReferral(chatId);
     await addHistory(chatId, {

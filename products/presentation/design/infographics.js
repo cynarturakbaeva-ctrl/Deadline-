@@ -72,7 +72,23 @@ function validateInfographic(raw) {
     headers: Array.isArray(raw.headers) ? raw.headers.map((h) => str(h, 40)) : [],
     highlight: Number.isInteger(raw.highlight) ? raw.highlight : null,
   };
+  dropDecorativeValues(d);
   try { return spec.validate(d) ? d : null; } catch (e) { return null; }
+}
+
+/**
+ * Құрылымдық сызбадағы (воронка, пирамида…) сан міндетті емес — модель оны «әдемі болсын» деп ойдан қояды:
+ * 100% → 70% → 50% → 30% → 10%. Көзі жоқ, бәрі «дөңгелек» пайыз болса — сандар алынады, сатылар қалады.
+ * Нақты дерек (көзі бар, не 37%, 4,2 млн сияқты дөңгелек емес сан) тиіспейді.
+ */
+const OPTIONAL_VALUE_KINDS = new Set(['funnel', 'pyramid', 'cycle', 'venn', 'matrix', 'iconGrid']);
+function dropDecorativeValues(d) {
+  if (!OPTIONAL_VALUE_KINDS.has(d.kind) || d.source) return;
+  const vals = d.items.filter((it) => it.display);
+  if (vals.length < 2) return;
+  const roundPct = vals.every((it) => isPct(it, d) && it.value != null && it.value % 5 === 0);
+  if (!roundPct) return;
+  d.items.forEach((it) => { it.display = ''; it.value = null; });
 }
 
 // ── geometry helpers ───────────────────────────────────────────────────────

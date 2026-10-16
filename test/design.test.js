@@ -39,10 +39,16 @@ test('no three identical layouts in a row (rhythm)', () => {
 });
 
 test('builder keeps public API + runtime hooks the renderer relies on', () => {
+  const prevC = process.env.DESIGN_COMPOSE; process.env.DESIGN_COMPOSE = '0'; // бұрынғы қозғалтқыштың ілгектері
+  const html0 = build3DPresentationHTML(deck, 'Deck', { style: 'business' });
+  if (prevC == null) delete process.env.DESIGN_COMPOSE; else process.env.DESIGN_COMPOSE = prevC;
+  assert.ok(html0.includes('class="block'));
   const html = build3DPresentationHTML(deck, 'Deck', { style: 'business' });
-  for (const hook of ['class="slide', 'id="stage"', 'id="controls"', 'id="dots"', 'window.__qaDone', 'data-layout="cover"', 'class="block']) {
+  for (const hook of ['class="slide', 'id="stage"', 'id="controls"', 'id="dots"', 'window.__qaDone']) {
     assert.ok(html.includes(hook), hook);
   }
+  // мұқаба: бұрынғы макет не құрастырылған композиция (compositions/)
+  assert.match(html, /data-layout="(cover|cx-cover-[a-z-]+)"/);
   assert.strictEqual((html.match(/<article class="slide/g) || []).length, deck.length);
 });
 

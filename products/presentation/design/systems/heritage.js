@@ -74,7 +74,7 @@ function css(p) {
     `${S} .concept:first-child{border-left:0!important;padding-left:0!important}`,
     `${S} .concept::before{content:counter(roman,upper-roman)!important;position:static!important;display:block;width:auto!important;height:auto!important;background:none!important;font-family:var(--f-display);font-style:italic;font-size:64px;line-height:1;color:${acc};margin-bottom:28px}`,
     `${S} .concept::after,${S} .concept-n{display:none!important}`,
-    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.75*var(--fs,1));line-height:1.06;color:${ink}}`,
+    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.38*var(--fs,1));line-height:1.06;color:${ink}}`,
     `${S} .concept-d{font-size:calc(var(--rd,26px)*1.1*var(--fs,1));color:var(--text2)}`,
 
     // ── тізім/мәтін/қорытынды: тақырып жыртық шетті қағаз парағында ──
@@ -99,6 +99,11 @@ function css(p) {
     // ── инфографика карточкалары: тегіс, жиексіз ──
     `${S} .ig-card,${S} .hn,${S} .st{background:none!important;box-shadow:none!important;border:0!important;border-top:1.5px solid ${hair}!important;border-radius:0!important}`,
 
+    // ── мағыналы гравюралар (decor.js): орнын рендер таңдайды; қағазға басылғандай ──
+    `${S} .decor{position:absolute;visibility:hidden;pointer-events:none;object-fit:contain;mix-blend-mode:multiply;filter:sepia(.7) saturate(.75) brightness(1.25) contrast(.8);opacity:.72}`,
+    `${S} .decor-flora{filter:saturate(.85) sepia(.12);opacity:.95}`,
+    `${S} .no-arch .cover-arch .cover-block{left:var(--mx)!important;transform:translateY(-50%)!important;text-align:left!important;width:1050px!important}`,
+    `${S} .no-arch .meta-row{justify-content:flex-start}${S} .no-arch .orn-cover{left:var(--mx);margin-left:0}`,
     // ── бөлім ──
     `${S} .L-section .canvas{text-align:center}`,
 
@@ -116,6 +121,7 @@ module.exports = {
   num: 'pad',
   folio: { title: false, total: false, pad: true, cover: false },
   cover: 'arch',
+  decor: true,
   closing: 'rows',
   css,
 };
