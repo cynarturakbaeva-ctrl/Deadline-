@@ -60,3 +60,16 @@ test('icon picker understands Kazakh / Russian / English words and the explicit 
   assert.strictEqual(pickIcon('', 'бойынша'), null, 'no false match inside words');
   assert.ok(ICON_NAMES.length >= 100);
 });
+
+test('funnel/pyramid: invented round percentages without a source are dropped, real data kept', () => {
+  const { validateInfographic } = require('../products/presentation/design/infographics');
+  const items = ['A', 'B', 'C', 'D'].map((l, i) => ({ label: l, value: [100, 70, 40, 10][i] + '%' }));
+  const fake = validateInfographic({ kind: 'funnel', items });
+  assert.ok(fake && fake.items.every((it) => !it.display), 'decorative values removed, stages kept');
+  const sourced = validateInfographic({ kind: 'funnel', items, source: 'ҚР Статистика бюросы, 2023' });
+  assert.ok(sourced.items.every((it) => it.display), 'sourced values kept');
+  const real = validateInfographic({ kind: 'pyramid', items: [{ label: 'A', value: '37%' }, { label: 'B', value: '22%' }, { label: 'C', value: '9%' }] });
+  assert.ok(real.items.every((it) => it.display), 'non-round values kept');
+  const donut = validateInfographic({ kind: 'donut', items: [{ label: 'A', value: '70%' }, { label: 'B', value: '30%' }] });
+  assert.ok(donut && donut.items[0].display, 'charts untouched');
+});
