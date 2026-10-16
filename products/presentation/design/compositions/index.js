@@ -185,8 +185,9 @@ def({
       const x = gx + bigW + gap + c * (cw + gap); const y = gy + r * (ch + gap); const w = wide ? cw * 2 + gap : cw;
       bg += P.panel(x, y, w, ch, card, 'border-radius:28px;box-shadow:0 1px 0 ' + P.mix(p.bg, p.text, 0.1));
       const v = P.visualFor(m.label + ' ' + (m.detail || ''), ctx.sys, p, env.used, a.index * 5 + k + 1, { stroke: 1.5 });
-      bg += P.div(P.pos(x + 32, y + 30, 84, 84) + ';border-radius:50%;background:' + P.mix(p.bg, p.accent, 0.16));
-      if (v) bg += P.visualImg(v, x + 46, y + 44, 56, 56);
+      const cs = v && v.kind === 'engraving' ? 130 : 84; // гравюра ұсақ шеңберде көрінбейді
+      bg += P.div(P.pos(x + 32, y + 30, cs, cs) + ';border-radius:50%;background:' + P.mix(p.bg, p.accent, 0.16));
+      if (v) bg += P.visualImg(v, x + 32 + cs * 0.17, y + 30 + cs * 0.17, cs * 0.66, cs * 0.66);
       else bg += P.ghost(x + 56, y + 40, String(k + 2), 54, p.accent, { weight: 700 });
       fg += tb('concept', x + 32, HH - (y + ch) + 28, w - 64,
         '<div style="' + disp + ';' + fs(rows > 1 ? 38 : 46) + ';line-height:1.08;color:var(--text)">' + esc(m.label) + '</div>' +
@@ -213,7 +214,7 @@ function ticketsRender(ctx, sh, env, dates) {
     const fill = fills[i % 3]; const ink = inks[i % 3];
     bg += P.diamond(x + 34, y - 30, 26, i % 3 === 1 ? p.accent : P.mix(p.text, p.bg, 0.2), p.bg);
     bg += P.panel(x, y, w, th, fill, 'clip-path:' + P.ticket(16, 4) + (i % 3 === 0 ? ';box-shadow:0 20px 30px -24px rgba(0,0,0,.4)' : ''));
-    if (!vis[i]) bg += P.ghost(x, y + th - (n === 3 ? 215 : 185), H.num(ctx, i + 1), n === 3 ? 190 : 160, i % 3 === 0 ? P.mix(p.bg, p.accent, 0.3) : P.mix(fill, ink === 'var(--text)' ? p.text : (i % 3 === 1 ? p.accentInk : p.bg), 0.25), { italic: true, w: w - 36 });
+    if (!vis[i]) bg += P.ghost(x, y + th - (n === 3 ? 170 : 140), H.num(ctx, i + 1), n === 3 ? 150 : 120, i % 3 === 0 ? P.mix(p.bg, p.accent, 0.3) : P.mix(fill, ink === 'var(--text)' ? p.text : (i % 3 === 1 ? p.accentInk : p.bg), 0.25), { italic: true, w: w - 36 });
     if (vis[i]) bg += P.visualImg(vis[i], x + w - 250, y + th - 260, 220, 220, { opacity: i % 3 === 2 ? 0.75 : 0.9, dark: i % 3 === 2, filter: i % 3 === 0 ? 'sepia(.55) contrast(.95)' : 'grayscale(1) contrast(1.3)' });
     const big = dates ? m.date : m.label;
     const small = dates ? m.label : '';

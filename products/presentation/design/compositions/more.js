@@ -41,7 +41,7 @@ module.exports = function register(def, K) {
         const x = MX + i * (w + gap); const y = 390 + (i % 2 ? 30 : 0);
         bg += P.div(P.pos(x, y, w, h) + ';background:' + fills[i % 4] + ';transform:rotate(' + rots[i % 4] + 'deg);box-shadow:0 22px 34px -22px rgba(0,0,0,.35)');
         bg += P.tape(x + w / 2 - 70, y - 20, 140, rots[(i + 1) % 4] * 2, 'rgba(255,255,255,.55)');
-        bg += P.ghost(x, y + h - 190, H.num(ctx, i + 1), 160, P.mix(fills[i % 4], p.text, 0.16), { italic: true, w: w - 30 });
+        bg += P.ghost(x, y + h - 128, H.num(ctx, i + 1), 108, P.mix(fills[i % 4], p.text, 0.16), { italic: true, w: w - 30 });
         fg += t('concept', x + 40, y + 52, w - 80,
           '<div style="' + disp + ';' + fs(n === 3 ? 54 : 46) + ';line-height:1.05;color:var(--text)">' + esc(m.label) + '</div>' +
           (m.detail ? '<div style="margin-top:16px;' + fs(n === 3 ? 30 : 27) + ';line-height:1.42;color:var(--text2)">' + esc(m.detail) + '</div>' : ''));
