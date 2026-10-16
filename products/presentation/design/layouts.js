@@ -813,4 +813,4 @@ L.references = (ctx) => {
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
 };
 
-module.exports = { L, makeCtx, esc };
+module.exports = { L, makeCtx, esc, H: { el, titleH1, kicker, lead, folio, num, sectionLabel, rule, coverParts, para } };

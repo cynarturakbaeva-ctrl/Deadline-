@@ -40,9 +40,11 @@ test('no three identical layouts in a row (rhythm)', () => {
 
 test('builder keeps public API + runtime hooks the renderer relies on', () => {
   const html = build3DPresentationHTML(deck, 'Deck', { style: 'business' });
-  for (const hook of ['class="slide', 'id="stage"', 'id="controls"', 'id="dots"', 'window.__qaDone', 'data-layout="cover"', 'class="block']) {
+  for (const hook of ['class="slide', 'id="stage"', 'id="controls"', 'id="dots"', 'window.__qaDone', 'class="block']) {
     assert.ok(html.includes(hook), hook);
   }
+  // мұқаба: бұрынғы макет не құрастырылған композиция (compositions/)
+  assert.match(html, /data-layout="(cover|cx-cover-[a-z-]+)"/);
   assert.strictEqual((html.match(/<article class="slide/g) || []).length, deck.length);
 });
 
