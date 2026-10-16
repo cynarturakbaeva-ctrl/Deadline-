@@ -128,3 +128,23 @@ test('generateContent image shape is understood too (inlineData in candidates)',
   assert.strictEqual(V.normFocus('62%, 140%'), '62% 100%');
   assert.strictEqual(V.normFocus('center'), '');
 });
+
+test('no Google key but DeepSeek key → vision runs on deepseek-flash (image_url parts, detail low); 400 on data URL → retried with the thumbnail link', async () => {
+  delete process.env.GOOGLE_API_KEY; delete process.env.GEMINI_API_KEY;
+  process.env.DEEPSEEK_API_KEY = 'ds';
+  try {
+    assert.strictEqual(V.visionProvider(), 'deepseek');
+    stubFetch();
+    replies.push(() => ({ ok: false, status: 400, text: async () => 'image url too long' }));
+    replies.push({ choices: [{ message: { content: JSON.stringify({ photos: [{ i: 0, fit: 9, appeal: 8, bg: 7, focus: '40% 30%' }] }) } }], usage: { prompt_tokens: 900, completion_tokens: 40 } });
+    const choose = V.makeVisionChooser({ title: 'Арал теңізі', query: 'Aral Sea ships' });
+    const ranked = await choose([{ url: 'https://big/s.jpg', thumb: 'https://t/s.jpg' }]);
+    assert.deepStrictEqual(ranked.map((r) => [r.i, r.focus]), [[0, '40% 30%']]);
+    assert.match(sent[0].url, /api\.deepseek\.com/);
+    assert.strictEqual(sent[0].body.model, 'deepseek-flash');
+    const img = sent[0].body.messages[0].content.find((c) => c.type === 'image_url');
+    assert.match(img.image_url.url, /^data:image\/jpeg;base64,/);
+    assert.strictEqual(img.image_url.detail, 'low');
+    assert.strictEqual(sent[1].body.messages[0].content.find((c) => c.type === 'image_url').image_url.url, 'https://t/s.jpg');
+  } finally { delete process.env.DEEPSEEK_API_KEY; }
+});

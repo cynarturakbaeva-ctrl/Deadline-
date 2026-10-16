@@ -16,6 +16,29 @@
  */
 const axios = require('axios');
 const { geminiJson, hasGoogleKey } = require('../../core/googleAi');
+const { deepseekVisionJson } = require('../../core/llm');
+
+/**
+ * Суретті көретін модель: GOOGLE_API_KEY болса — Gemini Flash-Lite, әйтпесе DEEPSEEK_API_KEY арқылы deepseek-flash
+ * (V4.1-Flash суретті көреді — бөлек кілт керек емес). PHOTO_VISION_PROVIDER=gemini|deepseek — қолмен таңдау.
+ */
+function visionProvider() {
+  const want = String(process.env.PHOTO_VISION_PROVIDER || '').toLowerCase();
+  if (want === 'deepseek') return process.env.DEEPSEEK_API_KEY ? 'deepseek' : null;
+  if (want === 'gemini') return hasGoogleKey() ? 'gemini' : null;
+  if (hasGoogleKey()) return 'gemini';
+  return process.env.DEEPSEEK_API_KEY ? 'deepseek' : null;
+}
+const hasVision = () => !!visionProvider();
+/** parts: [{text}] | [{image:{mime,data,url}}] → таңдалған модель → JSON */
+async function visionJson(parts, opts) {
+  const prov = visionProvider();
+  if (prov === 'gemini') {
+    return geminiJson(parts.map((p) => (p.image ? { inline_data: { mime_type: p.image.mime, data: p.image.data } } : { text: p.text })), opts);
+  }
+  if (prov === 'deepseek') return deepseekVisionJson(parts, opts);
+  return null;
+}
 const { imageUA } = require('./unsplash');
 
 const MIN_FIT = Number(process.env.PHOTO_VISION_MIN_FIT) || 7;
@@ -89,7 +112,7 @@ function normFocus(f) {
  *   null → vision қолжетімсіз (кілт жоқ). Функция: сайлары (MIN_FIT өткен) ең жақсысы бірінші; null → шақыру сәтсіз.
  */
 function makeVisionChooser(ctx = {}) {
-  if (!hasGoogleKey() || process.env.PHOTO_VISION === '0') return null;
+  if (!hasVision() || process.env.PHOTO_VISION === '0') return null;
   const subject = [short(ctx.topic, 160), short(ctx.title, 140), ctx.background ? 'bg' : 'frame'].join(' / ');
   const cache = new Map(); // url → scores (осы слайд үшін)
   let calls = 0;
@@ -110,9 +133,9 @@ function makeVisionChooser(ctx = {}) {
       + `Search query used: ${short(ctx.query, 160) || '-'}\n\nCandidates:` }];
     shown.forEach((x, k) => {
       parts.push({ text: `Photo ${k}${x.c.desc ? ` (archive caption: ${short(x.c.desc, 120)})` : ''}:` });
-      parts.push({ inline_data: { mime_type: x.t.mime, data: x.t.data } });
+      parts.push({ image: { mime: x.t.mime, data: x.t.data, url: x.c.thumb || x.c.url } });
     });
-    const out = await geminiJson(parts, { label: 'photo:vision', maxTokens: 60 * shown.length + 200 });
+    const out = await visionJson(parts, { label: 'photo:vision', maxTokens: 60 * shown.length + 200 });
     const rows = Array.isArray(out && out.photos) ? out.photos : (Array.isArray(out) ? out : []);
     if (!rows.length) { apiFailures += 1; return; } // шақыру сәтсіз → бағаланбады (кэшке «жоқ» деп жазылмайды)
     const num = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0; };
@@ -151,19 +174,19 @@ function makeVisionChooser(ctx = {}) {
  * @returns {Promise<{ok:boolean, fit:number, appeal:number, flaw:string}|null>}
  */
 async function checkGenerated(dataUri, ctx = {}) {
-  if (!hasGoogleKey()) return null;
+  if (!hasVision()) return null;
   const m = String(dataUri || '').match(/^data:(image\/[a-z]+);base64,(.+)$/);
   if (!m) return null;
   const parts = [
     { text: `${SYSTEM}\n\nThis photo was AI-generated for the slide below. Also set "flaw" to "text" if it contains any letters/words/numbers, "artefact" for distorted hands/faces/objects or melted details, "fake" if it looks obviously artificial.\n`
       + `Presentation topic: ${short(ctx.topic, 200) || '-'}\nSlide: ${short(ctx.title, 160) || '-'}\n${ctx.text ? `Slide says: ${short(ctx.text, 400)}\n` : ''}Photo 0:` },
-    { inline_data: { mime_type: m[1], data: m[2] } },
+    { image: { mime: m[1], data: m[2] } },
   ];
-  const out = await geminiJson(parts, { label: 'photo:gen-check', maxTokens: 200 });
+  const out = await visionJson(parts, { label: 'photo:gen-check', maxTokens: 200 });
   const r = Array.isArray(out && out.photos) ? out.photos[0] : null;
   if (!r) return null;
   const fit = Number(r.fit) || 0; const appeal = Number(r.appeal) || 0; const flaw = short(r.flaw, 40);
   return { ok: fit >= MIN_FIT && appeal >= 6 && !/text|artefact|artifact|fake/i.test(flaw), fit, appeal, flaw };
 }
 
-module.exports = { makeVisionChooser, checkGenerated, rankScore, normFocus, fetchThumb, SYSTEM, MIN_FIT };
+module.exports = { visionProvider, makeVisionChooser, checkGenerated, rankScore, normFocus, fetchThumb, SYSTEM, MIN_FIT };

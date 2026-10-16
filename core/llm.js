@@ -56,4 +56,55 @@ async function deepseekJson(system, user, label, maxTokensHint, opts = {}) {
   throw lastErr;
 }
 
-module.exports = { deepseekJson, DEEPSEEK_MAX_OUTPUT };
+/**
+ * DeepSeek VISION (deepseek-flash = V4.1-Flash, суретті көреді): мәтін + суреттер → JSON.
+ * parts: [{text}] | [{image:{mime,data,url}}] — сурет base64 data URL ретінде (detail:'low' → 512px, арзан);
+ * data URL қабылданбаса (400) — суреттің http(s) сілтемесімен бір рет қайталанады.
+ * Кілт жоқ / қате → null (шақырушы резерв жолға өтеді), ешқашан лақтырмайды.
+ */
+async function deepseekVisionJson(parts, opts = {}) {
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key || !Array.isArray(parts) || !parts.length) return null;
+  const model = opts.model || process.env.DEEPSEEK_VISION_MODEL || 'deepseek-flash';
+  const build = (useUrl) => parts.map((p) => (p.image
+    ? { type: 'image_url', image_url: { url: useUrl && p.image.url ? p.image.url : `data:${p.image.mime};base64,${p.image.data}`, detail: opts.detail || 'low' } }
+    : { type: 'text', text: String(p.text || '') }));
+  for (const useUrl of [false, true]) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs || 40_000);
+    try {
+      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model, temperature: 0, max_tokens: opts.maxTokens || 1500,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: build(useUrl) }],
+        }),
+      });
+      if (!res.ok) {
+        const t = (await res.text()).slice(0, 200);
+        console.warn(`[DeepSeekVision] ${model} HTTP ${res.status} ${t}`);
+        if (res.status === 400 && !useUrl && parts.some((p) => p.image && p.image.url)) continue; // data URL қабылданбады → сілтемемен
+        return null;
+      }
+      let data = {};
+      try { data = JSON.parse(await res.text()); } catch { return null; }
+      recordApiUsage(data.usage || null, { label: opts.label || 'vision', model });
+      const text = data.choices?.[0]?.message?.content || '';
+      try { return JSON.parse(text); } catch {
+        const m = text.match(/\{[\s\S]*\}/);
+        try { return m ? JSON.parse(m[0]) : null; } catch { return null; }
+      }
+    } catch (e) {
+      console.warn(`[DeepSeekVision] ${e.message}`);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+module.exports = { deepseekJson, deepseekVisionJson, DEEPSEEK_MAX_OUTPUT };
