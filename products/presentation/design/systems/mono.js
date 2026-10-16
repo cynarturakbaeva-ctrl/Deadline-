@@ -9,6 +9,7 @@
  * сондықтан псевдо-элементтер тек графика (сызық, бұрыш, тор).
  */
 const { calm, solid, CARDS, CARD_DECOR } = require('./_fx');
+const { GRID: G } = require('../tokens');
 
 const S = '#stage.ds-mono';
 const MONO = '"Courier New","Liberation Mono",monospace';
@@ -19,13 +20,15 @@ const GRID_LINES = (pct) => `linear-gradient(color-mix(in srgb,var(--text) ${pct
 const A = 'linear-gradient(var(--accent),var(--accent))';
 // карточка бұрыштары: сол-жоғары және оң-төмен «қысқыш» (фонның бөлігі → PPTX-те суретпен бірге)
 const TICKS = `${A} 0 0/26px 4px no-repeat,${A} 0 0/4px 26px no-repeat,${A} 100% 100%/26px 4px no-repeat,${A} 100% 100%/4px 26px no-repeat`;
-// өлшем сызығы |———|
-const DIM = `${A} 0 50%/100% 2px no-repeat,${A} 0 0/2px 100% no-repeat,${A} 100% 0/2px 100% no-repeat`;
+// сызғыш белгісі: негізгі сызық + шеттерінде биік, ортасында орташа, ширектерінде қысқа бөліктер
+const DIM = `${A} 0 100%/100% 2px no-repeat,${A} 0 100%/2px 100% no-repeat,${A} 100% 100%/2px 100% no-repeat,` +
+  `${A} 50% 100%/2px 70% no-repeat,${A} 25% 100%/2px 42% no-repeat,${A} 75% 100%/2px 42% no-repeat`;
 
 module.exports = {
   id: 'mono',
   name: 'Техно',
-  type: { display: 'arial', text: 'sans', dw: 700, tw: 700, dt: '-0.03em', tt: '-0.02em', dl: 1.02, tl: 1.06 },
+  // трекинг -0.02em: -0.03em-де ң/қ/ғ құйрықтары көрші әріптің құйрығына тиіп кететін («кезеңдері»)
+  type: { display: 'arial', text: 'sans', dw: 700, tw: 700, dt: '-0.02em', tt: '-0.015em', dl: 1.04, tl: 1.08 },
   // салқын «сызба» палитралары: түнгі көк, мұздай көгілдір, графит+қызғылт сары, терминал жасылы; ашық — көкшіл қағаз,
   // жалбыз, піл сүйегі (сызба қағазы + қою көк сия)
   moods: ['midnight', 'cold', 'graphite', 'forest', 'cloud', 'mint', 'ivory'],
@@ -70,7 +73,14 @@ module.exports = {
       `${S} .slide .on-accent .title .hl{text-decoration:none}`,
 
       // ── өлшем сызығы |———| (тақырып белгісі, дәйексөз белгісі) ──
-      `${S} .rule,${S} .qrule{height:14px;border:0;border-radius:0;background:${DIM}!important}`,
+      `${S} .rule,${S} .qrule{height:16px;border:0;border-radius:0;background:${DIM}!important}`,
+      `${S} .rule{width:112px!important}`,
+
+      // ── қосалқы мәтін: базалық сұрдан қоюырақ (дауыстап оқылады), мөлдірлікпен → кез келген бетте дұрыс ──
+      `${sel('.lead,.para,.row-d,.concept-d,.stat-l,.tl-txt,.notes li')}{color:color-mix(in srgb,var(--text) ${light ? 80 : 84}%,transparent)}`,
+      // мәтін абзацтары: бос шаршы маркер (уақыт сызығының түйіні сияқты)
+      `${S} .prose p{position:relative;padding-left:40px}`,
+      `${S} .prose p::before{content:'';position:absolute;left:0;top:.62em;width:10px;height:10px;border:2px solid var(--accent)}`,
 
       // ── тізім: [01] моно нөмір мәтіннің бірінші жолымен бір сызықта, пунктир бөлгіштер ──
       `${S} .row{align-items:baseline;border-bottom:1px dashed var(--line)}${S} .rows{border-top:0}${S} .row:first-child{border-top:1px dashed var(--line)}`,
@@ -105,9 +115,16 @@ module.exports = {
       // ── фото: жиексіз, ығыстырылған акцент контур (inline көлеңке мен дөңгелек бұрыш та өшеді) ──
       `${S} .photo{border:0;border-radius:0!important;box-shadow:16px 16px 0 -2px var(--bg),16px 16px 0 0 var(--accent)!important}${S} .photo::after{display:none}`,
 
-      // ── мұқаба: фото үстінде нәзік тор (тақырып жағында, фотоға қарай сөнеді) + сызба бұрыштары ──
-      `${S} .cover-photo .layer-bg::after{display:block;content:'';position:absolute;inset:0;z-index:3;opacity:1;mix-blend-mode:normal;` +
-        `background:${GRID_LINES(light ? 7 : 8)};-webkit-mask-image:linear-gradient(90deg,#000 0%,#000 30%,transparent 72%);mask-image:linear-gradient(90deg,#000 0%,#000 30%,transparent 72%)}`,
+      // ── мұқаба: фото ТАЗА әрі ашық (сүттей перде жоқ), тақырып — сызбадағы «штамп» сияқты қағаз блокта:
+      //    торлы фон, жұқа жиек, қарама-қарсы бұрыштарда акцент қысқыш. Мәтін тек блок ішінде → кез келген фотода оқылады.
+      `${S} .cover-photo .scrim{display:none}`,
+      `${S} .cover-photo .cover-block{position:relative;width:fit-content;min-width:${Math.round(G.span(7))}px;max-width:${Math.round(G.span(10) + 128)}px;` +
+        `margin:0 0 0 -64px;padding:52px 64px 44px;background:${TICKS},${GRID_LINES(light ? 6 : 7)},var(--bg);background-origin:border-box;` +
+        `border:1px solid var(--line);box-shadow:${light ? '0 30px 80px -40px rgba(10,20,40,.45)' : '0 30px 80px -30px rgba(0,0,0,.75)'}}`,
+      `${S} .cover-photo .cover-block .meta-row{max-width:100%}`,
+      // блок ішінде тақырып сәл ықшам (өлшеуіш толық ені бойынша санайды, блоктың іші 128px тар)
+      `${S} .cover-photo .cover-block .title{font-size:calc(var(--ts,72px)*.9*var(--fs,1))}`,
+      `${S} .cover-photo .cover-top:not(:empty){align-self:flex-start;margin-left:-24px;padding:14px 24px;background:var(--bg);border:1px solid var(--line)}`,
       `${S} .cover::before,${S} .cover::after{content:'';position:absolute;width:40px;height:40px;pointer-events:none}`,
       `${S} .cover::before{left:-40px;top:-40px;border-left:4px solid var(--accent);border-top:4px solid var(--accent)}`,
       `${S} .cover::after{right:-40px;bottom:-24px;border-right:4px solid var(--accent);border-bottom:4px solid var(--accent)}`,

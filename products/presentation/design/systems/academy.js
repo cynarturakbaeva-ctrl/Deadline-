@@ -59,7 +59,8 @@ module.exports = {
       // ── типографика ──
       solid(`${S} .title .hl`, 'inherit'),
       // кілт сөз: тік (курсив емес — Times Bold Italic PPTX-те басқаша өлшенеді), акцент түсті астын сызу
-      `${S} .title .hl{font-style:normal!important;padding-right:0;text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:.07em;text-underline-offset:.13em;text-decoration-skip-ink:auto}`,
+      // астын сызу тұтас (skip-ink үзіп-үзіп «сынық» көрсетпесін) әрі әріптің құйрығынан (Қ, д, у, р) төмен жатады
+      `${S} .title .hl{font-style:normal!important;padding-right:0;text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:.06em;text-underline-offset:.24em;text-decoration-skip-ink:none}`,
       // кілт сөзі жоқ тақырып астында қысқа акцент сызық (ортадағы тақырыпта — ортада)
       `${S} .title:not(:has(.hl))::after{content:'';display:block;width:64px;height:6px;border-radius:3px;background:var(--accent);margin:26px 0 0}`,
       `${S} .title.center::after,${S} .stack-head .title::after,${S} .conc-head .title::after,${S} .hier-root .title::after,${sel(HEADS.split(',').map((h) => h + ' .title::after').join(','))}{margin-inline:auto}`,
@@ -80,6 +81,8 @@ module.exports = {
       `${sel(TOP_BODY)}{margin-top:auto;margin-bottom:auto}`,
       // stack: тақырып орнында, мазмұн қалған бос орынның ортасында (бұрын жоғарыға жабысып, асты бос қалатын)
       `${S} .stack-body{justify-content:center}`,
+      // фото + мәтін: кіріспе сөйлем тізімнің бірінші сызығына жабыспасын
+      `${S} .stack-txt .lead+.rows{margin-top:var(--s4)}`,
 
       // ── бет нөмірі: колонтитул сызығының ортасында «3 / 12» ──
       `${S} .folio{justify-content:center;align-items:center;gap:24px;letter-spacing:.08em;color:var(--text2)}`,
@@ -102,7 +105,7 @@ module.exports = {
       `${S} .cover-c .cover-top{min-height:0}${S} .cover-c .cover-top:empty{display:none}`,
       `${S} .cover-c .lead{margin-top:var(--s3)}`,
       `${S} .cover-org{color:var(--text2);letter-spacing:.12em;font-weight:700}`,
-      `${S} .cover-c .meta-row{border-top:1px solid var(--line);padding-top:var(--s3)}`,
+      `${S} .cover-c .meta-row{border-top:1px solid var(--line);padding-top:var(--s3);margin-top:var(--s2)}`, // кілт сөздің астындағы сызықпен қатарласып қалмасын
       `${S} .meta-k{color:var(--text2);font-weight:700}`,
 
       // ── толық фото слайд: фото жоғарыда, тақырып астындағы панельде (ақ мәтін ашық фонда оқылмай қалмайды) ──
@@ -142,6 +145,8 @@ module.exports = {
       `${S} .st-arrow{height:2px;background:var(--line)}${S} .st-arrow::after{border-color:var(--text2)}`,
       // иерархия: тармақ сызықтары тұтас (градиентсіз)
       `${S} .tree::before,${S} .tree::after,${S} .hn::before{background:var(--line);width:2px}${S} .tree::after{width:auto;height:2px}`,
+      // тармақтың басы ауада ілініп тұрмасын: жоғарғы ұшында акцент дөңгелек «түбір» (дөңгелек тілі)
+      `${S} .tree::before{top:-11px;width:22px;height:43px;margin-left:-11px;background:radial-gradient(circle at 50% 11px,var(--accent) 0 9px,transparent 9.6px),linear-gradient(var(--line),var(--line)) 50% 0/2px 100% no-repeat}`,
       // статистика: реттік нөмір артық — алып сан (Times, акцент), тұтас шкала
       `${S} .stat-ix{display:none}`,
       solid(`${S} .stat-v`, 'var(--accent)'),
@@ -156,6 +161,8 @@ module.exports = {
       // ── уақыт сызығы: шеңбер түйіндер тұтас сызықта ──
       solid(`${S} .tl-date`, 'var(--text)'),
       `${S} .tl-mark::before{background:var(--line);height:2px}`,
+      // уақыт сызығының мәтіні дауыстап оқылады → сұр емес, негізгі мәтін түсі
+      `${S} .tl-txt{color:var(--text)}`,
       `${S} .tl-mark::after{width:22px;height:22px;margin-top:-11px;background:var(--bg);border:5px solid var(--accent);box-shadow:0 0 0 6px var(--bg)}`,
 
       // ── фото: дөңгеленген, жиексіз; ашық палитрада жұмсақ көлеңке ──
