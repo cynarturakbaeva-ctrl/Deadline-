@@ -85,15 +85,15 @@ module.exports = function register(def, K) {
     render(ctx, sh) {
       const a = ctx.a; const p = ctx.palette; const n = sh.items.length;
       const gap = 20; const span = W - 2 * MX; const w = (span - gap * (n - 1)) / n;
-      const hs = n === 3 ? [360, 480, 600] : [330, 420, 510, 600];
-      const base = HH - MB + 20;
+      const hs = n === 3 ? [340, 460, 580] : [310, 400, 490, 580];
+      const base = HH - MB - 6; // бет нөмірінің (folio) үстінде аяқталады
       let bg = '<div class="plate"></div>' + P.grain(P.mix(p.bg, p.text, 0.06));
       let fg = wrap(MX, MT, 1100, H.kicker(ctx, H.sectionLabel(ctx)) + H.titleH1(ctx, a.title, { width: 1060, maxLines: 2, scale: [80, 70, 62, 54, 48], hl: true }));
       sh.items.forEach((m, i) => {
         const x = MX + i * (w + gap); const h = hs[i]; const y = base - h;
         const k = (i + 1) / n; const fill = i === n - 1 ? p.accent : P.mix(p.bg, p.accent, 0.1 + 0.22 * k);
         const ink = i === n - 1 ? p.accentInk : 'var(--text)';
-        bg += P.panel(x, y, w, h + 80, fill, 'border-radius:22px 22px 0 0');
+        bg += P.panel(x, y, w, h, fill, 'border-radius:22px');
         bg += P.ghost(x, y + h - 170, H.num(ctx, i + 1), 150, i === n - 1 ? P.mix(p.accent, p.accentInk, 0.3) : P.mix(fill, p.text, 0.14), { italic: true, w: w - 26 });
         fg += t('concept', x + 34, y + 34, w - 68,
           '<div style="' + disp + ';' + fs(n === 3 ? 48 : 42) + ';line-height:1.06;color:' + ink + '">' + esc(m.label) + '</div>' +
