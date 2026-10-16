@@ -462,6 +462,8 @@ L.editorial = (ctx) => {
   const paras = a.body ? a.body.split(/\n+/).filter(Boolean) : a.bullets.slice(0, 6);
   const words = a.body ? a.bodyWords : a.bulletWords;
   const twoCol = words > 90;
+  // мәтінсіз, «Термин — факт» түріндегі қысқа пункттер (2–5) → термин/факт жұбы
+  const terms = !a.body && !twoCol && paras.length >= 2 && paras.length <= 5 && paras.every((t) => / — /.test(t) && splitLabelDetail(t).label.split(/\s+/).length <= 5);
   const size = twoCol ? 26 : words <= 48 ? 36 : words <= 75 ? 32 : 28;
   const small = a.hasPhoto && I.sharpEnough(a.img, 700)
     ? '<div class="cell-photo">' + I.framedPhoto(a.photo, a.img, p, { ratio: '4 / 3', focus: a.focus }) + '</div>' : '';
@@ -472,7 +474,12 @@ L.editorial = (ctx) => {
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') + small +
     '</div></div>' +
     '<div class="cell edit-r" style="' + cols(...R_) + '">' +
-      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : ''), paras.map((t) => '<p style="--bs:' + size + 'px">' + esc(t) + '</p>').join(''), { role: 'text' }) : '') +
+      (paras.length ? el(ctx, 'div', 'prose' + (twoCol ? ' two' : '') + (terms ? ' ed-terms' : ''), paras.map((t, k) => {
+        if (!terms) return '<p style="--bs:' + size + 'px">' + esc(t) + '</p>';
+        // «Термин — қысқа факт»: термин ірі әрі дисплей қаріпте, факт астында — иерархия бар, бос орын толады
+        const m = splitLabelDetail(t);
+        return '<div class="ed-item" style="--bs:' + size + 'px"><p class="ed-k">' + esc(m.label) + '</p>' + (m.detail ? '<p class="ed-d">' + esc(m.detail) + '</p>' : '') + '</div>';
+      }).join(''), { role: 'text' }) : '') +
       (a.body ? notes(ctx, a.bullets.slice(0, 4), 26) : '') +
     '</div></div>';
   return { bg: '<div class="plate"></div>', fg: fg + folio(ctx), cls: '' };
