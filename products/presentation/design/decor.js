@@ -36,6 +36,8 @@ const THEMES = {
   pen: /жазу|эссе|мақала|журналист|письм|стать|журналист|writing|essay|article|journalis/i,
   letter: /хат|хабар|байланыс|пошта|письм|почт|связ|letter|mail|correspond/i,
   camera: /фото|кино|медиа|бұқаралық|фотограф|кино|сми|photo|film|cinema|media/i,
+  kazakh: /қазақ|хандық|хандығ|көшпелі|дала|ұлттық|дәстүр|салт|ата-баба|киіз үй|шаңырақ|ою|казах|кочев|степ|юрт|традиц|kazakh|nomad|steppe|yurt|tradition/i,
+  music: /домбыра|күй|ән |әндер|музыка|жыр|айтыс|домбр|музык|песн|music|song|folk/i,
   flora: /табиғат|гүл|өсімдік|ботаника|экология|бау|әдебиет|поэзия|өлең|сұлулық|мәдениет|природ|цвет|растен|ботаник|эколог|поэз|культур|nature|flower|plant|botan|ecolog|poetry|culture|beauty/i,
 };
 
@@ -80,7 +82,7 @@ const cache = new Map();
 function decorUri(file) {
   if (cache.has(file)) return cache.get(file);
   let uri = '';
-  try { uri = 'data:image/webp;base64,' + fs.readFileSync(file).toString('base64'); } catch { /* жоқ */ }
+  try { uri = 'data:' + (/\.svg$/i.test(file) ? 'image/svg+xml' : 'image/webp') + ';base64,' + fs.readFileSync(file).toString('base64'); } catch { /* жоқ */ }
   cache.set(file, uri);
   return uri;
 }
@@ -112,7 +114,8 @@ function placeDecor(only) {
     });
     var full = blocks.some(function (b) { return b.w > 1800 && b.h > 1000; }); // бүкіл фон-фото — әшекей керек емес
     // бет нөмірі мен ұсақ белгілер (folio) кедергі емес
-    blocks = blocks.filter(function (b) { return !(b.h < 40 && b.w < 260 && b.y > 960); });
+    blocks.forEach(function (b) { if (b.h < 40 && b.w < 260 && b.y > 960) b.m = 10; }); // бет нөмірі — кішкене шегініс жеткілікті
+    var E = slide.querySelector('.cover-frame') ? 110 : 60; // қос жиектемелі мұқабада жиектеменің ішінде
     [].forEach.call(imgs, function (img) {
       var ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
       var M = 36; var placed = null;
@@ -127,8 +130,8 @@ function placeDecor(only) {
           var cand = [];
           for (var gx = 0; gx <= 12; gx++) {
             for (var gy = 0; gy <= 8; gy++) {
-              var x = 60 + (1920 - 120 - w) * (gx / 12); var y = 50 + (1080 - 100 - h) * (gy / 8);
-              var dx = Math.min(x - 60, 1860 - (x + w)); var dy = Math.min(y - 50, 1030 - (y + h));
+              var x = E + (1920 - 2 * E - w) * (gx / 12); var y = E - 10 + (1080 - 2 * E + 20 - h) * (gy / 8);
+              var dx = Math.min(x - E, 1920 - E - (x + w)); var dy = Math.min(y - E + 10, 1080 - E + 10 - (y + h));
               var right = x + w / 2 > 960 ? 0 : 1; var bottom = y + h / 2 > 540 ? 0 : 1;
               cand.push({ x: x, y: y, cost: dx + dy + right * 140 + bottom * 320 });
             }

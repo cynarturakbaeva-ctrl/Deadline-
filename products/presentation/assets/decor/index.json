@@ -682,5 +682,40 @@
 "url": "https://www.rawpixel.com/image/6677629/vector-vintage-public-domain-black",
 "w": 480,
 "h": 331
+},
+"kz-shanyrak.svg": {
+"tag": "kazakh",
+"title": "Шаңырақ",
+"license": "original (DeadLine)",
+"source": "drawn for DeadLine",
+"url": ""
+},
+"kz-yurt.svg": {
+"tag": "kazakh",
+"title": "Киіз үй",
+"license": "original (DeadLine)",
+"source": "drawn for DeadLine",
+"url": ""
+},
+"kz-horn.svg": {
+"tag": "kazakh",
+"title": "Қошқар мүйіз оюы",
+"license": "original (DeadLine)",
+"source": "drawn for DeadLine",
+"url": ""
+},
+"kz-tumar.svg": {
+"tag": "kazakh",
+"title": "Тұмар",
+"license": "original (DeadLine)",
+"source": "drawn for DeadLine",
+"url": ""
+},
+"kz-dombra.svg": {
+"tag": "music",
+"title": "Домбыра",
+"license": "original (DeadLine)",
+"source": "drawn for DeadLine",
+"url": ""
 }
 }
