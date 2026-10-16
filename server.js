@@ -33,6 +33,7 @@ const BOT_USERNAME = (process.env.BOT_USERNAME || 'DeadLine_prezbot').replace(/^
 // Админ (ADMIN_CHAT_ID): Mini App-та «Админ» бөлімі ашылады, /api/admin/* тек соған
 const ADMIN_IDS = String(process.env.ADMIN_CHAT_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
 const isAdminId = (id) => ADMIN_IDS.includes(String(id));
+const MAINTENANCE = /^(1|true|on)$/i.test(String(process.env.MAINTENANCE || ''));
 const WEBAPP_URL = process.env.WEBAPP_URL || `http://localhost:${PORT}`;
 
 const templateNudged = new Set();
@@ -400,6 +401,10 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
     // Тестер: күніне 3 тегін презентация (жиналмайды); алдыңғысына пікір жазылмайынша келесісі жоқ
     let isTester = false;
     const tst = await getTester(chatId).catch(() => null);
+    // Жаңарту режимі (MAINTENANCE=1): өнім «топ» деңгейге жеткенше тек админ мен белсенді тестерлер жасатады
+    if (MAINTENANCE && !isAdminId(chatId) && !testerCore.isActive(tst)) {
+      return res.status(503).json({ error: 'maintenance', message: '🛠 DeadLine жаңартылып жатыр — жақында әлдеқайда әдемі презентациялармен ораламыз!' });
+    }
     if (testerCore.isActive(tst)) {
       const block = await testerBlock(tst);
       if (block) return res.status(409).json(block);
