@@ -17,6 +17,9 @@ function splitLabelDetail(text) {
   const s = String(text == null ? '' : text);
   const idx = s.indexOf(':');
   if (idx > 0 && idx < 42) return { label: s.slice(0, idx).trim(), detail: s.slice(idx + 1).trim() };
+  // «Ақыл — білім мен ойлау қабілеті»: қысқа термин + бос орынды сызықша (жаңа мазмұн пішімі)
+  const m = s.match(/^(.{2,40}?)\s+[—–]\s+(.+)$/);
+  if (m && m[1].split(/\s+/).length <= 5) return { label: m[1].trim(), detail: m[2].trim() };
   return { label: s.trim(), detail: '' };
 }
 function toNode(raw) {

@@ -246,6 +246,27 @@ COVER.panel = (ctx) => {
   return { bg, fg: fg + folio(ctx), cls: 'cover-panel-slide' };
 };
 
+/** Доға мұқаба (heritage): сол жақта ірі тақырып, оң жақта доға пішінді фото + күн-шеңбер + түсті табан */
+COVER.arch = (ctx) => {
+  const a = ctx.a;
+  const photoOK = a.hasPhoto && I.sharpEnough(a.img, 700);
+  const bg = '<div class="plate plate-cover"></div>' +
+    (photoOK
+      ? '<div class="arch-sun" aria-hidden="true"></div><div class="arch-photo" data-role="photo">' + I.imgTag(a.photo, a.img, ctx.palette, { focus: a.focus }) + '</div>'
+      : '<div class="arch-sun solo" aria-hidden="true"></div>') +
+    '<div class="arch-base" aria-hidden="true"></div>';
+  const w = GRID.span(photoOK ? 6 : 9);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas cover cover-arch">' +
+    '<div class="block cover-block" style="width:' + w + 'px">' +
+      (org || kicker(ctx, sectionLabel(ctx))) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 6, hl: true, scale: [112, 100, 90, 80, 72, 64] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' };
+};
+
 /** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
 COVER.masthead = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
@@ -427,7 +448,7 @@ L.editorial = (ctx) => {
   const small = a.hasPhoto && I.sharpEnough(a.img, 700)
     ? '<div class="cell-photo">' + I.framedPhoto(a.photo, a.img, p, { ratio: '4 / 3', focus: a.focus }) + '</div>' : '';
   const fg = '<div class="canvas g12 edit">' +
-    '<div class="cell edit-l" style="' + cols(...L_) + '"><div class="block">' +
+    '<div class="cell edit-l ' + (flip ? 'at-r' : 'at-l') + '" style="' + cols(...L_) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: lw, maxLines: 5, scale: [72, 64, 56, 50, 44] }) +
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') + small +
@@ -453,7 +474,7 @@ L.points = (ctx) => {
   const Rr = flip ? [1, 6] : [7, 12];
   const longest = a.longestBullet;
   const fg = '<div class="canvas g12 pts">' +
-    '<div class="cell pts-l" style="' + cols(...Lr) + '"><div class="block">' +
+    '<div class="cell pts-l ' + (flip ? 'at-r' : 'at-l') + '" style="' + cols(...Lr) + '"><div class="block">' +
       kicker(ctx, sectionLabel(ctx)) +
       titleH1(ctx, a.title, { width: lw, maxLines: 4, scale: [84, 74, 66, 58, 52, 46] }) +
       (a.subtitle ? lead(ctx, a.subtitle, 30, { maxw: lw }) : '') +
@@ -565,7 +586,11 @@ function nodeList(a, field, max) {
 
 L.timeline = (ctx) => {
   const a = ctx.a;
-  const nodes = nodeList(a, 'timeline', 6);
+  // «1890 — Ағартушылық: …» → жыл бөлек белгі болады (бұрын «01» нөмір шығып, жыл мәтінге кетіп қалатын)
+  const nodes = nodeList(a, 'timeline', 6).map((nd) => {
+    const ym = String(nd.label || '').match(/^(\d{3,4}(?:\s*[–-]\s*\d{2,4})?)\s+[—–-]\s+(.+)$/);
+    return ym ? { label: ym[1], detail: ym[2] + (nd.detail ? ': ' + nd.detail : '') } : nd;
+  });
   const n = nodes.length;
   const dateSize = n <= 3 ? 64 : n === 4 ? 54 : 44;
   // қысқа детал ("2 млрд", "Іске қосу") — ұсақ жазу емес, санға ұқсап ірі тұрады (слайд бос көрінбейді)

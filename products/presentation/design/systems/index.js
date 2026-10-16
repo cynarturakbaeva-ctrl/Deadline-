@@ -18,7 +18,7 @@ const T = require('../tokens');
 const { formatNum } = require('./numbers');
 
 const SYSTEMS = {};
-for (const id of ['aurora', 'journal', 'swiss', 'academy', 'mono', 'atelier']) {
+for (const id of ['aurora', 'journal', 'swiss', 'academy', 'mono', 'atelier', 'heritage']) {
   const sys = require('./' + id);
   SYSTEMS[sys.id] = sys;
 }
@@ -55,11 +55,25 @@ function typeStyleFor(sys, palette) {
  *   avoidSystems/avoidMoods — студенттің соңғы презентацияларынікі (жаңасы бірінші)
  * @returns {{system:string, mood:string}}
  */
+// Сала → жүйе (тақырыпқа қарай, студенттің мамандығына емес). Тек салаға арналған жүйелер жалпы пулға кірмейді.
+const FIELD_SYSTEMS = { humanities: 'heritage' };
+const FIELD_ONLY = new Set(Object.values(FIELD_SYSTEMS));
+const FIELD_RE = {
+  humanities: /тарих|әдебиет|философ|ойшыл|ақын|жазушы|абай|фараби|мәдениет|өнертану|этнограф|фольклор|истори|литератур|философ|культур|поэт|писател|history|historical|literature|philosoph|culture|poet|heritage/i,
+};
+function fieldOf(text) {
+  const t = String(text || '');
+  return Object.keys(FIELD_RE).find((k) => FIELD_RE[k].test(t)) || null;
+}
+
 function pickDesign(o = {}) {
   const seed = String(o.seed || '');
   const avoidS = (o.avoidSystems || []).filter(Boolean);
   const avoidM = (o.avoidMoods || []).filter(Boolean);
-  let pool = (STYLE_SYSTEMS[String(o.style || '').toLowerCase()] || Object.keys(SYSTEMS)).filter((id) => SYSTEMS[id]);
+  let pool = (STYLE_SYSTEMS[String(o.style || '').toLowerCase()] || Object.keys(SYSTEMS)).filter((id) => SYSTEMS[id] && !FIELD_ONLY.has(id));
+  // салаға тән жүйе: тақырып гуманитарлық болса — «Мұра» (студенттің соңғы жүйесі болмаса)
+  const field = fieldOf(o.brief);
+  if (field && FIELD_SYSTEMS[field] && !avoidS.slice(0, 1).includes(FIELD_SYSTEMS[field])) pool = [FIELD_SYSTEMS[field]];
   // соңғы 2 жүйе қайталанбайды (пул жетсе); пулдың басы — стильге ең лайықтысы, бірақ хэш араластырады
   const fresh = pool.filter((id) => !avoidS.slice(0, 2).includes(id));
   if (fresh.length) pool = fresh;
@@ -87,4 +101,5 @@ function systemCss(sys, palette) {
   return sys.css(palette) || '';
 }
 
-module.exports = { SYSTEMS, DEFAULT, STYLE_SYSTEMS, getSystem, typeStyleFor, pickDesign, systemCss, formatNum };
+module.exports = {
+  fieldOf, SYSTEMS, DEFAULT, STYLE_SYSTEMS, getSystem, typeStyleFor, pickDesign, systemCss, formatNum };

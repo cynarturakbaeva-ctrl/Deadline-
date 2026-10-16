@@ -461,11 +461,11 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 
 const CONTENT_RULES = `CONTENT & LANGUAGE (teach, do not encyclopedia-dump):
 - title: 4-8 words, concrete, no vague "Introduction/Overview/Basics" alone
-- READABLE SLIDES: students present by reading the slide aloud, and teachers grade a slide with only 2-word labels as empty. Every content slide must carry complete, informative sentences — but never a wall of text. (When TEMPLATE SLOT rules are given above, their slot types and lengths win over this.)
-- subtitle: always present, 1-2 complete sentences (12-30 words) that explain the slide's point in plain words
-- body: optional; 1-2 sentences when bullets cannot carry the point
-- bullets: 3-4 items, each ONE complete sentence of 8-16 words with a concrete fact, cause or example (subject + verb), e.g. "Партиялар қаражатының қайдан келгенін жыл сайын жария түрде есеп береді", NOT a bare label like "Қаржы ашықтығы" — one idea each, no filler
-- STEP / LEVEL / DATE slides (visualPurpose "process", "hierarchy" or "timeline"): write every bullet as "short label — sentence": a 2-4 word label, a spaced dash " — ", then one complete sentence of 6-12 words, e.g. "Деректерді жинау — спутниктер мен далалық өлшеулер учаскенің шекарасын нақтылайды". Timeline labels are the date or year ("1997 — ...").
+- A SLIDE IS NOT A PAGE: at most ~30 words of visible text per slide. The full explanation the student reads aloud goes to the speaker notes (generated separately) — never pack it onto the slide. (When TEMPLATE SLOT rules are given above, their slot types and lengths win over this.)
+- subtitle: always present, ONE short sentence (6-14 words) — the slide's takeaway
+- body: null (do not write body text on slides)
+- bullets: 3-4 items, each "Key term — short fact" (2-3 word term, " — ", then 3-8 words), e.g. "Ақыл — білім мен ойлау қабілеті", NOT a full sentence of 15 words and NOT a bare label alone — one idea each, no filler
+- STEP / LEVEL / DATE slides (visualPurpose "process", "hierarchy" or "timeline"): write every bullet as "short label — phrase": a 1-4 word label, a spaced dash " — ", then 4-9 words, e.g. "Деректерді жинау — спутниктер мен далалық өлшеулер учаскенің шекарасын нақтылайды". Timeline labels are the date or year ("1997 — ...").
 - stats: ONLY real numbers from the client brief or universally known facts; labels 2-5 words. If unsure, set stats null
 - table: ONLY for a true side-by-side comparison of 2+ things across the same attributes; at most ONE table per 4 slides and NEVER on two adjacent slides. Everything else is bullets, stats, body text or a diagram — a deck where most slides are tables is a failure. Default for "table" is null.
 - Vary slide forms across the deck: mix bullets, one big stat, short statement, quote, process/timeline, comparison — never the same form 3 slides in a row.
@@ -832,12 +832,12 @@ ${batchJSON}
 Fix only:
 - Text readability over images (fix overlay or textPosition)
 - Title too long (>10 words) → shorten
-- Subtitle longer than 35 words → trim to at most 2 sentences
-- Body longer than 40 words → trim
+- Subtitle longer than 16 words → trim to one short sentence
+- Body present → remove it (slides carry no paragraphs; details live in speaker notes)
 - full_background + dark_gradient_left → textPosition must be center_left
 - full_background + dark_gradient_right → textPosition must be center_right
 - Too many bullets (>5) → keep the strongest 3-4
-- Each bullet >20 words → shorten slightly (keep it a complete sentence; never cut bullets down to bare labels)
+- Each bullet >12 words → shorten to "Key term — short fact" (never a bare 1-word label)
 - full_background + overlay=none → add dark_gradient_bottom
 - Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words; two subjects joined by "and" → keep only the one this slide is about
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"

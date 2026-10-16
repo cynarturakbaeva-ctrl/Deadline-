@@ -421,7 +421,7 @@ async function repairTargetedSlides(slides, title, topic, language, style, targe
 Rules:
 - Fix ONLY the listed issues. Keep language of the original slide text.
 - Do NOT invent statistics, sources, or facts. Soften or remove unsupported claims.
-- Keep titles 4-10 words. Bullets 2-4 items, each one complete readable sentence under 18 words (never bare labels).
+- Keep titles 4-10 words. Bullets 2-4 items, each "Key term — short fact" under 12 words (never bare labels, never long sentences); no body paragraphs on slides.
 - Preserve slide index. Preserve visual field if present unless it is clearly wrong.
 - composition: keep mood consistent with neighbors when possible; fix layout_risk by preferring full_background or center text when stats are present.
 Schema:
