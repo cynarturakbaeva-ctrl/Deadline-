@@ -1,99 +1,118 @@
 'use strict';
 /**
- * HERITAGE — гуманитарлық сала (тарих, әдебиет, философия): слайд «фон + мәтін» емес, ҚҰРАСТЫРЫЛҒАН композиция.
- *   • мұқаба: фото доға пішінінде + артында күн-шеңбер + төменде түсті табан (COVER.arch);
- *   • ұғымдар: үш түсті тұтас бағана, биіктігі сатылап төмендейді;
- *   • тізім/қорытынды: тақырып бағанасының астында шетке дейін созылған түсті жазықтық;
- *   • уақыт сызығы: жыл сайын түсі ауысатын қалың жолақ, жылдар ірі антиква;
- *   • бөлім слайды: тұтас түсті бет.
- * Үш түс: c1 — терең (мәтін + акцент), c2 — акцент, c3 — акцент-2. Әр түстің үстіндегі мәтін түсі контрастпен есептеледі.
+ * HERITAGE («Мұра») — гуманитарлық сала (тарих, әдебиет, философия). Тұтас түсті геометрия (шеңбер, блок) ЖОҚ:
+ * көрініс ескі кітап/мұрағат тілімен құрылады —
+ *   • жылы қағаз фон + әлсіз түйіршік пен жиек көлеңкесі;
+ *   • қошқар мүйіз оюы (бөлгіш, мұқаба), жұқа қос жиектеме;
+ *   • тақырып бағанасы — шеті жыртық қағаз парағы (процедуралық, әр слайдта басқаша);
+ *   • ұғымдар — рим цифрлы, жұқа тік сызықпен бөлінген бағандар;
+ *   • уақыт сызығы — жұқа сызық + ромб түйіндер, жылдар ірі курсив антиква;
+ *   • мұқаба-фото — доға ішінде, сыртында ығыстырылған жұқа доға-сызық.
  */
 const T = require('../tokens');
 
 const S = '#stage.ds-heritage';
-const on = (c, ink) => (T.contrast('#ffffff', c) >= 3.6 ? '#ffffff' : ink);
-const onVars = (c, ink) => {
-  const t = on(c, ink);
-  const soft = t === '#ffffff' ? 'rgba(255,255,255,.86)' : T.mixHex(ink, c, 0.25);
-  return `--text:${t};--text2:${soft};--text3:${soft};--line:${t === '#ffffff' ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.18)'};--accent:${t};--accent2:${t};color:${t}`;
-};
+const enc = (svg) => 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
+
+/** Қошқар мүйіз: ортада ромб, екі жаққа сызық, ұштары ішке бұралған мүйіз */
+function ramHorn(c) {
+  const horn = 'M30 12c-9 0-14-5-11-10 2-3 8-2 7 3-1 3-5 2-4-1';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 24"><g fill="none" stroke="${c}" stroke-width="1.6" stroke-linecap="round">` +
+    `<path d="M120 4l8 8-8 8-8-8z" fill="${c}"/><path d="M132 12h70M108 12H38"/>` +
+    `<path d="${horn}" transform="translate(8 0)"/><path d="${horn}" transform="matrix(-1 0 0 1 232 0)"/>` +
+    `<path d="M130 12c6-7 14-7 16-2M110 12c-6-7-14-7-16-2"/></g></svg>`;
+}
+/** Жыртық шет: оң (не сол) жиегі ирек polygon — seed бойынша әр түрлі */
+function deckle(seed, side) {
+  let x = seed * 9301 + 49297;
+  const rnd = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  const pts = [];
+  for (let i = 0; i <= 40; i++) pts.push(`${(97.2 + rnd() * 2.8).toFixed(2)}% ${(i * 2.5).toFixed(1)}%`);
+  const right = pts.join(',');
+  const poly = side === 'left'
+    ? 'polygon(' + pts.map((p) => { const [a, b] = p.split(' '); return (100 - parseFloat(a)).toFixed(2) + '% ' + b; }).join(',') + ',100% 100%,100% 0)'
+    : 'polygon(0 0,' + right + ',0 100%)';
+  return poly;
+}
 
 function css(p) {
   const ink = p.text;
-  const c1 = T.mixHex(p.text, p.accent, 0.28);
-  const c2 = p.accent;
-  const c3 = p.accent2 || T.mixHex(p.accent, p.bg, 0.4);
-  const C = [c1, c2, c3];
-  // тақырып бағанасы астындағы жазықтық: бағана сол жақта (1–5/1–6) не оң жақта (8–12) — шетке дейін
-  const plane = (sel, left) => `${S} ${sel}{position:relative;z-index:0;${onVars(c1, ink)}}` +
+  const deep = T.mixHex(p.text, p.accent, 0.3);
+  const acc = p.accent;
+  const paper2 = T.mixHex(p.bg, p.text, 0.075);
+  const hair = T.mixHex(p.bg, p.text, 0.35);
+  const orn = enc(ramHorn(acc));
+  const sheet = (sel, left) => `${S} ${sel}{position:relative;z-index:0}` +
     `${S} ${sel}::before{content:"";position:absolute;z-index:-1;top:-2000px;bottom:-2000px;` +
-    (left ? 'left:-600px;right:-56px' : 'left:-56px;right:-600px') + `;background:${c1}}`;
+    (left ? 'left:-600px;right:-70px' : 'left:-70px;right:-600px') +
+    `;background:${paper2};clip-path:${deckle(left ? 7 : 3, left ? 'right' : 'left')};` +
+    `filter:drop-shadow(${left ? '6px' : '-6px'} 0 10px rgba(60,40,20,.14))}`;
   return [
-    // фон: жылы қағаз, әшекейсіз (композицияны пішіндер жасайды)
+    // фон: жылы қағаз, түйіршік + жиегі сәл қараңғы (ескі парақ); палитраның дақтары/аврорасы жоқ
     `${S} .deco,${S} .aurora,${S} .halo{display:none!important}`,
-    `${S} .layer-bg::before,${S} .layer-bg::after{display:none!important}`,
-    `${S} .title .hl{background:none!important;-webkit-text-fill-color:${c2}!important;color:${c2}!important;font-style:italic}`,
-    `${S} .kicker{color:${c2};letter-spacing:.22em;font-weight:700}`,
-    `${S} .rule{background:${c2}!important;height:4px}`,
+    `${S} .layer-bg::before{display:block!important;background:radial-gradient(130% 110% at 50% 45%,transparent 58%,rgba(90,60,30,.16) 100%)!important;opacity:1!important}`,
+    `${S} .plate,${S} .plate-cover,${S} .plate-section{background:var(--bg)!important}`,
+    `${S} .title .hl{background:none!important;-webkit-text-fill-color:${acc}!important;color:${acc}!important;font-style:italic}`,
+    `${S} .kicker{color:${acc};letter-spacing:.24em;font-weight:700;padding-bottom:30px;background:${orn} left bottom/180px 18px no-repeat}`,
+    `${S} .rule{width:220px!important;height:22px!important;background:${orn} left center/220px 22px no-repeat!important}`,
 
-    // ── мұқаба: доға-фото + күн + табан ──
-    `${S} .arch-photo{position:absolute;right:150px;top:104px;width:620px;height:870px;border-radius:310px 310px 0 0;overflow:hidden;z-index:2}`,
+    // ── мұқаба ──
+    `${S} .arch-photo{position:absolute;right:170px;top:110px;width:600px;height:860px;border-radius:300px 300px 0 0;overflow:hidden;z-index:2;box-shadow:0 30px 60px -30px rgba(60,40,20,.45)}`,
     `${S} .arch-photo img{width:100%;height:100%;object-fit:cover}`,
-    `${S} .arch-sun{position:absolute;right:56px;top:52px;width:430px;height:430px;border-radius:50%;background:${c3};z-index:1}`,
-    `${S} .arch-sun.solo{right:-120px;top:-120px;width:760px;height:760px;opacity:.9}`,
-    `${S} .arch-base{position:absolute;right:0;bottom:0;width:1000px;height:106px;background:${c1};z-index:3}`,
-    `${S} .cover-arch .cover-block{position:absolute;left:var(--mx);top:200px}`,
+    `${S} .arch-line{position:absolute;right:140px;top:80px;width:600px;height:860px;border-radius:300px 300px 0 0;border:1.5px solid ${acc};z-index:1}`,
+    `${S} .cover-frame{position:absolute;inset:48px;border:1.5px solid ${hair};outline:1.5px solid ${hair};outline-offset:-14px}`,
+    `${S} .orn-cover{position:absolute;left:var(--mx);top:130px;width:260px;height:26px;background:${orn} center/260px 26px no-repeat}`,
+    `${S} .has-arch .cover-arch .cover-block{position:absolute;left:var(--mx);top:210px}`,
+    `${S} .no-arch .cover-arch .cover-block{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;width:1400px!important}`,
+    `${S} .no-arch .cover-arch .kicker{background-position:center bottom}`,
+    `${S} .no-arch .orn-cover{left:50%;margin-left:-130px;top:auto;bottom:130px}`,
+    `${S} .no-arch .meta-row{justify-content:center}`,
 
-    // ── ұғымдар: тұтас түсті бағаналар, сатылы биіктік ──
-    `${S} .concepts{align-items:end!important}`,
-    `${S} .concepts .concept{align-self:end!important}`,
-    ...C.map((c, k) => `${S} .concepts .concept:nth-child(3n+${k + 1}){background:${c};${onVars(c, ink)};height:${[460, 400, 340][k]}px}`),
-    `${S} .concept{border:0;border-radius:0!important;box-shadow:none!important;padding:44px 40px 46px;display:flex;flex-direction:column;justify-content:flex-end}`,
-    `${S} .concept::before,${S} .concept::after{display:none}`,
-    `${S} .concept-n{font-family:var(--f-display);font-size:28px;letter-spacing:0;font-weight:400;opacity:.85;margin-bottom:auto;padding-bottom:var(--s3)}`,
-    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.6*var(--fs,1));line-height:1.05;letter-spacing:-.01em}`,
-    `${S} .concept-d{font-size:calc(var(--rd,26px)*1.1*var(--fs,1))}`,
+    // ── ұғымдар: рим цифры + жұқа тік сызықтар ──
+    `${S} .concepts{counter-reset:roman;column-gap:0!important}`,
+    `${S} .concept{counter-increment:roman;border:0!important;border-left:1.5px solid ${hair}!important;border-radius:0!important;box-shadow:none!important;background:none!important;padding:8px 44px 8px 44px!important}`,
+    `${S} .concept:first-child{border-left:0!important;padding-left:0!important}`,
+    `${S} .concept::before{content:counter(roman,upper-roman)!important;position:static!important;display:block;width:auto!important;height:auto!important;background:none!important;font-family:var(--f-display);font-style:italic;font-size:64px;line-height:1;color:${acc};margin-bottom:28px}`,
+    `${S} .concept::after,${S} .concept-n{display:none!important}`,
+    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.75*var(--fs,1));line-height:1.06;color:${ink}}`,
+    `${S} .concept-d{font-size:calc(var(--rd,26px)*1.1*var(--fs,1));color:var(--text2)}`,
 
-    // ── тізім слайды мен қорытынды: тақырып бағанасының астында түсті жазықтық ──
-    plane('.pts-l.at-l', true),
-    plane('.pts-l.at-r', false),
-    plane('.close .close-l', true),
-    plane('.edit-l.at-l', true),
-    plane('.edit-l.at-r', false),
-    `${S} .row-n{font-family:var(--f-display);color:${c2};font-weight:400;font-size:34px}`,
-    `${S} .rows{border-top:3px solid ${c1}}`,
+    // ── тізім/мәтін/қорытынды: тақырып жыртық шетті қағаз парағында ──
+    sheet('.pts-l.at-l', true), sheet('.pts-l.at-r', false),
+    sheet('.edit-l.at-l', true), sheet('.edit-l.at-r', false),
+    sheet('.close .close-l', true),
+    `${S} .row-n{font-family:var(--f-display);font-style:italic;color:${acc};font-weight:400;font-size:36px;background:none!important;border:0!important}`,
+    `${S} .rows{border-top:0}${S} .row{border-color:${hair}}`,
 
-    // ── уақыт сызығы: қалың түрлі түсті жолақ ──
-    `${S} .tl-mark{height:24px}`,
-    `${S} .tl-mark::before{top:0;height:24px;right:calc(var(--gut)*-1)}`,
-    `${S} .tl-n:last-child .tl-mark::before{right:0}`,
-    ...C.map((c, k) => `${S} .tl-n:nth-child(3n+${k + 1}) .tl-mark::before{background:${c}}`),
-    `${S} .tl-mark::after{display:none}`,
-    `${S} .tl-txt{font-size:calc(var(--bs,28px)*1.15*var(--fs,1))}`,
-    `${S} .tl-date{font-size:calc(var(--ds,54px)*1.5*var(--fs,1))!important;background:none!important;-webkit-text-fill-color:currentColor;color:${ink};font-weight:400}`,
+    // ── уақыт сызығы: жұқа сызық + ромб ──
+    `${S} .tl-mark::before{background:${hair}!important;height:1.5px!important}`,
+    `${S} .tl-mark::after{width:16px!important;height:16px!important;margin-top:-8px!important;border-radius:0!important;transform:rotate(45deg);background:${acc}!important;box-shadow:0 0 0 7px var(--bg)!important}`,
+    `${S} .tl-date{font-size:calc(var(--ds,54px)*1.45*var(--fs,1))!important;font-style:italic;background:none!important;-webkit-text-fill-color:${deep}!important;color:${deep}!important;font-weight:400}`,
+    `${S} .tl-txt{font-size:calc(var(--bs,28px)*1.12*var(--fs,1))}`,
 
-    // ── сандар: жалпақ қағаз карточка, үстінде түсті жолақ ──
-    `${S} .stat{background:none!important;border:0;box-shadow:none!important;border-top:8px solid ${c1}!important;border-radius:0!important;padding-top:var(--s4)}`,
-    ...C.map((c, k) => `${S} .stat:nth-child(3n+${k + 1}){border-top-color:${c}!important}`),
+    // ── сандар: курсив антиква, астында ою ──
+    `${S} .stat{background:none!important;border:0!important;box-shadow:none!important;border-radius:0!important;padding-bottom:40px!important}`,
     `${S} .stat::before,${S} .stat::after,${S} .meter{display:none!important}`,
-    // ── сандар ──
-    `${S} .numeral-xl,${S} .mega,${S} .st-n,${S} .stat-v{background:none!important;-webkit-text-fill-color:${c2}!important;color:${c2}!important;font-family:var(--f-display);font-weight:400}`,
+    `${S} .stat::after{content:""!important;display:block!important;position:static!important;width:150px;height:16px;margin-top:20px;background:${orn} left center/150px 16px no-repeat!important;opacity:1!important}`,
+    `${S} .numeral-xl,${S} .mega,${S} .st-n,${S} .stat-v{background:none!important;-webkit-text-fill-color:${deep}!important;color:${deep}!important;font-family:var(--f-display);font-style:italic;font-weight:400}`,
 
-    // ── бөлім: тұтас түсті бет ──
-    `${S} .L-section .plate-section{background:${c1}!important}`,
-    `${S} .closing-slide .plate-section{background:var(--bg)!important}`,
-    `${S} .L-section .canvas{${onVars(c1, ink)}}`,
+    // ── инфографика карточкалары: тегіс, жиексіз ──
+    `${S} .ig-card,${S} .hn,${S} .st{background:none!important;box-shadow:none!important;border:0!important;border-top:1.5px solid ${hair}!important;border-radius:0!important}`,
 
-    // ── фото: жиексіз, үлкен радиуссыз — тік бұрышты «журнал» кесігі ──
-    `${S} .photo{border-radius:0!important;box-shadow:none}`,
+    // ── бөлім ──
+    `${S} .L-section .canvas{text-align:center}`,
+
+    // ── фото: жұқа ақ паспарту + көлеңке (ескі фотосурет) ──
+    `${S} .photo,${S} .bleed{border-radius:0!important}`,
+    `${S} .photo{border:14px solid #fbf8f1!important;box-shadow:0 22px 44px -22px rgba(60,40,20,.5)!important}`,
   ].join('\n');
 }
 
 module.exports = {
   id: 'heritage',
   name: 'Мұра',
-  type: { display: 'serif', text: 'sans', dw: 400, tw: 400, dt: '-0.02em', tt: '-0.01em', dl: 1.02, tl: 1.08 },
-  moods: ['sand', 'light', 'ivory', 'mint', 'blush'],
+  type: { display: 'serif', text: 'sans', dw: 400, tw: 400, dt: '-0.02em', tt: '-0.01em', dl: 1.02, tl: 1.08, italicQuote: true },
+  moods: ['sand', 'light', 'ivory'],
   num: 'pad',
   folio: { title: false, total: false, pad: true, cover: false },
   cover: 'arch',

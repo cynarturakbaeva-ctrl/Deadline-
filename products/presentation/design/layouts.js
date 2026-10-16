@@ -252,9 +252,9 @@ COVER.arch = (ctx) => {
   const photoOK = a.hasPhoto && I.sharpEnough(a.img, 700);
   const bg = '<div class="plate plate-cover"></div>' +
     (photoOK
-      ? '<div class="arch-sun" aria-hidden="true"></div><div class="arch-photo" data-role="photo">' + I.imgTag(a.photo, a.img, ctx.palette, { focus: a.focus }) + '</div>'
-      : '<div class="arch-sun solo" aria-hidden="true"></div>') +
-    '<div class="arch-base" aria-hidden="true"></div>';
+      ? '<div class="arch-line" aria-hidden="true"></div><div class="arch-photo" data-role="photo">' + I.imgTag(a.photo, a.img, ctx.palette, { focus: a.focus }) + '</div>'
+      : '<div class="cover-frame" aria-hidden="true"></div>') +
+    '<div class="orn orn-cover" aria-hidden="true"></div>';
   const w = GRID.span(photoOK ? 6 : 9);
   const { org, metaHtml, labeled } = coverParts(ctx, 2);
   const fg = '<div class="canvas cover cover-arch">' +
@@ -264,7 +264,7 @@ COVER.arch = (ctx) => {
       lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
       metaHtml +
     '</div></div>';
-  return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' };
+  return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' + (photoOK ? ' has-arch' : ' no-arch') };
 };
 
 /** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
