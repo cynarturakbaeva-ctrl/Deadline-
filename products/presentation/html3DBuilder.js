@@ -174,7 +174,7 @@ function renderSlide(slide, index, plan, ctxDeck) {
   }
   // Мағыналы әшекей (Мұра): слайд мазмұнына сай ескі гравюра; сай тақырып жоқ → әшекей жоқ. Орнын рендер өлшейді.
   // Заманауи жүйелер: мағынасына сай ірі жіңішке белгіше (Lucide), орнын рендер өлшейді
-  if (ctxDeck.sys && ctxDeck.sys.iconDecor && out && !/^(fullImage|table|infographic|split|imageFocus)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2) && !(index === 0 && plan.a.hasPhoto)) {
+  if (ctxDeck.sys && ctxDeck.sys.iconDecor && out && !/^(fullImage|table|infographic|split|imageFocus)$/.test(layoutName) && !(ctxDeck.sys.doodles && (index === 0 || layoutName === 'closing')) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2) && !(index === 0 && plan.a.hasPhoto)) {
     const D = require('./design/decor');
     ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
     const s = slide || {};

@@ -142,7 +142,7 @@ function pickDecorSet(text, used, seed = 0, max = 2) {
 
 // ── Заманауи жүйелер үшін: мағынасына сай ірі жіңішке белгіше (Lucide, ISC) ──
 const ICON_THEMES = [
-  [/бағдарлама|код|программ|код |software|code|programming|developer/i, ['code-xml', 'braces', 'terminal']],
+  [/бағдарламалау|бағдарламашы|код |кодты|программир|программист|software|source code|programming|developer/i, ['code-xml', 'braces', 'terminal']],
   [/жасанды интеллект|нейрон|машиналық оқыту|ии |искусственн|нейросет|машинн|artificial intelligence|\bai\b|neural|machine learning/i, ['brain-circuit', 'bot', 'cpu']],
   [/дерек|база|деректер|данн|база данных|data|database|big data/i, ['database', 'chart-scatter', 'server']],
   [/желі|интернет|бұлт|сеть|интернет|облак|network|internet|cloud/i, ['network', 'cloud', 'globe']],
@@ -163,6 +163,12 @@ const ICON_THEMES = [
   [/медицина|денсаулық|ауру|медицин|здоров|болезн|medic|health|disease/i, ['heart-pulse', 'stethoscope', 'pill']],
   [/экология|қоршаған орта|климат|эколог|окружающ|климат|ecolog|environment|climate/i, ['leaf', 'sprout', 'recycle']],
   [/білім|оқу|сабақ|университет|образован|обучен|урок|университет|education|learning|university/i, ['graduation-cap', 'book-open', 'school']],
+  [/психолог|эмоци|стресс|сезім|мінез|психик|эмоц|чувств|поведен|psycholog|emotion|stress|behavio/i, ['brain', 'heart-handshake', 'smile']],
+  [/буллинг|зорлық|қақтығыс|агрессия|буллинг|насили|конфликт|агресс|bullying|violence|conflict|aggression/i, ['shield-alert', 'message-circle-warning', 'hand-heart']],
+  [/мұғалім|оқытушы|педагог|учител|преподават|педагог|teacher|pedagog/i, ['presentation', 'pencil-ruler', 'users']],
+  [/спорт|дене шынықтыру|олимп|фитнес|спорт|физкульт|sport|fitness|olymp|athlet/i, ['dumbbell', 'trophy', 'activity']],
+  [/бала|оқушы|жасөспірім|ребен|ученик|подрост|child|pupil|teen/i, ['backpack', 'baby', 'users-round']],
+  [/ата-ана|отбасы|родител|семь|parent|family/i, ['house-heart', 'users', 'heart']],
   [/идея|инновация|шешім|идея|инновац|решени|idea|innovation|solution/i, ['lightbulb', 'sparkles', 'puzzle']],
 ];
 const ICON_DIR = path.join(A, 'icons', 'lucide.json');

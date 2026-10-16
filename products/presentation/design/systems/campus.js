@@ -31,6 +31,8 @@ function css(p) {
 
     // иллюстрациялар
     `${S} .doodle{position:absolute;pointer-events:none}`,
+    `${S} .decor{position:absolute;visibility:hidden;pointer-events:none;object-fit:contain;opacity:.7;transform:rotate(-6deg)}`,
+    `${S} .decor[data-decor="pair"]{opacity:.45;transform:rotate(5deg)}`,
     `${S} .doodle-cover{right:70px;bottom:90px;width:680px;height:720px;object-fit:contain;object-position:right bottom}`,
     `${S} .doodle-close{left:96px;bottom:40px;width:400px;height:330px;object-fit:contain;object-position:left bottom}`,
     `${S} .cover-doodle .cover-block{position:absolute;left:var(--mx);top:50%;transform:translateY(-50%)}`,
@@ -74,5 +76,8 @@ module.exports = {
   cover: 'doodle',
   closing: 'rows',
   doodles: true,
+  iconDecor: true,
+  iconStroke: 1.4,
+  iconMax: 240,
   css,
 };
