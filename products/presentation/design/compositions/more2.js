@@ -48,10 +48,11 @@ module.exports = function register(def, K) {
       const cw = 1240; const cx0 = (W - cw) / 2;
       const bg = '<div class="plate plate-cover"></div>' + back +
         P.div(P.pos(cx0, 190, cw, 560) + ';background:' + p.bg + ';border:2px solid ' + P.mix(p.bg, p.text, 0.55) + ';outline:2px solid ' + P.mix(p.bg, p.text, 0.55) + ';outline-offset:10px;box-shadow:0 40px 80px -40px rgba(0,0,0,.45)') +
-        P.panel(W / 2 - 110, 260, 220, 2, p.accent) + P.diamond(W / 2, 261, 16, p.accent, p.bg);
+        P.panel(W / 2 - 110, 260, 220, 2, p.accent) + P.diamond(W / 2, 261, 16, p.accent, p.bg) +
+        (a.hasPhoto ? P.panel(MX - 36, HH - 236, 1000, 160, p.bg + 'e8') : ''); // фото үстінде автор жолы оқылсын
       const fg = vBox(cx0 + 90, 300, cw - 180, 400, '<div style="text-align:center">' + H.kicker(ctx, H.sectionLabel(ctx)) +
         H.titleH1(ctx, a.title, { role: 'display', width: cw - 180, maxLines: 3, scale: [92, 80, 70, 62, 54], hl: true, style: 'text-align:center' }) +
-        H.lead(ctx, a.subtitle, 30, { maxw: cw - 260, cls: 'cx-center' }) + '</div>') + wrapB(MX, 60, 900, metaHtml);
+        H.lead(ctx, a.subtitle, 30, { maxw: cw - 260, cls: 'cx-center' }) + '</div>') + wrapB(MX, 100, 900, metaHtml);
       return { bg, fg: fg + H.folio(ctx), cls: 'cx-slide cx-cover' };
     },
   });
