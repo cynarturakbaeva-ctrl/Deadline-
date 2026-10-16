@@ -22,7 +22,11 @@ function css(p) {
     `${S} .rule{background:${acc}!important;height:6px!important;width:72px!important}`,
     // тізім мен карточкалар: «есеп кітабы» — жіңішке сызықтар, ірі нөмір
     `${S} .rows{border-top:3px solid ${ink}}${S} .row{border-color:${hair}}`,
-    `${S} .row-n{background:none!important;border:0!important;color:${acc}!important;font-weight:800;font-size:30px;letter-spacing:-.02em}`,
+    // «көмескі индекс»: тізім нөмірі — қатардың артындағы ірі, бозғылт сан (журнал/есеп беттеріндегідей)
+    `${S} .row{position:relative}`,
+    `${S} .row-n{position:absolute!important;left:-4px;top:50%;transform:translateY(-54%);width:auto!important;height:auto!important;margin:0!important;padding:0!important;background:none!important;border:0!important;` +
+      `color:${T.mixHex(p.bg, acc, 0.2)}!important;font-weight:800;font-size:120px!important;line-height:1;letter-spacing:-.06em;z-index:0}`,
+    `${S} .row-b{position:relative;z-index:1;padding-left:176px}`,
     `${S} .concept{background:none!important;border:0!important;border-top:3px solid ${ink}!important;border-radius:0!important;box-shadow:none!important;padding-top:28px!important}`,
     `${S} .concept::before,${S} .concept::after{display:none!important}`,
     `${S} .concept-n{color:${acc}!important;font-weight:800;letter-spacing:0;font-size:22px}`,
