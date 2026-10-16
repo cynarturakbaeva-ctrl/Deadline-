@@ -8,6 +8,13 @@ const fs = require('fs');
 const path = require('path');
 
 const A = path.join(__dirname, '..', 'assets');
+/**
+ * Түбір тек СӨЗДІҢ БАСЫНАН ізделеді: әйтпесе «порт» → «спорт/портрет», «хан» → «механизм»,
+ * «art» → «start/chart», «bee» → «been», орысша «ою» → «мою» сияқты жалған сәйкестік әшекейді мағынасыз етеді.
+ */
+const WS = '(?<![\\p{L}\\p{N}])';
+const atWord = (re) => new RegExp(WS + '(?:' + re.source + ')', 'iu');
+const countIn = (re, t) => (t.match(new RegExp(re.source, 'giu')) || []).length;
 // тақырып белгісі → слайд мәтініндегі мағына (kk / ru / en)
 const THEMES = {
   quill: /әдебиет|ақын|жазушы|шығарма|өлең|поэзи|роман|хат|жазба|қолжазба|литератур|поэт|писател|рукопис|letter|poet|writer|literature|manuscript/i,
@@ -18,50 +25,51 @@ const THEMES = {
   laurel: /жеңіс|мұра|құрмет|марапат|жетістік|ұлы|победа|наслед|слава|наград|victory|legacy|honou?r|award|achievement/i,
   compass: /сапар|саяхат|экспедиция|бағыт|жол|карта|путешеств|экспедиц|направлен|journey|expedition|travel|navigation|direction/i,
   globe: /әлем|халықаралық|жаһан|дүниежүзі|география|мир|глобал|международ|географ|world|global|international|geograph/i,
-  map: /карта|аумақ|шекара|жер|өңір|жібек жол|территор|границ|регион|шелков|map|territor|border|region|silk road/i,
+  map: /карта|аумақ|шекара|жер(?:і|де|ге|дің|лер)?(?!\p{L})|өңір|жібек жол|территор|границ|регион|шелков|map|territor|border|region|silk road/i,
   column: /антика|грек|рим|философ|мемлекет|демократия|сәулет|антич|философ|государств|архитект|ancient|greek|roman|philosoph|democracy|architect/i,
   owl: /даналық|философ|ойшыл|ақыл|білім|мудрост|мыслител|философ|wisdom|philosoph|thinker|reason/i,
-  scales: /құқық|заң|әділ|сот|этика|право|закон|суд|справедлив|этик|law|justice|court|ethic|legal/i,
-  anchor: /теңіз|порт|кеме|мұхит|море|порт|корабл|океан|sea|port|maritime|ocean|naval/i,
-  ship: /теңіз|кеме|мұхит|сауда жолы|флот|море|корабл|флот|sea|ship|fleet|ocean/i,
+  scales: /құқық|заң|әділ|сот(?:ы|тар|қа|та)?(?!\p{L})|этика|право|закон|суд|справедлив|этик|law|justice|court|ethic|legal/i,
+  anchor: /теңіз|кеме|мұхит|море|морск|порт(?:ы|қа|та|тар|а|у|ов)?(?!\p{L})|корабл|океан|seas?(?!\p{L})|ports?(?!\p{L})|maritime|ocean|naval/i,
+  ship: /теңіз|кеме|мұхит|сауда жолы|флот|море|морск|корабл|флот|seas?(?!\p{L})|ship|fleet|ocean/i,
   horse: /көшпелі|дала|жылқы|ат |атты|хан|батыр|соғыс|кочев|степ|лошад|конниц|nomad|steppe|horse|cavalry|khan/i,
   crown: /хан|хандық|билік|патша|мемлекет|монарх|император|ханств|власть|царь|король|khan|khanate|monarch|kingdom|empire|power/i,
   key: /кілт|құпия|ключ|тайн|secret/i,
   candle: /ағартушы|ағарту|дін|рухани жаңғыру|просвещ|религ|enlightenment|religio/i,
-  telescope: /астроном|ғарыш|жұлдыз|аспан|космос|звезд|astronom|space|star|telescope/i,
+  telescope: /астроном|ғарыш|жұлдыз|аспан|космос|звезд|astronom|space|stars?(?!\p{L})|telescope/i,
   microscope: /биология|медицина|химия|зертхана|ғылыми|биолог|медицин|хими|лаборатор|biolog|medic|chemist|laborator|scien/i,
   gears: /өндіріс|техника|механизм|инженер|өнеркәсіп|технология|производ|техни|механизм|инженер|промышлен|industr|engineer|mechanic|technolog|machine/i,
   coins: /экономика|қаржы|ақша|сауда|салық|теңге|экономик|финанс|деньг|торгов|налог|econom|financ|money|trade|tax/i,
-  theater: /театр|өнер|драма|сахна|актер|искусств|сцен|theat|drama|stage|art/i,
+  theater: /театр|өнер(?!кәсіп)|драма|сахна|актер|искусств|сцен|theat|drama|stage|arts?(?!\p{L})/i,
   pen: /жазу|эссе|мақала|журналист|письм|стать|журналист|writing|essay|article|journalis/i,
   letter: /хат|хабар|байланыс|пошта|письм|почт|связ|letter|mail|correspond/i,
   camera: /фото|кино|медиа|бұқаралық|фотограф|кино|сми|photo|film|cinema|media/i,
-  kazakh: /қазақ|хандық|хандығ|көшпелі|дала|ұлттық|дәстүр|салт|ата-баба|киіз үй|шаңырақ|ою|казах|кочев|степ|юрт|традиц|kazakh|nomad|steppe|yurt|tradition/i,
+  kazakh: /қазақ|хандық|хандығ|көшпелі|дала|ұлттық|дәстүр|салт|ата-баба|киіз үй|шаңырақ|ою(?:лар|ы)?(?!\p{L})|казах|кочев|степ|юрт|традиц|kazakh|nomad|steppe|yurt|tradition/i,
   music: /домбыра|күй|ән |әндер|музыка|жыр|айтыс|домбр|музык|песн|music|song|folk/i,
   butterfly: /көбелек|жәндік|табиғат|экология|бабочк|насеком|природ|butterfl|insect|nature|ecolog/i,
   bird: /құс|бейбітшілік|еркіндік|птиц|мир |свобод|bird|peace|freedom/i,
   feather: /еркіндік|жеңіл|ақын|поэзия|свобод|поэз|freedom|poetry/i,
-  wheat: /ауыл шаруашылығы|егін|бидай|астық|нан|агро|сельск|зерн|пшениц|урожа|agricult|wheat|grain|harvest|farm/i,
+  wheat: /ауыл шаруашылығы|егін|бидай|астық|нан(?!\p{L})|агро|сельск|зерн|пшениц|урожа|agricult|wheat|grain|harvest|farm/i,
   bulb: /идея|инновация|өнертабыс|жаңалық|шығармашылық|идея|инновац|изобрет|творч|idea|innovat|invent|creativ/i,
-  typewriter: /журналистика|баспасөз|жазушы|кеңсе|іс қағаз|журналист|пресс|печат|канцеляр|journalis|press|office|writer/i,
+  typewriter: /журналистика|баспасөз|жазушы|кеңсе|іс қағаз|журналист|пресс|печат|канцеляр|journalis|press(?!ur)|office|writer/i,
   phone: /байланыс|коммуникация|телефон|связ|коммуникац|communicat|telephone/i,
   factory: /зауыт|фабрика|өнеркәсіп|индустрия|завод|промышлен|индустри|factory|industr/i,
   train: /темір жол|көлік|пойыз|логистика|железн|транспорт|поезд|логистик|railway|train|transport|logistic/i,
   heart: /жүрек|қан айналым|кардио|сердц|кровообращ|кардио|heart|cardio/i,
-  brain: /ми |миы|нейрон|психология|сана|ойлау|мозг|нейр|психолог|сознан|мышлен|brain|neuro|psycholog|cognit|mind/i,
-  skeleton: /анатомия|сүйек|қаңқа|анатом|кост|скелет|anatom|bone|skeleton/i,
+  brain: /ми |миы|нейрон|психология|сана(?:сы|сын|ның)?(?!\p{L})|ойлау|мозг|нейр|психолог|сознан|мышлен|brain|neuro|psycholog|cognit|mind/i,
+  skeleton: /анатомия|сүйек|қаңқа|анатом|кост(?:ь|и|ей)(?!\p{L})|скелет|anatom|bone|skeleton/i,
   flask: /химия|реакция|зертхана|эксперимент|хими|реакц|лаборатор|эксперимент|chemi|reaction|laborator|experiment/i,
   abacus: /математика|есеп|санау|бухгалтер|статистика|математ|счёт|счет|бухгалт|статист|mathemat|account|arithmet|statistic/i,
   violin: /музыка|оркестр|классикалық|скрипка|музык|оркестр|скрипк|music|orchestr|violin|classical/i,
   handshake: /серіктестік|ынтымақтастық|келісім|әріптес|бірлік|партнер|сотруднич|соглаш|partner|cooperat|agreement|collaborat/i,
-  tree: /орман|ағаш|экология|табиғат|тамыр|лес|дерев|эколог|природ|forest|tree|ecolog|nature|roots/i,
-  mountain: /тау|шың|алатау|гор|вершин|mountain|peak|alps/i,
+  tree: /орман|ағаш|экология|табиғат|тамыр|лес(?:а|ов|ной|ные)?(?!\p{L})|дерев|эколог|природ|forest|tree|ecolog|nature|roots/i,
+  mountain: /тау(?:лар|лы|ы|дың|да|ға)?(?!\p{L})|шың|алатау|гор(?:а|ы|ный|ная|ные|ах)(?!\p{L})|вершин|mountain|peak|alps/i,
   sun: /күн |күн энергиясы|жарық|күн жүйесі|солнц|свет|sun|solar|light/i,
-  bee: /ара |еңбек|ұжым|ынтымақ|пчел|труд|коллектив|bee|teamwork|labou?r|hive/i,
-  apple: /алма|денсаулық|тамақтану|жеміс|яблок|здоров|питан|фрукт|apple|health|nutrition|fruit/i,
+  bee: /ара |еңбек|ұжым|ынтымақ|пчел|труд|коллектив|bees?(?!\p{L})|teamwork|labou?r(?!at)|hive/i,
+  apple: /алма(?:лар|сы)?(?!\p{L})|денсаулық|тамақтану|жеміс|яблок|здоров|питан|фрукт|apple|health|nutrition|fruit/i,
   medicine: /медицина|дәрі|емдеу|фармацевт|аурухана|медицин|лекарств|лечен|фармац|больниц|medic|drug|treatment|pharma|hospital/i,
-  flora: /табиғат|гүл|өсімдік|ботаника|экология|бау|әдебиет|поэзия|өлең|сұлулық|мәдениет|природ|цвет|растен|ботаник|эколог|поэз|культур|nature|flower|plant|botan|ecolog|poetry|culture|beauty/i,
+  flora: /табиғат|гүл|өсімдік|ботаника|экология|әдебиет|поэзия|өлең|сұлулық|мәдениет|природ|цвет|растен|ботаник|эколог|поэз|культур|nature|flower|plant|botan|ecolog|poetry|culture|beauty/i,
 };
+for (const k of Object.keys(THEMES)) THEMES[k] = atWord(THEMES[k]);
 
 let IDX = null;
 function index() {
@@ -88,7 +96,7 @@ function pickDecor(text, used, seed = 0) {
   const idx = index();
   const scored = Object.keys(THEMES)
     .filter((tag) => idx[tag] && idx[tag].length)
-    .map((tag) => ({ tag, n: (t.match(new RegExp(THEMES[tag].source, 'gi')) || []).length }))
+    .map((tag) => ({ tag, n: countIn(THEMES[tag], t) }))
     .filter((x) => x.n > 0 && !(used && used.has('tag:' + x.tag)))
     .sort((a, b) => b.n - a.n);
   if (!scored.length) return null;
@@ -124,7 +132,7 @@ function pickDecorSet(text, used, seed = 0, max = 2) {
   const t = ' ' + String(text || '') + ' ';
   const second = Object.keys(THEMES)
     .filter((tag) => tag !== main.tag && idx[tag] && idx[tag].length && !(used && used.has('tag:' + tag)))
-    .map((tag) => ({ tag, n: (t.match(new RegExp(THEMES[tag].source, 'gi')) || []).length }))
+    .map((tag) => ({ tag, n: countIn(THEMES[tag], t) }))
     .filter((x) => x.n > 0)
     .sort((a, b) => b.n - a.n)[0];
   const tag = second ? second.tag : PAIRS[main.tag];
@@ -143,18 +151,18 @@ function pickDecorSet(text, used, seed = 0, max = 2) {
 // ── Заманауи жүйелер үшін: мағынасына сай ірі жіңішке белгіше (Lucide, ISC) ──
 const ICON_THEMES = [
   [/бағдарламалау|бағдарламашы|код |кодты|программир|программист|software|source code|programming|developer/i, ['code-xml', 'braces', 'terminal']],
-  [/жасанды интеллект|нейрон|машиналық оқыту|ии |искусственн|нейросет|машинн|artificial intelligence|\bai\b|neural|machine learning/i, ['brain-circuit', 'bot', 'cpu']],
-  [/дерек|база|деректер|данн|база данных|data|database|big data/i, ['database', 'chart-scatter', 'server']],
+  [/жасанды интеллект|нейрон|машиналық оқыту|(?<![а-яёәіңғүұқөһa-z])ии(?![а-яёәіңғүұқөһa-z])|искусственн|нейросет|машинн|artificial intelligence|\bai\b|neural|machine learning/i, ['brain-circuit', 'bot', 'cpu']],
+  [/дерек|база(?!р)|деректер|данн|база данных|data|database|big data/i, ['database', 'chart-scatter', 'server']],
   // нақтысы жалпысынан бұрын: «әлеуметтік желі» → желі сызбасы емес, телефон/хабарлама
   [/кибербуллинг|кибер-буллинг|cyberbullying/i, ['message-circle-warning', 'smartphone']],
   [/әлеуметтік желі|соцжелі|соцсет|социальн\S* сет|social media|social network|instagram|tiktok|telegram|youtube/i, ['smartphone', 'message-circle', 'at-sign']],
   [/бұлттық|облачн|cloud computing|cloud service/i, ['cloud-cog', 'server']],
-  [/компьютерлік желі|интернет|сеть|network|internet/i, ['network', 'globe']],
+  [/компьютерлік желі|(?<![а-яёәіңғүұқөһa-z])сеть|network/i, ['network', 'server']],
   [/қауіпсіздік|киберқауіп|шифр|безопасн|кибер|шифр|security|cyber|encrypt/i, ['shield-check', 'lock-keyhole', 'fingerprint']],
   [/робот|автоматтандыру|автоматизац|robot|automation/i, ['bot', 'cog', 'workflow']],
   [/инженер|құрылыс|механика|жобалау|инженер|строител|механик|проектир|engineer|construction|mechanic|design/i, ['drafting-compass', 'ruler', 'hard-hat']],
-  [/энергия|электр|мұнай|газ|энерг|электр|нефт|energy|electric|oil|gas|power/i, ['zap', 'fuel', 'battery-charging']],
-  [/теңіз|кеме|порт|навигация|море|судно|корабл|порт|навигац|sea|ship|maritime|port|navigation/i, ['ship', 'anchor', 'compass']],
+  [/энергия|электр|мұнай|(?<![а-яёәіңғүұқөһa-z])газ(?![а-яёәіңғүұқөһa-z])|энерг|электр|нефт|energy|electric|oil|gas|power/i, ['zap', 'fuel', 'battery-charging']],
+  [/теңіз|(?<![а-яёәіңғүұқөһa-z])кеме(?:лер|сі)?(?![а-яёәіңғүұқөһa-z])|(?<![а-яёәіңғүұқөһa-z])порт(?:ы|қа|тар)?(?![а-яёәіңғүұқөһa-z])|(?<![а-яёәіңғүұқөһa-z])море|судно|корабл|навигац|seas?(?!\p{L})|ship|maritime|ports?(?!\p{L})|navigation/i, ['ship', 'anchor', 'compass']],
   [/ғарыш|спутник|космос|спутник|space|satellite|rocket/i, ['rocket', 'satellite', 'orbit']],
   [/(?:^|[^а-яёәіңғүұқөһ])арна(?:сы|лар|лары|ларын|ларда)?(?![а-яёәіңғүұқөһ])|жарнама|канал|реклам|channel|advertis/i, ['megaphone', 'radio', 'tv']],
   [/нарық|бәсеке|маркетинг|сату|рынок|конкурен|маркетинг|продаж|market|competit|marketing|sales/i, ['target', 'megaphone', 'chart-pie']],
@@ -172,10 +180,11 @@ const ICON_THEMES = [
   [/буллинг|зорлық|қақтығыс|агрессия|буллинг|насили|конфликт|агресс|bullying|violence|conflict|aggression/i, ['shield-alert', 'message-circle-warning', 'hand-heart']],
   [/мұғалім|оқытушы|педагог|учител|преподават|педагог|teacher|pedagog/i, ['presentation', 'pencil-ruler', 'users']],
   [/спорт|дене шынықтыру|олимп|фитнес|спорт|физкульт|sport|fitness|olymp|athlet/i, ['dumbbell', 'trophy', 'activity']],
-  [/бала|оқушы|жасөспірім|ребен|ученик|подрост|child|pupil|teen/i, ['backpack', 'baby', 'users-round']],
+  [/(?<![а-яёәіңғүұқөһa-z])бала(?:лар|ларды|ларға|лардың|ның|ға|ны)?(?![а-яёәіңғүұқөһa-z])|оқушы|жасөспірім|ребен|ученик|подрост|child|pupil|teen/i, ['backpack', 'baby', 'users-round']],
   [/ата-ана|отбасы|родител|семь|parent|family/i, ['house-heart', 'users', 'heart']],
+  [/интернет|internet|онлайн|online/i, ['globe', 'wifi']],
   [/идея|инновация|шешім|идея|инновац|решени|idea|innovation|solution/i, ['lightbulb', 'sparkles', 'puzzle']],
-];
+].map(([re, names]) => [atWord(re), names]);
 const ICON_DIR = path.join(A, 'icons', 'lucide.json');
 let LUC = null;
 /** Мағынасына сай белгішелер (1–2): [{name}] не бос */
