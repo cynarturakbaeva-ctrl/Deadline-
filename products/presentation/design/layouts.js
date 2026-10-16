@@ -267,6 +267,24 @@ COVER.arch = (ctx) => {
   return { bg, fg: fg + folio(ctx), cls: 'cover-arch-slide' + (photoOK ? ' has-arch' : ' no-arch') };
 };
 
+/** Дудл мұқаба (campus): сол жақта тақырып, оң жақта тақырыпқа сай қолмен салынған иллюстрация (Open Doodles, CC0) */
+COVER.doodle = (ctx) => {
+  const a = ctx.a; const p = ctx.palette;
+  const D = require('./doodles');
+  const uri = D.doodleUri(D.pickDoodle(ctx.deckTitle + ' ' + a.title), p.accent, p.text);
+  const bg = '<div class="plate plate-cover"></div>' + (uri ? '<img class="doodle doodle-cover" alt="" src="' + uri + '">' : '');
+  const w = GRID.span(7);
+  const { org, metaHtml, labeled } = coverParts(ctx, 2);
+  const fg = '<div class="canvas cover cover-doodle">' +
+    '<div class="block cover-block" style="width:' + w + 'px">' +
+      (org || kicker(ctx, sectionLabel(ctx))) +
+      titleH1(ctx, a.title, { role: 'display', width: w, maxLines: 5, hl: true, scale: [112, 100, 90, 80, 72, 64] }) +
+      lead(ctx, labeled ? '' : a.subtitle, 32, { maxw: w }) +
+      metaHtml +
+    '</div></div>';
+  return { bg, fg: fg + folio(ctx), cls: 'cover-doodle-slide' };
+};
+
 /** Журнал мұқабасы: жоғарыда ұйым атауы + қос сызық, үлкен тақырып, оң жақта биік жақтаулы фото */
 COVER.masthead = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
@@ -754,9 +772,14 @@ L.closing = (ctx) => {
   const a = ctx.a; const p = ctx.palette;
   if (ctx.sys && ctx.sys.closing === 'split' && a.hasPhoto && I.sharpEnough(a.img, 900)) return closingSplit(ctx);
   const hasP = a.hasPhoto && I.bleedOK(a.img, 1920, a.imgAI); // бұлыңғыр/портрет сурет бүкіл фонға созылмайды
-  const bg = hasP
+  let bg = hasP
     ? '<div class="full">' + I.imgTag(a.photo, a.img, p, { focus: a.focus }) + '</div><div class="scrim" style="background:' + I.scrim('flat', p) + '"></div>'
     : '<div class="plate plate-section"></div>' + AURORA;
+  if (!hasP && ctx.sys && ctx.sys.doodles) { // фотосыз қорытынды — тақырыпқа сай екінші иллюстрация
+    const D = require('./doodles');
+    const uri = D.doodleUri(D.pickDoodle(ctx.deckTitle + ' ' + a.title, 1), p.accent, p.text);
+    if (uri) bg += '<img class="doodle doodle-close" alt="" src="' + uri + '">';
+  }
   const items = a.bullets.slice(0, 4);
   const lw = GRID.span(5);
   const fg = '<div class="canvas g12 close">' +

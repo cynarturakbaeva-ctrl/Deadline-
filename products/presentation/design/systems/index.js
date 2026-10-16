@@ -18,7 +18,7 @@ const T = require('../tokens');
 const { formatNum } = require('./numbers');
 
 const SYSTEMS = {};
-for (const id of ['aurora', 'journal', 'swiss', 'academy', 'mono', 'atelier', 'heritage']) {
+for (const id of ['aurora', 'journal', 'swiss', 'academy', 'mono', 'atelier', 'heritage', 'campus']) {
   const sys = require('./' + id);
   SYSTEMS[sys.id] = sys;
 }
@@ -56,11 +56,12 @@ function typeStyleFor(sys, palette) {
  * @returns {{system:string, mood:string}}
  */
 // Сала → жүйе (тақырыпқа қарай, студенттің мамандығына емес). Тек салаға арналған жүйелер жалпы пулға кірмейді.
-const FIELD_SYSTEMS = { humanities: 'heritage' };
+const FIELD_SYSTEMS = { humanities: 'heritage', education: 'campus' };
 const FIELD_ONLY = new Set(Object.values(FIELD_SYSTEMS));
 const FIELD_RE = {
   humanities: /тарих|хандық|хандығ|соғыс|мұрағат|қолжазба|шежіре|ғасыр|история|хански|войн|архив|рукопис|war\b|khanate|archive|manuscript|әдебиет|философ|ойшыл|ақын|жазушы|абай|фараби|мәдениет|өнертану|этнограф|фольклор|истори|литератур|философ|культур|поэт|писател|history|historical|literature|philosoph|culture|poet|heritage/i,
 };
+FIELD_RE.education = /педагог|психолог|оқыту|сабақ|оқушы|тәрбие|мектеп|спорт|дене шынықтыру|жаттығу|эмоци|стресс|педагогик|психологи|обучени|урок|школ|воспитан|спорт|education|teaching|pedagog|psycholog|school|lesson|sport|fitness/i;
 function fieldOf(text) {
   const t = String(text || '');
   return Object.keys(FIELD_RE).find((k) => FIELD_RE[k].test(t)) || null;
