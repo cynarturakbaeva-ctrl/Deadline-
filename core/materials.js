@@ -205,7 +205,7 @@ async function imageAnthropic(b64, name, mime) {
 async function imageGemini(b64, mime) {
   const key = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (!key) return null;
-  const model = process.env.VISION_GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.VISION_GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
   try {

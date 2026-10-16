@@ -10,7 +10,7 @@ const { recordApiUsage } = require('../../core/cost');
 // (≈4₸) түседі, өзіндік rate limit те әлдеқайда жоғары (RPM/TPM шегі
 // ресми жарияланбаған, бірақ Groq-тың тегін 6000 TPM-нен әлдеқайда кең).
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_MODEL   = 'deepseek-v4-flash';
+const DEEPSEEK_MODEL   = 'deepseek-flash';
 
 // Ескерту: batch-архитектура (SLIDES_PER_BATCH, MAX_TOKENS_PER_CALL) Groq-тың
 // тар 6000 TPM лимитін айналып өту үшін жасалған еді. DeepSeek-те бұл шектеу
@@ -452,7 +452,7 @@ const COMPOSITION_RULES = `ART-DIRECTOR COMPOSITION (every slide needs a clear v
 - VARIETY WITH RHYTHM: do NOT repeat the same image type for 3+ consecutive slides. Alternate full_background, split (left/right_half), strip, and none. Cover and closing may use full_background.
 - Avoid: identical card grids every slide, pointless corner decorations, random gradients, walls of text, tiny text, generic stock clichés ("handshake business").
 - Simple content → simple powerful composition (center, large title, one idea). Dense content → full width, stronger overlay, fewer competing elements.
-- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, no baked-in text/charts/screens. Name the LITERAL thing a photo of THIS slide must show (who / what / where), so a stranger could check the photo against it — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes), never a metaphor (crossroads, puzzle, light bulb, chess, compass, ladder) and never a generic stand-in (smiling students, handshake, laptop, office) for a specific subject. Abstract slide (psychology, values, theory) → a real scene where it happens, e.g. "career counselor talking with student", "volunteers planting trees". The query must match THIS slide's point, not the student's faculty or the cover details. NO lighting, mood, colour or camera words (no "golden hour", "warm light", "inspiring mood", "cinematic", "documentary style") — they make search engines return off-topic photos.
+- imageQuery: ALWAYS English, Latin letters only (NEVER Kazakh or Russian — stock-photo search engines do not understand them), 3-8 words, no baked-in text/charts/screens. Name the LITERAL thing a photo of THIS slide must show (who / what / where), so a stranger could check the photo against it — never a mood-only scene (no sunset, trees, fog, empty sky, dark room, silhouettes), never a metaphor (crossroads, puzzle, light bulb, chess, compass, ladder) and never a generic stand-in (smiling students, handshake, laptop, office) for a specific subject. Abstract slide (psychology, values, theory) → a real scene where it happens, e.g. "career counselor talking with student", "volunteers planting trees". The query must match THIS slide's point, not the student's faculty or the cover details. ONE subject per query: never join two people/places with "and" (no photo shows Abai and Al-Farabi together — pick the one this slide is about) and never ask for a collage, diagram, comparison, chart or infographic (those are not photos). NO lighting, mood, colour or camera words (no "golden hour", "warm light", "inspiring mood", "cinematic", "documentary style") — they make search engines return off-topic photos.
   • Named subject (a person, historical event, battle, artwork, building, city, organisation, scientific term): write its exact English name first, plus what kind of image fits — e.g. "Florence Nightingale portrait", "Battle of Balaclava painting", "Khoja Ahmed Yasawi mausoleum", "Max Weber portrait", "enzyme substrate molecular model". Real historical events get period paintings, archive photos or maps — never modern reenactors.
   • General subject: concrete scene with the key object — e.g. "elementary pupils raising hands classroom", "landfill aerial view", "geologist examining rock outcrop".
   Translate the slide idea into English yourself; required on EVERY slide, also on infographic/table slides with image "none" (the code may still give that slide a photo).
@@ -617,7 +617,21 @@ Each slideTopics entry must be specific enough to guide detailed content generat
   if (!parsed?.slideTopics || !Array.isArray(parsed.slideTopics)) {
     throw new Error('Outline missing slideTopics array');
   }
-
+  // Студент сұраған слайд санын алуы керек (8 сұрап 7 алғаны — нақты шағым): көп болса — қорытынды сақталып
+  // ортасы қысқарады; аз болса — модельден бір рет толықтыру сұралады.
+  const clean = (list) => (Array.isArray(list) ? list.filter((t) => typeof t === 'string' && t.trim()) : []);
+  let topics = clean(parsed.slideTopics);
+  if (topics.length > slideCount) topics = topics.slice(0, slideCount - 1).concat(topics[topics.length - 1]);
+  if (topics.length < slideCount) {
+    console.warn(`[Pipeline] outline has ${topics.length}/${slideCount} slides — asking to complete it`);
+    const fix = user + `\n\nIMPORTANT: your previous outline had only ${topics.length} slides: ${JSON.stringify(topics)}. `
+      + `Return exactly ${slideCount} slideTopics: keep these, and add ${slideCount - topics.length} more content slide(s) before the closing slide.`;
+    try {
+      const again = clean(parseJSON(await groqChat(system, fix, 'generateOutline:fix'))?.slideTopics);
+      if (again.length >= slideCount) topics = again.slice(0, slideCount - 1).concat(again[again.length - 1]);
+    } catch (err) { console.warn(`[Pipeline] outline fix failed: ${err.message}`); }
+  }
+  parsed.slideTopics = topics;
   return parsed;
 }
 
@@ -825,7 +839,7 @@ Fix only:
 - Too many bullets (>5) → keep the strongest 3-4
 - Each bullet >20 words → shorten slightly (keep it a complete sentence; never cut bullets down to bare labels)
 - full_background + overlay=none → add dark_gradient_bottom
-- Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words
+- Vague imageQuery → rewrite in English naming the literal subject the photo must show (exact name for a person/event/place/artwork); remove lighting/mood/camera words; two subjects joined by "and" → keep only the one this slide is about
 - If a slide has a clear physical/scientific/historical subject, add or improve visualIntent so the 3D renderer can select a semantic model; never use generic words like "object" or "shape"
 - If 2+ stats with right_half/left_half image → change image to full_background
 - Do NOT touch the "visual" field (leave it exactly as given)
@@ -876,5 +890,5 @@ async function reviewAndImproveSlides(presentation) {
   return { ...presentation, slides: allReviewed };
 }
 
-module.exports = { generateSlides, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, coverCreditItems, ensureIntroSlide, introTitleFor, languageMismatch };
+module.exports = { generateSlides, generateOutline, reviewAndImproveSlides, parseUserInput, parseCoverMeta, applyCoverCredits, coverCreditLines, coverCreditItems, ensureIntroSlide, introTitleFor, languageMismatch };
                                                                                                                                        

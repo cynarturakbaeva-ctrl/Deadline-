@@ -179,7 +179,7 @@ Prefer redesign actions that change composition, not full content rewrite.`,
 async function criticGemini(slides, pngPaths, title, topic) {
   const key = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (!key) return null;
-  const model = process.env.VISION_GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.VISION_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
   const indices = pickSlideIndices(Math.min(pngPaths.length, MAX_SLIDES_TO_VISION), pngPaths.length);
   const parts = [

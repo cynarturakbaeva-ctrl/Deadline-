@@ -35,7 +35,7 @@ function recordApiUsage(usage, meta = {}) {
 function createCostTracker(genId) {
   const state = {
     genId: genId || 'unknown',
-    model: process.env.DEEPSEEK_MODEL || process.env.QUALITY_MODEL || 'deepseek-v4-flash',
+    model: process.env.DEEPSEEK_MODEL || process.env.QUALITY_MODEL || 'deepseek-flash',
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,

@@ -45,7 +45,7 @@ const ACCEPT_SCORE = Math.max(50, Math.min(95, parseInt(process.env.QUALITY_ACCE
 const SKIP_LLM_SCORE = Math.max(ACCEPT_SCORE, parseInt(process.env.QUALITY_SKIP_LLM_SCORE || '85', 10) || 85);
 const CRITIC_TIMEOUT_MS = 60_000;
 const REPAIR_TIMEOUT_MS = 90_000;
-const DEEPSEEK_MODEL = process.env.QUALITY_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
+const DEEPSEEK_MODEL = process.env.QUALITY_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 

@@ -154,12 +154,18 @@ const STYLE_WORDS = new Set([
 const STOP_WORDS = new Set(['with', 'and', 'the', 'a', 'an', 'at', 'in', 'on', 'of', 'for', 'to', 'from', 'into', 'over', 'under', 'by', 'or', 'its', 'their', 'his', 'her', 'each', 'other', 'together', 'while', 'during', 'through', 'across', 'about', 'some', 'two', 'three', 'group', 'people']);
 const isStyleWord = (w) => STYLE_WORDS.has(w.toLowerCase()) || STOP_WORDS.has(w.toLowerCase());
 
+// Фотосы болмайтын нәрселер: іздеу жүйесі бұларға кездейсоқ бизнес-слайд, флипчарт, коллаж қайтарады
+const NO_PHOTO_WORDS = /\b(collages?|diagrams?|infographics?|charts?|graphs?|comparisons?|montages?|split[- ]screen|side[- ]by[- ]side)\b/gi;
+const NAME = "[A-Z][A-Za-z'’-]+(?:\\s+[A-Z][A-Za-z'’-]+)*";
+// «Abai Kunanbayev and Al-Farabi portraits» — екі атаулы адамның бірге түскен суреті жоқ → біріншісі ғана қалады
+const TWO_NAMED = new RegExp(`(${NAME})\\s+(?:and|&|vs\\.?|versus)\\s+${NAME}`);
+
 /** «subject, warm golden hour lighting, inspiring mood» → «subject»: тек стиль сөздерінен тұратын бөліктер алынады. */
 function cleanQuery(query) {
   const parts = String(query || '').split(',').map((p) => p.trim()).filter(Boolean);
   if (!parts.length) return '';
   const keep = parts.filter((p, i) => i === 0 || p.split(/\s+/).some((w) => w.length > 2 && !isStyleWord(w.replace(/[^A-Za-z-]/g, ''))));
-  return keep.join(' ').replace(/\s+/g, ' ').trim();
+  return keep.join(' ').replace(TWO_NAMED, '$1').replace(NO_PHOTO_WORDS, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -475,6 +481,13 @@ async function findImage(query, opts = {}) {
       let pick = null;
       try { pick = await opts.judge(fresh, query); } catch (err) { console.warn(`[Image] judge failed: ${err.message}`); }
       const lexical = !Array.isArray(pick);
+      // модель бар, бірақ жауап бермеді (шек бітті/қате) → сөздік сәйкестікке сенбейміз: «Kazakhstan» сөзі бар
+      // шоколад қорабы, «portraits» сөзі бар кеңес басшыларының суреті осылай кіретін. Сайы дәлелденбеген сурет — жоқ.
+      if (lexical && typeof opts.judge.live === 'function' && opts.judge.live()) {
+        console.log(`[Image] judge unavailable — ${fresh.length} unverified photo(s) skipped source=${name} q="${q.slice(0, 50)}"`);
+        rejected += fresh.length;
+        continue;
+      }
       if (lexical) pick = lexicalFit(fresh, query);
       const chosen = pick.filter((i) => Number.isInteger(i) && fresh[i]).map((i) => fresh[i]);
       rejected += fresh.length - chosen.length;

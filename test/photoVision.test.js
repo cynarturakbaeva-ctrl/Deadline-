@@ -64,7 +64,7 @@ test('vision chooser sends thumbnails (not full images), key in header, ranks by
   assert.strictEqual(ranked[0].focus, '62% 40%');
   assert.deepStrictEqual(thumbHits.sort(), ['https://t/0.jpg', 'https://t/1.jpg', 'https://t/2.jpg', 'https://t/3.jpg']);
   assert.strictEqual(sent.length, 1);
-  assert.match(sent[0].url, /gemini-2\.5-flash-lite:generateContent$/);
+  assert.match(sent[0].url, /gemini-3\.5-flash-lite:generateContent$/);
   assert.ok(!/key=/.test(sent[0].url), 'кілт URL-де емес');
   assert.strictEqual(sent[0].headers['x-goog-api-key'], 'k');
   const parts = sent[0].body.contents[0].parts;
@@ -142,6 +142,7 @@ test('no Google key but DeepSeek key → vision runs on deepseek-flash (image_ur
     assert.deepStrictEqual(ranked.map((r) => [r.i, r.focus]), [[0, '40% 30%']]);
     assert.match(sent[0].url, /api\.deepseek\.com/);
     assert.strictEqual(sent[0].body.model, 'deepseek-flash');
+    assert.deepStrictEqual(sent[0].body.thinking, { type: 'disabled' }, 'ойлау режимі өшірулі (әйтпесе жауап бос/кеш)');
     const img = sent[0].body.messages[0].content.find((c) => c.type === 'image_url');
     assert.match(img.image_url.url, /^data:image\/jpeg;base64,/);
     assert.strictEqual(img.image_url.detail, 'low');

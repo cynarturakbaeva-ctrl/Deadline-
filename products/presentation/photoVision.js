@@ -11,8 +11,8 @@
  *   focus  "x% y%" — басты нысан қай жерде (кесілмеуі үшін)
  * қояды. fit ≥ MIN_FIT өткендер ішінен fit пен appeal-дың салмақты қосындысы ең жоғарысы алынады.
  *
- * Құны (gemini-2.5-flash-lite, $0.10 / 1M кіріс): ≤384px сурет ≈ 258 токен → 12 кандидат + мәтін ≈ 3.7k токен
- * ≈ $0.0004 ≈ 0.2₸ бір слайдқа. Кілт жоқ / қате → null: шақырушы мәтіндік photoJudge-қа өтеді.
+ * Құны (gemini-3.5-flash-lite, $0.30 / 1M кіріс, $2.50 шығыс): ≤384px сурет ≈ 258 токен → 12 кандидат + мәтін ≈ 3.7k
+ * токен + ~0.9k жауап ≈ $0.0034 ≈ 1.7₸ бір слайдқа (2.5-flash-lite жаңа кілттерге берілмейді). Кілт жоқ / қате → null: шақырушы мәтіндік photoJudge-қа өтеді.
  */
 const axios = require('axios');
 const { geminiJson, hasGoogleKey } = require('../../core/googleAi');
@@ -135,9 +135,13 @@ function makeVisionChooser(ctx = {}) {
       parts.push({ text: `Photo ${k}${x.c.desc ? ` (archive caption: ${short(x.c.desc, 120)})` : ''}:` });
       parts.push({ image: { mime: x.t.mime, data: x.t.data, url: x.c.thumb || x.c.url } });
     });
-    const out = await visionJson(parts, { label: 'photo:vision', maxTokens: 60 * shown.length + 200 });
+    const out = await visionJson(parts, { label: 'photo:vision', maxTokens: 60 * shown.length + 200, timeoutMs: 25_000 });
     const rows = Array.isArray(out && out.photos) ? out.photos : (Array.isArray(out) ? out : []);
-    if (!rows.length) { apiFailures += 1; return; } // шақыру сәтсіз → бағаланбады (кэшке «жоқ» деп жазылмайды)
+    if (!rows.length) { // шақыру сәтсіз → бағаланбады (кэшке «жоқ» деп жазылмайды)
+      apiFailures += 1;
+      console.warn(`[PhotoVision] "${short(ctx.title, 50)}" ${visionProvider()} gave no scores (${out ? 'keys: ' + Object.keys(out).slice(0, 4).join(',') : 'no reply'})`);
+      return;
+    }
     const num = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0; };
     shown.forEach((x, k) => {
       const r = rows.find((q) => q && Number(q.i) === k) || rows[k] || null;

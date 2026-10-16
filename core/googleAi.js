@@ -57,7 +57,7 @@ function parseJsonText(text) {
  */
 async function geminiJson(parts, opts = {}) {
   if (!hasGoogleKey() || !Array.isArray(parts) || !parts.length) return null;
-  const model = opts.model || process.env.PHOTO_VISION_MODEL || 'gemini-2.5-flash-lite';
+  const model = opts.model || process.env.PHOTO_VISION_MODEL || 'gemini-3.5-flash-lite';
   const tries = opts.tries || 2;
   const body = {
     contents: [{ role: 'user', parts }],

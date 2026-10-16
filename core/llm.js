@@ -25,7 +25,7 @@ async function deepseekJson(system, user, label, maxTokensHint, opts = {}) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         signal: controller.signal,
         body: JSON.stringify({
-          model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+          model: process.env.DEEPSEEK_MODEL || 'deepseek-flash',
           thinking: { type: 'disabled' },
           temperature: opts.temperature == null ? 0 : opts.temperature,
           max_tokens: maxTokens,
@@ -72,6 +72,7 @@ async function deepseekVisionJson(parts, opts = {}) {
   for (const useUrl of [false, true]) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs || 40_000);
+    const t0 = Date.now();
     try {
       const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
@@ -79,6 +80,8 @@ async function deepseekVisionJson(parts, opts = {}) {
         signal: controller.signal,
         body: JSON.stringify({
           model, temperature: 0, max_tokens: opts.maxTokens || 1500,
+          // ойлау режимі әдепкіде ҚОСУЛЫ: баға қою үшін керек емес, бірақ токенді жеп, жауапты бос/кешіктіріп қайтарады
+          thinking: { type: 'disabled' },
           response_format: { type: 'json_object' },
           messages: [{ role: 'user', content: build(useUrl) }],
         }),
@@ -95,10 +98,13 @@ async function deepseekVisionJson(parts, opts = {}) {
       const text = data.choices?.[0]?.message?.content || '';
       try { return JSON.parse(text); } catch {
         const m = text.match(/\{[\s\S]*\}/);
-        try { return m ? JSON.parse(m[0]) : null; } catch { return null; }
+        try { if (m) return JSON.parse(m[0]); } catch { /* төменде жазылады */ }
+        // үнсіз null болмасын: себебі логта көрінсін (бос жауап, токен шегі, т.б.)
+        console.warn(`[DeepSeekVision] ${model} unreadable reply finish=${data.choices?.[0]?.finish_reason || '-'} len=${text.length} "${text.slice(0, 80).replace(/\s+/g, ' ')}"`);
+        return null;
       }
     } catch (e) {
-      console.warn(`[DeepSeekVision] ${e.message}`);
+      console.warn(`[DeepSeekVision] ${model} ${e.name === 'AbortError' ? 'timeout' : 'error'} after ${Date.now() - t0}ms: ${e.message}`);
       return null;
     } finally {
       clearTimeout(timer);

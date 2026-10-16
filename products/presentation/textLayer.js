@@ -145,26 +145,64 @@ function extractTextLayer(idx) {
   return out;
 }
 
-/** Hide glyphs only (text-fill), so borders/cards/meters drawn with `color` stay in the background picture. */
+/**
+ * Hide glyphs only (text-fill), so borders/cards/meters drawn with `color` stay in the background picture.
+ * Inline !important styles: a design system's own `#stage.ds-x .title .hl{-webkit-text-fill-color:…!important}`
+ * outranks any stylesheet rule we could add, and the keyword stayed in the background → doubled in PPTX.
+ */
 function hideText(on) {
-  var id = '__pptx_hide_text';
-  var st = document.getElementById(id);
-  if (!st) {
-    st = document.createElement('style'); st.id = id;
-    st.textContent = '.pptx-hide-text .layer-mid,.pptx-hide-text .layer-mid *{-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important}' +
-      '.pptx-hide-text .layer-mid [data-clip-text]{background-image:none!important}';
-    document.head.appendChild(st);
-  }
+  var HIDE = [['-webkit-text-fill-color', 'transparent'], ['text-shadow', 'none'], ['-webkit-text-stroke-width', '0px']];
   var stage = document.getElementById('stage');
-  if (on) {
-    [].forEach.call(document.querySelectorAll('.layer-mid *'), function (el) {
+  var els = [];
+  [].forEach.call(document.querySelectorAll('.layer-mid'), function (root) {
+    els.push(root);
+    [].push.apply(els, root.querySelectorAll('*'));
+  });
+  els.forEach(function (el) {
+    if (on) {
+      if (el.hasAttribute('data-pptx-hidden')) return;
       var s = getComputedStyle(el);
-      if (s.webkitBackgroundClip === 'text' || s.backgroundClip === 'text') el.setAttribute('data-clip-text', '1');
-    });
-  }
-  stage.classList.toggle('pptx-hide-text', !!on);
+      var clip = s.webkitBackgroundClip === 'text' || s.backgroundClip === 'text';
+      var keep = HIDE.concat(clip ? [['background-image', 'none']] : []).map(function (p) {
+        return [p[0], el.style.getPropertyValue(p[0]), el.style.getPropertyPriority(p[0])];
+      });
+      el.setAttribute('data-pptx-hidden', JSON.stringify(keep));
+      HIDE.forEach(function (p) { el.style.setProperty(p[0], p[1], 'important'); });
+      if (clip) el.style.setProperty('background-image', 'none', 'important');
+    } else {
+      var saved = el.getAttribute('data-pptx-hidden');
+      if (saved == null) return;
+      el.removeAttribute('data-pptx-hidden');
+      JSON.parse(saved).forEach(function (p) {
+        if (p[1]) el.style.setProperty(p[0], p[1], p[2]); else el.style.removeProperty(p[0]);
+      });
+    }
+  });
+  if (stage) stage.classList.toggle('pptx-hide-text', !!on);
   return true;
+}
+
+/** After hideText(true): elements of slide idx whose own text would still be painted into the background picture. */
+function textLeaks(idx) {
+  var slide = document.querySelectorAll('.slide')[idx];
+  if (!slide) return [];
+  var out = [];
+  [].forEach.call(slide.querySelectorAll('.layer-mid *'), function (el) {
+    var own = [].some.call(el.childNodes, function (n) { return n.nodeType === 3 && n.nodeValue.trim(); });
+    if (!own) return;
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    var s = getComputedStyle(el);
+    if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0) return;
+    var fill = s.webkitTextFillColor;
+    var clip = (s.webkitBackgroundClip === 'text' || s.backgroundClip === 'text') && s.backgroundImage !== 'none';
+    var transparent = /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)|transparent/.test(fill);
+    if (!transparent || clip || (s.textShadow && s.textShadow !== 'none')) {
+      out.push((el.className && el.className.baseVal == null ? '.' + String(el.className).split(/\s+/).join('.') : el.tagName) + ': ' + el.textContent.trim().slice(0, 30));
+    }
+  });
+  return out;
 }
 /* eslint-enable no-var */
 
-module.exports = { extractTextLayer, hideText };
+module.exports = { extractTextLayer, hideText, textLeaks };

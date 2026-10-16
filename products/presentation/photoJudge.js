@@ -38,7 +38,7 @@ function makePhotoJudge(ctx = {}) {
   const subject = [short(ctx.topic, 160), short(ctx.title, 140), ctx.background ? 'bg' : 'frame'].join(' / ');
   const key = (c) => subject + '|' + c.url;
   let calls = 0;
-  const maxCalls = ctx.maxCalls || 3;
+  const maxCalls = ctx.maxCalls || 5;
   async function judge(cands, q) {
     if (!process.env.DEEPSEEK_API_KEY || !Array.isArray(cands) || !cands.length) return null;
     const todo = cands.filter((c) => !cache.has(key(c)));
@@ -65,6 +65,8 @@ function makePhotoJudge(ctx = {}) {
   }
   /** Кандидаттың баллы (тексерілмесе null) — images.js бірнеше көздің ең жақсысын таңдау үшін */
   judge.scoreOf = (c) => (c && cache.has(key(c)) ? cache.get(key(c)) : null);
+  /** true → модель тексере алады: оның жауабы жоқ кезде (шек/қате) тексерілмеген сурет ҚОЙЫЛМАЙДЫ */
+  judge.live = () => !!process.env.DEEPSEEK_API_KEY;
   return judge;
 }
 

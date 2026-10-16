@@ -87,6 +87,24 @@ test('judge unavailable → word-overlap check keeps only photos that mention th
   assert.deepStrictEqual(I.lexicalFit([{}, {}], 'anything'), [0, 1], 'сипаттама жоқ ескі провайдер — бұрынғыдай');
 });
 
+test('model judge exists but gives no answer (call cap / error) → unverified photos are NOT used (no word-overlap guess)', async () => {
+  // Абай тақырыбы: «Kazakhstan» сөзі бар шоколад қорабы, «portraits» сөзі бар кеңес портреттері осылай кіретін
+  script = {
+    'https://api.pexels.com': pexels(['https://px/c1.jpg', 'Rakhat Kazakhstan dark chocolate bar'], ['https://px/c2.jpg', 'Vintage portraits in an abandoned room']),
+    'https://px/': (u) => jpeg(u),
+  };
+  const judge = async () => null;
+  judge.live = () => true;
+  assert.strictEqual(await I.findImage('Kazakhstan students portraits', { used: new Set(), judge, budget: { left: 3 } }), null);
+});
+
+test('one subject per query: two named people → the first one; collage/diagram/comparison words dropped', () => {
+  assert.strictEqual(I.cleanQuery('Abai Kunanbayev and Al-Farabi portraits collage'), 'Abai Kunanbayev portraits');
+  assert.strictEqual(I.cleanQuery('two philosophers ideas comparison diagram'), 'two philosophers ideas');
+  assert.strictEqual(I.cleanQuery('Marie Curie laboratory'), 'Marie Curie laboratory');
+  assert.strictEqual(I.cleanQuery('salt and pepper shakers'), 'salt and pepper shakers', 'атау емес «and» тиіспейді');
+});
+
 test('makePhotoJudge: scores 0-10, below 7 dropped, best first, cached, judged against the slide text', async () => {
   const origFetch = global.fetch;
   const prompts = [];

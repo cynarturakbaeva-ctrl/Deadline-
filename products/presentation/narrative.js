@@ -12,7 +12,7 @@
 const { recordApiUsage } = require('../../core/cost');
 
 const SEV = Object.freeze({ critical: 4, high: 3, medium: 2, low: 1 });
-const DEEPSEEK_MODEL = process.env.QUALITY_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
+const DEEPSEEK_MODEL = process.env.QUALITY_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-flash';
 
 function words(s) {
   return String(s || '').trim().split(/\s+/).filter(Boolean);
