@@ -262,7 +262,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .row-d{margin-top:10px;font-size:calc(var(--rd,26px)*var(--fs,1));line-height:1.45;color:var(--text2);text-wrap:pretty}
 
 /* concept columns (3–4 labelled ideas) */
-.conc{display:flex;flex-direction:column;justify-content:center;gap:var(--s8)}
+/* тақырып жоғарыда, ұғымдар төменгі жиекте: аралықтағы ауа — әдейі (асты бос қалмайды) */
+.conc{display:flex;flex-direction:column;justify-content:space-between;gap:var(--s8)}
 .concepts{list-style:none;margin:0;padding:0;display:grid;column-gap:var(--gut);align-items:start}
 .concepts.n2{grid-template-columns:repeat(2,1fr)}.concepts.n3{grid-template-columns:repeat(3,1fr)}.concepts.n4{grid-template-columns:repeat(4,1fr)}.concepts.n5,.concepts.n6{grid-template-columns:repeat(3,1fr);row-gap:var(--s5)}
 .concept{border-top:1px solid var(--line);padding-top:var(--s3);padding-right:var(--s2);position:relative}

@@ -508,8 +508,8 @@ function pointsColumns(ctx, parsed) {
   const a = ctx.a; const n = parsed.length;
   const tw = GRID.span(8);
   const cards = parsed.map((m, k) => '<li class="concept drop" data-role="concept"><span class="concept-n">' + num(ctx, k + 1) + '</span>' +
-    '<div class="concept-l" style="--rl:' + (n <= 3 ? 40 : n === 4 ? 36 : 32) + 'px">' + esc(m.label) + '</div>' +
-    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 28 : n === 4 ? 26 : 24) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
+    '<div class="concept-l" style="--rl:' + (n <= 3 ? 52 : n === 4 ? 46 : 38) + 'px">' + esc(m.label) + '</div>' +
+    (m.detail ? '<div class="concept-d" style="--rd:' + (n <= 3 ? 30 : n === 4 ? 28 : 25) + 'px">' + esc(m.detail) + '</div>' : '') + '</li>').join('');
   const fg = '<div class="canvas conc"><div class="block conc-head">' +
     kicker(ctx, sectionLabel(ctx)) +
     titleH1(ctx, a.title, { width: tw, maxLines: 2, scale: [92, 80, 70, 62, 54] }) +

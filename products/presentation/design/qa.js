@@ -55,6 +55,17 @@ function measure(slide){
   if(t&&body){var tf=parseFloat(getComputedStyle(t).fontSize),bf=parseFloat(getComputedStyle(body).fontSize);if(tf<bf*1.25)issues.push({type:'weak-hierarchy',hard:false,detail:Math.round(tf)+'/'+Math.round(bf)});}
   return {issues:issues,density:density,minFont:mf};
 }
+var GROW={points:1,cards:1,stackPoints:1,stackRefs:1,editorial:1,process:1,timeline:1,hierarchy:1,stats:1,closing:1};
+/** Мазмұнның тігінен алатын үлесі (0..1): тақырыптың басынан соңғы элементтің астына дейін */
+function fill(slide){
+  var kk=k(),sr=slide.getBoundingClientRect(),top=1e9,bot=-1e9;
+  [].forEach.call(slide.querySelectorAll('[data-role]'),function(e){
+    var role=e.getAttribute('data-role');
+    if(role==='folio'||role==='photo'||e.offsetWidth===0||e.closest('[data-dropped]'))return;
+    var r=rect(e,sr,kk);if(r.y<top)top=r.y;if(r.y+r.h>bot)bot=r.y+r.h;
+  });
+  return bot>top?(bot-top)/(H-MT-MB):1;
+}
 function revise(slide){
   var steps=[1,.95,.9],drops=0,fs=1,res,idx=0,report={fs:1,dropped:0,iterations:0};
   function set(v){fs=v;slide.style.setProperty('--fs',String(v));}
@@ -77,7 +88,17 @@ function revise(slide){
     } else set(step);
     res=measure(slide);
   }
-  report.fs=fs;report.dropped=drops;report.issues=res.issues;report.density=+res.density.toFixed(3);report.minFont=res.minFont?Math.round(res.minFont):null;
+  // Кері бағыт: мазмұн аз болып, слайдтың асты бос қалса — мәтін біртіндеп үлкейеді (тек мәтіндік макеттерде,
+  // қатаң ақау шықса алдыңғы өлшемге қайтады). Мұқаба/бөлім/дәйексөз әдейі кең — оларға тиіспейміз.
+  if(!hard(res).length&&!drops&&fs===1&&GROW[slide.getAttribute('data-layout')]){
+    var grow=[1.08,1.16,1.24,1.32],prev=1;
+    for(var g=0;g<grow.length&&(fill(slide)<0.66||(res.minFont!=null&&res.minFont<28));g++){
+      set(grow[g]);res=measure(slide);report.iterations++;
+      if(hard(res).length||fill(slide)>0.88){set(prev);res=measure(slide);break;}
+      prev=grow[g];
+    }
+  }
+  report.fill=+fill(slide).toFixed(2);report.fs=fs;report.dropped=drops;report.issues=res.issues;report.density=+res.density.toFixed(3);report.minFont=res.minFont?Math.round(res.minFont):null;
   report.hard=hard(res).length>0;
   return report;
 }

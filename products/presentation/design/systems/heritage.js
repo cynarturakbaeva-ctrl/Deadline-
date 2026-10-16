@@ -74,7 +74,7 @@ function css(p) {
     `${S} .concept:first-child{border-left:0!important;padding-left:0!important}`,
     `${S} .concept::before{content:counter(roman,upper-roman)!important;position:static!important;display:block;width:auto!important;height:auto!important;background:none!important;font-family:var(--f-display);font-style:italic;font-size:64px;line-height:1;color:${acc};margin-bottom:28px}`,
     `${S} .concept::after,${S} .concept-n{display:none!important}`,
-    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.75*var(--fs,1));line-height:1.06;color:${ink}}`,
+    `${S} .concept-l{font-family:var(--f-display);font-weight:400;font-size:calc(var(--rl,40px)*1.38*var(--fs,1));line-height:1.06;color:${ink}}`,
     `${S} .concept-d{font-size:calc(var(--rd,26px)*1.1*var(--fs,1));color:var(--text2)}`,
 
     // ── тізім/мәтін/қорытынды: тақырып жыртық шетті қағаз парағында ──
