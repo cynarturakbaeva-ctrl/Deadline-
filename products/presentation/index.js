@@ -39,6 +39,9 @@ const { generateSlideImage, deckBudget } = require('./imageGen');
 const { buildSpeechDocx } = require('./speechDoc');
 
 // Query-ді жалпылама етіп қысқарту
+// мұқаба фотосы бүкіл фонды жабатын пішіндер (қалғандарында фото рамкада/доғада/панельде тұрады)
+const FULL_COVERS = new Set(['classic', 'center']);
+
 function simplifyQuery(query) {
   const words = query.split(/[\s,]+/).filter(w => w.length > 3);
   return words.slice(0, 4).join(' ');
@@ -414,7 +417,7 @@ async function generatePresentation(userInput, options = {}) {
 
   // 2e. Colour theme + decoration are chosen by CODE (the LLM always copied the same dark/gold example)
   // Дизайн жүйесі + палитра: студенттің соңғы дизайндары қайталанбайды (options.designAvoid — server.js береді)
-  design = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, refTheme, avoid: options.designAvoid, keep: options.designForce || undefined });
+  design = applyDeckTheme(slides, { seed: `${topic}|${genId}`, style, brief: userInput, field: presentation && presentation.field, refTheme, avoid: options.designAvoid, keep: options.designForce || undefined });
   if (typeof options.onDesign === 'function' && !refTheme) { try { options.onDesign(design); } catch {} }
   console.log(`[Pipeline] Design: system=${design.system} mood=${design.mood}${options.designAvoid ? ` (avoid ${[].concat(options.designAvoid.systems || []).join('/')})` : ''}`);
 
@@ -575,6 +578,9 @@ async function generatePresentation(userInput, options = {}) {
   // Фото тек макеті шынымен фото КӨРСЕТЕТІН слайдтарға ізделеді (бұрын әр слайдқа → API лимиті тез бітетін)
   const photoBudget = options.free ? (Number(process.env.PHOTO_BUDGET_FREE) || 3) : (Number(process.env.PHOTO_BUDGET) || 4);
   const photoPlan = planPhotoSlides(slides, { budget: photoBudget });
+  const sysDef = require('./design/systems').getSystem(design && design.system);
+  const sysCover = (sysDef && sysDef.cover) || 'classic';
+  const sysClosing = (sysDef && sysDef.closing) || 'rows';
   console.log(`[Pipeline] Photo plan: ${photoPlan.indexes.size}/${slides.length} slides → [${[...photoPlan.indexes].map((i) => i + 1).join(',')}]`);
   const genBudget = deckBudget(!!options.free); // AI сурет: бір презентацияға ең көбі 2 (тегін — 1)
   // осы студенттің бұрынғы презентацияларындағы суреттер (басқа таңдау болса қайталанбайды) + осы колоданікі
@@ -597,7 +603,8 @@ async function generatePresentation(userInput, options = {}) {
         text: [slide.subtitle, slide.body].concat(Array.isArray(slide.bullets) ? slide.bullets.slice(0, 3) : [])
           .map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).filter(Boolean).join(' · '),
         cover: layout === 'cover' || layout === 'closing' || idx === 0 || idx === slides.length - 1,
-        background: layout === 'cover' || layout === 'closing' || layout === 'fullImage', // фото бүкіл слайдты жабады
+        // фото бүкіл слайдты жабады ма — жүйенің мұқаба/қорытынды пішініне қарай (доға/журнал/панель — рамка: тік портрет те жарайды)
+        background: layout === 'fullImage' || (layout === 'cover' && FULL_COVERS.has(sysCover)) || (layout === 'closing' && sysClosing !== 'split'),
       };
       // Суретті КӨЗБЕН таңдау (Gemini Flash-Lite): кілт бар болса — негізгі жол
       const vision = makeVisionChooser(slideCtx);
