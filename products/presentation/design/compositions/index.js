@@ -34,10 +34,40 @@ const disp = 'font-family:var(--f-display);font-weight:var(--dw,400);letter-spac
 const wrap = (x, y, w, inner) => '<div style="position:absolute;left:' + Math.round(x) + 'px;top:' + Math.round(y) + 'px;width:' + Math.round(w) + 'px">' + inner + '</div>';
 const wrapB = (x, bottom, w, inner) => '<div style="position:absolute;left:' + Math.round(x) + 'px;bottom:' + Math.round(bottom) + 'px;width:' + Math.round(w) + 'px">' + inner + '</div>';
 
-/** Мазмұн пішіні */
-function shapeOf(a) {
+/** Кесте → екі жақты салыстыру: [белгі, A, B] не [A, B] бағандары */
+function compareOf(tb) {
+  const h = (tb.headers || []).map((x) => String(x || '').trim());
+  const rows = (tb.rows || []).filter(Array.isArray).slice(0, 5);
+  if (!rows.length || rows.length > 4) return null;
+  const ok = (x) => String(x || '').length <= 90;
+  if (h.length === 3 && rows.every((r) => r.length >= 3 && ok(r[1]) && ok(r[2]))) {
+    const lab = (r, k) => (r[0] ? String(r[0]).trim() + ': ' : '') + String(r[k]).trim();
+    return { left: { head: h[1], sub: '', rows: rows.map((r) => lab(r, 1)) }, right: { head: h[2], sub: '', rows: rows.map((r) => lab(r, 2)) } };
+  }
+  if (h.length === 2 && rows.every((r) => r.length >= 2 && ok(r[0]) && ok(r[1]))) {
+    return { left: { head: h[0], sub: '', rows: rows.map((r) => String(r[0]).trim()) }, right: { head: h[1], sub: '', rows: rows.map((r) => String(r[1]).trim()) } };
+  }
+  return null;
+}
+const nodeItem = (x) => (typeof x === 'string' ? splitLabelDetail(x) : x && typeof x === 'object'
+  ? { label: String(x.label || x.title || x.name || x.step || '').trim(), detail: String(x.detail || x.text || x.description || '').trim() } : null);
+
+/** Мазмұн пішіні (type — analyze.classify нәтижесі) */
+function shapeOf(a, type) {
   if (a.index === 0) return { kind: 'cover' };
   if (a.isQuoteSlide) return { kind: 'quote' };
+  if (type === 'number' && a.stats.length === 1) return { kind: 'number', stat: a.stats[0] };
+  if (type === 'stats' && a.stats.length >= 2 && a.stats.length <= 4) return { kind: 'stats', stats: a.stats };
+  if (type === 'comparison' && a.table) { const c = compareOf(a.table); return c ? { kind: 'compare', ...c } : null; }
+  if (type === 'process') {
+    const items = (a.nodes.steps || []).map(nodeItem).filter((m) => m && m.label);
+    return items.length >= 3 && items.length <= 5 ? { kind: 'process', items } : null;
+  }
+  if (type === 'section') return { kind: 'section', n: null };
+  if (type === 'conclusion') {
+    const items = a.bullets.map(splitLabelDetail).filter((m) => m.label);
+    if (items.length >= 2 && items.length <= 4) return { kind: 'closing', items };
+  }
   if (a.infographic || a.hasTable || a.hasVisual || a.stats.length || a.isReferences) return null;
   const items = a.bullets.map(splitLabelDetail).filter((m) => m.label);
   const dated = items.filter((m) => /^\d{3,4}(\s*[–-]\s*\d{2,4})?$/.test(m.label) || /^\d{3,4}\b/.test(m.label));
@@ -52,9 +82,11 @@ function shapeOf(a) {
     return text.length <= 260 && a.title ? { kind: 'statement', text } : null;
   }
   if (a.body) return null;
-  const short = items.every((m) => m.label.length <= 34 && (m.detail || '').length <= 110);
+  const short = items.every((m) => m.label.length <= 34 && (m.detail || '').length <= 90);
   if (a.hasPhoto && items.length >= 3 && items.length <= 5 && items.every((m) => (m.label + ' ' + (m.detail || '')).length <= 130)) return { kind: 'photoList', items };
   if (items.length >= 2 && items.length <= 5 && short && items.filter((m) => m.detail).length >= items.length - 1) return { kind: 'concepts', items };
+  // ұзынырақ пункттер (бұрын ескі «мәтін торы» макетіне түсетін)
+  if (items.length >= 3 && items.length <= 5 && items.every((m) => m.label.length <= 70 && (m.detail || '').length <= 180)) return { kind: 'list', items };
   return null;
 }
 
@@ -302,6 +334,7 @@ def({
 });
 
 require('./more')(def, { P, H, I, esc, t, tb, fs, disp, wrap, wrapB, MX, MT, MB, W, HH });
+require('./more2')(def, { P, H, I, esc, t, tb, fs, disp, wrap, wrapB, MX, MT, MB, W, HH });
 
 /**
  * Композиция таңдау. env: { used:Set (әшекей), comps:Set (колодада қолданылған), recent:string[], seed:number }
@@ -323,7 +356,7 @@ function variantFor(env, a, id, cx) {
   };
 }
 // Айналы нұсқасы бар композициялар (элементтердің бәрі left+width-пен орналасқан → дәл шағылысады)
-const MIRROR_SAFE = new Set(['cover-arch', 'cover-polaroid', 'statement-arch', 'photo-polaroid']);
+const MIRROR_SAFE = new Set(['cover-arch', 'cover-polaroid', 'statement-arch', 'photo-polaroid', 'cover-bigvisual', 'number-hero', 'definition-page', 'section-band', 'closing-seal', 'list-margin']);
 /** Айна: абсолют элементтің left-і → W − left − width (мәтін тураланымы өзгермейді) */
 function mirrorHtml(html) {
   return String(html || '').replace(/style="([^"]*)"/g, (m, st) => {
@@ -336,7 +369,7 @@ function mirrorHtml(html) {
 }
 
 function compose(ctx, env) {
-  const sh = shapeOf(ctx.a);
+  const sh = shapeOf(ctx.a, ctx.plan && ctx.plan.type);
   if (!sh) return null;
   const cx = (ctx.a.slideRef && ctx.a.slideRef.composition && ctx.a.slideRef.composition.cx) || {};
   const avoid = Array.isArray(cx.avoid) ? cx.avoid : [];
@@ -349,20 +382,24 @@ function compose(ctx, env) {
   if (!pool0.length) return null;
   const notRecent = pinned ? pool0 : pool0.filter((c) => !(env.recent || []).includes(c.id));
   const pool = notRecent.length ? notRecent : pool0;
-  const c = pool[Math.abs((env.seed || 0) + ctx.a.index * 7 + (cx.seed || 0)) % pool.length];
-  const v = variantFor(env, ctx.a, c.id, cx);
-  P.setVariant(v);
-  try {
-    // нөмірлеу стилі де нұсқаға қарай (блюпринттің [01]-і — жүйенің қолтаңбасы, өзгермейді)
-    const vctx = ctx.sys && ctx.sys.num === 'bracket' ? ctx : Object.assign(Object.create(Object.getPrototypeOf(ctx)), ctx, { sys: Object.assign({}, ctx.sys, { num: v.num }) });
-    let out = c.render(vctx, sh, env);
-    if (v.mirror && MIRROR_SAFE.has(c.id)) out = { ...out, bg: mirrorHtml(out.bg), fg: mirrorHtml(out.fg) };
-    env.comps.add(c.id);
-    return { id: c.id, out, variant: v };
-  } catch (err) {
-    console.warn('[Compose] ' + c.id + ' failed on slide ' + (ctx.a.index + 1) + ': ' + err.message);
-    return null;
-  } finally { P.setVariant(null); }
+  const start = Math.abs((env.seed || 0) + ctx.a.index * 7 + (cx.seed || 0)) % pool.length;
+  // таңдалған композиция сала алмаса (мыс. сай сурет жоқ) — келесісі
+  for (let k = 0; k < pool.length; k++) {
+    const c = pool[(start + k) % pool.length];
+    const v = variantFor(env, ctx.a, c.id, cx);
+    P.setVariant(v);
+    try {
+      // нөмірлеу стилі де нұсқаға қарай (блюпринттің [01]-і — жүйенің қолтаңбасы, өзгермейді)
+      const vctx = ctx.sys && ctx.sys.num === 'bracket' ? ctx : Object.assign(Object.create(Object.getPrototypeOf(ctx)), ctx, { sys: Object.assign({}, ctx.sys, { num: v.num }) });
+      let out = c.render(vctx, sh, env);
+      if (v.mirror && MIRROR_SAFE.has(c.id)) out = { ...out, bg: mirrorHtml(out.bg), fg: mirrorHtml(out.fg) };
+      env.comps.add(c.id);
+      return { id: c.id, out, variant: v };
+    } catch (err) {
+      if (err.message !== 'no visual') console.warn('[Compose] ' + c.id + ' failed on slide ' + (ctx.a.index + 1) + ': ' + err.message);
+    } finally { P.setVariant(null); }
+  }
+  return null;
 }
 function safeFits(c, a, sh, sys) { try { return !!c.fits(a, sh, sys); } catch { return false; } }
 
