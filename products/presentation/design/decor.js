@@ -38,6 +38,28 @@ const THEMES = {
   camera: /фото|кино|медиа|бұқаралық|фотограф|кино|сми|photo|film|cinema|media/i,
   kazakh: /қазақ|хандық|хандығ|көшпелі|дала|ұлттық|дәстүр|салт|ата-баба|киіз үй|шаңырақ|ою|казах|кочев|степ|юрт|традиц|kazakh|nomad|steppe|yurt|tradition/i,
   music: /домбыра|күй|ән |әндер|музыка|жыр|айтыс|домбр|музык|песн|music|song|folk/i,
+  butterfly: /көбелек|жәндік|табиғат|экология|бабочк|насеком|природ|butterfl|insect|nature|ecolog/i,
+  bird: /құс|бейбітшілік|еркіндік|птиц|мир |свобод|bird|peace|freedom/i,
+  feather: /еркіндік|жеңіл|ақын|поэзия|свобод|поэз|freedom|poetry/i,
+  wheat: /ауыл шаруашылығы|егін|бидай|астық|нан|агро|сельск|зерн|пшениц|урожа|agricult|wheat|grain|harvest|farm/i,
+  bulb: /идея|инновация|өнертабыс|жаңалық|шығармашылық|идея|инновац|изобрет|творч|idea|innovat|invent|creativ/i,
+  typewriter: /журналистика|баспасөз|жазушы|кеңсе|іс қағаз|журналист|пресс|печат|канцеляр|journalis|press|office|writer/i,
+  phone: /байланыс|коммуникация|телефон|связ|коммуникац|communicat|telephone/i,
+  factory: /зауыт|фабрика|өнеркәсіп|индустрия|завод|промышлен|индустри|factory|industr/i,
+  train: /темір жол|көлік|пойыз|логистика|железн|транспорт|поезд|логистик|railway|train|transport|logistic/i,
+  heart: /жүрек|қан айналым|кардио|сердц|кровообращ|кардио|heart|cardio/i,
+  brain: /ми |миы|нейрон|психология|сана|ойлау|мозг|нейр|психолог|сознан|мышлен|brain|neuro|psycholog|cognit|mind/i,
+  skeleton: /анатомия|сүйек|қаңқа|анатом|кост|скелет|anatom|bone|skeleton/i,
+  flask: /химия|реакция|зертхана|эксперимент|хими|реакц|лаборатор|эксперимент|chemi|reaction|laborator|experiment/i,
+  abacus: /математика|есеп|санау|бухгалтер|статистика|математ|счёт|счет|бухгалт|статист|mathemat|account|arithmet|statistic/i,
+  violin: /музыка|оркестр|классикалық|скрипка|музык|оркестр|скрипк|music|orchestr|violin|classical/i,
+  handshake: /серіктестік|ынтымақтастық|келісім|әріптес|бірлік|партнер|сотруднич|соглаш|partner|cooperat|agreement|collaborat/i,
+  tree: /орман|ағаш|экология|табиғат|тамыр|лес|дерев|эколог|природ|forest|tree|ecolog|nature|roots/i,
+  mountain: /тау|шың|алатау|гор|вершин|mountain|peak|alps/i,
+  sun: /күн |күн энергиясы|жарық|күн жүйесі|солнц|свет|sun|solar|light/i,
+  bee: /ара |еңбек|ұжым|ынтымақ|пчел|труд|коллектив|bee|teamwork|labou?r|hive/i,
+  apple: /алма|денсаулық|тамақтану|жеміс|яблок|здоров|питан|фрукт|apple|health|nutrition|fruit/i,
+  medicine: /медицина|дәрі|емдеу|фармацевт|аурухана|медицин|лекарств|лечен|фармац|больниц|medic|drug|treatment|pharma|hospital/i,
   flora: /табиғат|гүл|өсімдік|ботаника|экология|бау|әдебиет|поэзия|өлең|сұлулық|мәдениет|природ|цвет|растен|ботаник|эколог|поэз|культур|nature|flower|plant|botan|ecolog|poetry|culture|beauty/i,
 };
 
@@ -78,6 +100,45 @@ function pickDecor(text, used, seed = 0) {
   return { file, tag };
 }
 
+// Композициялық жұп: бірге «бір натюрморт» құрайтын заттар (кітап + қаламұш, карта + компас…)
+const PAIRS = {
+  book: 'quill', quill: 'book', scroll: 'quill', pen: 'letter', letter: 'quill', typewriter: 'letter',
+  map: 'compass', compass: 'map', globe: 'telescope', telescope: 'globe', ship: 'anchor', anchor: 'ship',
+  crown: 'coins', coins: 'abacus', abacus: 'coins', scales: 'column', column: 'laurel', laurel: 'column',
+  hourglass: 'scroll', clock: 'hourglass', kazakh: 'horse', music: 'kazakh', horse: 'kazakh',
+  flask: 'microscope', microscope: 'flask', heart: 'medicine', medicine: 'heart', brain: 'book',
+  bulb: 'gears', gears: 'bulb', tree: 'bird', flora: 'butterfly', butterfly: 'flora', wheat: 'sun', sun: 'wheat',
+  bee: 'flora', apple: 'flora', owl: 'book', candle: 'book', theater: 'flora', violin: 'flora',
+};
+
+/**
+ * Слайдқа әшекей ТОБЫ: негізгі зат + (мағынасы сай болса) серігі — мәтіндегі екінші тақырып не композициялық жұбы.
+ * @returns {Array<{file:string, tag:string, role:'main'|'pair'}>} бос массив — әшекей жоқ
+ */
+function pickDecorSet(text, used, seed = 0, max = 2) {
+  const main = pickDecor(text, used, seed);
+  if (!main) return [];
+  const out = [{ ...main, role: 'main' }];
+  if (max < 2) return out;
+  const idx = index();
+  const t = ' ' + String(text || '') + ' ';
+  const second = Object.keys(THEMES)
+    .filter((tag) => tag !== main.tag && idx[tag] && idx[tag].length && !(used && used.has('tag:' + tag)))
+    .map((tag) => ({ tag, n: (t.match(new RegExp(THEMES[tag].source, 'gi')) || []).length }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n)[0];
+  const tag = second ? second.tag : PAIRS[main.tag];
+  if (tag && idx[tag]) {
+    const files = idx[tag].filter((f) => !(used && used.has(f)));
+    if (files.length) {
+      const file = files[Math.abs(seed + 3) % files.length];
+      if (used) { used.add(file); used.add('tag:' + tag); }
+      out.push({ file, tag, role: 'pair' });
+    }
+  }
+  return out;
+}
+
 const cache = new Map();
 function decorUri(file) {
   if (cache.has(file)) return cache.get(file);
@@ -116,13 +177,28 @@ function placeDecor(only) {
     // бет нөмірі мен ұсақ белгілер (folio) кедергі емес
     blocks.forEach(function (b) { if (b.h < 40 && b.w < 260 && b.y > 960) b.m = 10; }); // бет нөмірі — кішкене шегініс жеткілікті
     var E = slide.querySelector('.cover-frame') ? 110 : 60; // қос жиектемелі мұқабада жиектеменің ішінде
+    var mainBox = null;
     [].forEach.call(imgs, function (img) {
       var ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
       var M = 36; var placed = null;
       var free = function (x, y, w, h) {
         return !blocks.some(function (b) { var m = b.m || M; return x < b.x + b.w + m && x + w + m > b.x && y < b.y + b.h + m && y + h + m > b.y; });
       };
-      if (!full) {
+      // жұп: негізгі заттың қасына, сәл қабаттасып, кішірек — бір «натюрморт» болып тұрсын
+      if (!full && img.getAttribute('data-decor') === 'pair' && mainBox) {
+        var L = Math.max(mainBox.w, mainBox.h) * 0.62; var pw = ar >= 1 ? L : L * ar; var ph = pw / ar;
+        var others = blocks.filter(function (b) { return b !== mainBox; });
+        var fits = function (x, y) {
+          return x >= E - 20 && y >= E - 30 && x + pw <= 1920 - E + 20 && y + ph <= 1080 - E + 30 &&
+            !others.some(function (b) { var m = b.m || M; return x < b.x + b.w + m && x + pw + m > b.x && y < b.y + b.h + m && y + ph + m > b.y; });
+        };
+        var spots = [
+          [mainBox.x - pw * 0.72, mainBox.y + mainBox.h - ph], [mainBox.x + mainBox.w - pw * 0.28, mainBox.y + mainBox.h - ph],
+          [mainBox.x + mainBox.w * 0.1, mainBox.y - ph * 0.6], [mainBox.x - pw * 0.6, mainBox.y],
+        ];
+        for (var q = 0; q < spots.length; q++) if (fits(spots[q][0], spots[q][1])) { placed = { x: spots[q][0], y: spots[q][1], w: pw, h: ph }; break; }
+      }
+      if (!full && !placed) {
         var sizes = [400, 340, 280, 220, 170];
         outer: for (var s = 0; s < sizes.length; s++) {
           var h = sizes[s]; var w = Math.min(h * ar, 560); h = w / ar;
@@ -144,6 +220,7 @@ function placeDecor(only) {
         }
       }
       if (!placed) { img.remove(); out.push({ slide: si + 1, placed: false }); return; }
+      if (img.getAttribute('data-decor') === 'main') mainBox = placed;
       img.style.cssText += ';position:absolute;left:' + placed.x + 'px;top:' + placed.y + 'px;width:' + placed.w + 'px;height:' + placed.h + 'px;visibility:visible';
       blocks.push(placed);
       out.push({ slide: si + 1, placed: Math.round(placed.x) + ',' + Math.round(placed.y) });
@@ -154,4 +231,4 @@ function placeDecor(only) {
 }
 /* eslint-enable no-var */
 
-module.exports = { pickDecor, decorUri, placeDecor, THEMES };
+module.exports = { pickDecor, pickDecorSet, decorUri, placeDecor, THEMES, PAIRS };

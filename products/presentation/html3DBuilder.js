@@ -173,17 +173,14 @@ function renderSlide(slide, index, plan, ctxDeck) {
     out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   }
   // Мағыналы әшекей (Мұра): слайд мазмұнына сай ескі гравюра; сай тақырып жоқ → әшекей жоқ. Орнын рендер өлшейді.
-  if (ctxDeck.sys && ctxDeck.sys.decor && out && !/^(fullImage|table|infographic)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1)) {
+  if (ctxDeck.sys && ctxDeck.sys.decor && out && !/^(fullImage|table|infographic)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1 && ctxDeck.lastDecor2 === index - 2)) {
     const D = require('./design/decor');
     ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
     const s = slide || {};
     const text = (index === 0 ? deckTitle + ' ' : '') + [s.title, s.subtitle].concat(Array.isArray(s.bullets) ? s.bullets : []).map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).join(' ');
-    const hit = index === 0 && plan.a.hasPhoto ? null : D.pickDecor(text, ctxDeck.decorUsed, index); // фотолы мұқабаға әшекей қоспаймыз
-    const uri = hit && D.decorUri(hit.file);
-    if (uri) {
-      ctxDeck.lastDecor = index;
-      out = { ...out, bg: (out.bg || '') + '<img class="decor decor-' + hit.tag + '" alt="" aria-hidden="true" src="' + uri + '">' };
-    }
+    const set = index === 0 && plan.a.hasPhoto ? [] : D.pickDecorSet(text, ctxDeck.decorUsed, index, 2); // фотолы мұқабаға әшекей қоспаймыз
+    const imgs = set.map((h) => { const uri = D.decorUri(h.file); return uri ? '<img class="decor decor-' + h.tag + '" data-decor="' + h.role + '" alt="" aria-hidden="true" src="' + uri + '">' : ''; }).join('');
+    if (imgs) { ctxDeck.lastDecor2 = ctxDeck.lastDecor; ctxDeck.lastDecor = index; out = { ...out, bg: (out.bg || '') + imgs }; }
   }
   const cam = chooseCam(index);
   const accent = palette.accent;
