@@ -307,26 +307,61 @@ require('./more')(def, { P, H, I, esc, t, tb, fs, disp, wrap, wrapB, MX, MT, MB,
  * Композиция таңдау. env: { used:Set (әшекей), comps:Set (колодада қолданылған), recent:string[], seed:number }
  * Қайтарады { id, out } не null.
  */
+const hash = (s) => { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+/** Слайдтың ішкі нұсқасы: тұқым + слайд нөмірі + композиция (+ визуал тексеріс сұраған қайта жасау) */
+function variantFor(env, a, id, cx) {
+  const r = P.rng((env.seed || 0) * 31 + a.index * 977 + hash(id) + (cx.seed || 0) * 7919);
+  const pick = (xs) => xs[Math.floor(r() * xs.length) % xs.length];
+  return {
+    texture: pick(['grain', 'lines', 'grid', 'plain', 'hatch', 'grain']),
+    frame: pick(['arch', 'arch', 'rounded', 'pill', 'notch']),
+    tilt: r() < 0.5 ? 1 : -1,
+    teeth: pick([12, 14, 16, 20]),
+    num: pick(['pad', 'roman', 'plain', 'dot', 'pad']),
+    mirror: r() < 0.5,
+    noDecor: !!cx.noDecor,
+  };
+}
+// Айналы нұсқасы бар композициялар (элементтердің бәрі left+width-пен орналасқан → дәл шағылысады)
+const MIRROR_SAFE = new Set(['cover-arch', 'cover-polaroid', 'statement-arch', 'photo-polaroid']);
+/** Айна: абсолют элементтің left-і → W − left − width (мәтін тураланымы өзгермейді) */
+function mirrorHtml(html) {
+  return String(html || '').replace(/style="([^"]*)"/g, (m, st) => {
+    if (!/position:absolute/.test(st) || /(^|;)\s*right:/.test(st)) return m;
+    const l = st.match(/(^|;)\s*left:(-?\d+(?:\.\d+)?)px/); const w = st.match(/(^|;)\s*width:(\d+(?:\.\d+)?)px/);
+    if (!l || !w) return m;
+    const nl = Math.round(W - Number(l[2]) - Number(w[2]));
+    return 'style="' + st.replace(/(^|;)(\s*)left:-?\d+(?:\.\d+)?px/, '$1$2left:' + nl + 'px') + '"';
+  });
+}
+
 function compose(ctx, env) {
   const sh = shapeOf(ctx.a);
   if (!sh) return null;
-  const cands = COMPS.filter((c) => c.kind === sh.kind && !(c.systems && !c.systems.includes(ctx.sys && ctx.sys.id)) && safeFits(c, ctx.a, sh, ctx.sys));
+  const cx = (ctx.a.slideRef && ctx.a.slideRef.composition && ctx.a.slideRef.composition.cx) || {};
+  const avoid = Array.isArray(cx.avoid) ? cx.avoid : [];
+  const cands = COMPS.filter((c) => c.kind === sh.kind && !avoid.includes(c.id) && !(c.systems && !c.systems.includes(ctx.sys && ctx.sys.id)) && safeFits(c, ctx.a, sh, ctx.sys));
   if (!cands.length) return null;
   const fresh = cands.filter((c) => !env.comps.has(c.id));
   const pool0 = fresh.length ? fresh : (sh.kind === 'concepts' ? [] : cands);
   if (!pool0.length) return null;
   const notRecent = pool0.filter((c) => !(env.recent || []).includes(c.id));
   const pool = notRecent.length ? notRecent : pool0;
-  const c = pool[Math.abs((env.seed || 0) + ctx.a.index * 7) % pool.length];
+  const c = pool[Math.abs((env.seed || 0) + ctx.a.index * 7 + (cx.seed || 0)) % pool.length];
+  const v = variantFor(env, ctx.a, c.id, cx);
+  P.setVariant(v);
   try {
-    const out = c.render(ctx, sh, env);
+    // нөмірлеу стилі де нұсқаға қарай (блюпринттің [01]-і — жүйенің қолтаңбасы, өзгермейді)
+    const vctx = ctx.sys && ctx.sys.num === 'bracket' ? ctx : Object.assign(Object.create(Object.getPrototypeOf(ctx)), ctx, { sys: Object.assign({}, ctx.sys, { num: v.num }) });
+    let out = c.render(vctx, sh, env);
+    if (v.mirror && MIRROR_SAFE.has(c.id)) out = { ...out, bg: mirrorHtml(out.bg), fg: mirrorHtml(out.fg) };
     env.comps.add(c.id);
-    return { id: c.id, out };
+    return { id: c.id, out, variant: v };
   } catch (err) {
     console.warn('[Compose] ' + c.id + ' failed on slide ' + (ctx.a.index + 1) + ': ' + err.message);
     return null;
-  }
+  } finally { P.setVariant(null); }
 }
 function safeFits(c, a, sh, sys) { try { return !!c.fits(a, sh, sys); } catch { return false; } }
 
-module.exports = { compose, shapeOf, COMPS, CSS: P.CSS };
+module.exports = { compose, shapeOf, COMPS, CSS: P.CSS, mirrorHtml, variantFor };

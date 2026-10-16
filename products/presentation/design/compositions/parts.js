@@ -10,6 +10,14 @@ const T = require('../tokens');
 const D = require('../decor');
 
 const px = (v) => Math.round(v) + 'px';
+
+/**
+ * Слайдтың ішкі нұсқасы (compose() әр слайд алдында қояды): бір композиция әр жолы басқаша көрінеді —
+ * фон текстурасы, жақтау пішіні, қисаю бағыты, билет тістері; noDecor — визуал тексеріс «әшекей артық» десе.
+ */
+const DEFAULT_V = { texture: 'grain', frame: 'arch', tilt: 1, teeth: 16, noDecor: false };
+let V = DEFAULT_V;
+function setVariant(v) { V = Object.assign({}, DEFAULT_V, v || {}); }
 const pos = (x, y, w, h) => 'left:' + px(x) + ';top:' + px(y) + (w != null ? ';width:' + px(w) : '') + (h != null ? ';height:' + px(h) : '');
 const div = (style, inner = '', cls = '') => '<div class="cx-part' + (cls ? ' ' + cls : '') + '" aria-hidden="true" style="position:absolute;' + style + '">' + inner + '</div>';
 
@@ -34,6 +42,7 @@ function torn(seed, edge = 'top', depth = 12, teeth = 18) {
 }
 /** Билет: төменгі жиегі тісті */
 function ticket(teeth = 14, depth = 5) {
+  teeth = V.teeth || teeth;
   const pts = [];
   for (let i = teeth; i >= 0; i--) pts.push(((i / teeth) * 100).toFixed(1) + '% ' + (i % 2 ? 100 - depth : 100) + '%');
   return 'polygon(0 0,100% 0,' + pts.join(',') + ')';
@@ -54,10 +63,15 @@ function sunburst(cx, cy, r, color, o = {}) {
 
 /** Арка (терезе) — ішінде фото не сурет; outline — ығыстырылған жұқа доға-сызық */
 function arch(x, y, w, h, inner, o = {}) {
-  const rad = px(w / 2) + ' ' + px(w / 2) + ' ' + (o.foot || 0) + 'px ' + (o.foot || 0) + 'px';
+  // жақтау пішіні нұсқаға қарай: арка | дөңгелек бұрыш | капсула | қиық бұрыш
+  const f = o.frame || V.frame;
+  let shape = 'border-radius:' + px(w / 2) + ' ' + px(w / 2) + ' ' + (o.foot || 0) + 'px ' + (o.foot || 0) + 'px';
+  if (f === 'rounded') shape = 'border-radius:' + px(Math.min(48, w * 0.12));
+  else if (f === 'pill' && h >= w) shape = 'border-radius:' + px(w / 2);
+  else if (f === 'notch') { const c = Math.round(Math.min(w, h) * 0.16); shape = 'clip-path:polygon(' + c + 'px 0,calc(100% - ' + c + 'px) 0,100% ' + c + 'px,100% calc(100% - ' + c + 'px),calc(100% - ' + c + 'px) 100%,' + c + 'px 100%,0 calc(100% - ' + c + 'px),0 ' + c + 'px)'; }
   let out = '';
-  if (o.outline) out += div(pos(x + (o.dx || 22), y - (o.dy || 22), w, h) + ';border:2px solid ' + o.outline + ';border-radius:' + rad);
-  out += div(pos(x, y, w, h) + ';border-radius:' + rad + ';overflow:hidden;background:' + (o.fill || 'transparent') + (o.shadow ? ';box-shadow:0 40px 70px -40px rgba(30,20,10,.55)' : ''), inner);
+  if (o.outline && f !== 'notch') out += div(pos(x + (o.dx || 22), y - (o.dy || 22), w, h) + ';border:2px solid ' + o.outline + ';' + shape);
+  out += div(pos(x, y, w, h) + ';' + shape + ';overflow:hidden;background:' + (o.fill || 'transparent') + (o.shadow && f !== 'notch' ? ';box-shadow:0 40px 70px -40px rgba(30,20,10,.55)' : ''), inner);
   return out;
 }
 
@@ -65,8 +79,8 @@ function arch(x, y, w, h, inner, o = {}) {
 function polaroid(x, y, w, h, imgHtml, o = {}) {
   const pad = Math.round(w * 0.055);
   const inner = '<div style="position:absolute;left:' + pad + 'px;top:' + pad + 'px;right:' + pad + 'px;bottom:' + Math.round(pad * 3.2) + 'px;overflow:hidden">' + imgHtml + '</div>';
-  return div(pos(x, y, w, h) + ';background:#fbf8f1;transform:rotate(' + (o.rot || -4) + 'deg);box-shadow:0 26px 46px -24px rgba(0,0,0,.55)', inner, 'cx-polaroid') +
-    (o.tape === false ? '' : tape(x + w / 2 - 70, y - 18, 140, (o.rot || -4) + 7, o.tapeColor));
+  return div(pos(x, y, w, h) + ';background:#fbf8f1;transform:rotate(' + (o.rot || -4) * V.tilt + 'deg);box-shadow:0 26px 46px -24px rgba(0,0,0,.55)', inner, 'cx-polaroid') +
+    (o.tape === false ? '' : tape(x + w / 2 - 70, y - 18, 140, ((o.rot || -4) + 7) * V.tilt, o.tapeColor));
 }
 function tape(x, y, w, rot, color) {
   return div(pos(x, y, w, 40) + ';background:' + (color || 'rgba(217,170,80,.62)') + ';transform:rotate(' + rot + 'deg);box-shadow:0 2px 4px rgba(0,0,0,.08)');
@@ -110,13 +124,20 @@ function wave(x, y, w, h, color, seed = 1) {
 }
 /** Нүктелі қағаз түйіршігі (бүкіл фон) */
 function grain(color, step = 9) {
-  return div('inset:0;background-image:radial-gradient(' + color + ' 1.3px,transparent 1.6px);background-size:' + step + 'px ' + step + 'px');
+  switch (V.texture) {
+    case 'plain': return '';
+    case 'lines': return div('inset:0;background-image:repeating-linear-gradient(0deg,' + color + ' 0 1.5px,transparent 1.5px 44px)');
+    case 'grid': return div('inset:0;background-image:linear-gradient(' + color + ' 1px,transparent 1px),linear-gradient(90deg,' + color + ' 1px,transparent 1px);background-size:48px 48px');
+    case 'hatch': return div('inset:0;background-image:repeating-linear-gradient(45deg,' + color + ' 0 1px,transparent 1px 18px)');
+    default: return div('inset:0;background-image:radial-gradient(' + color + ' 1.3px,transparent 1.6px);background-size:' + step + 'px ' + step + 'px');
+  }
 }
 /** Түсті панель (геометриялық блок — композицияның «жартысы») */
 function panel(x, y, w, h, fill, extra = '') { return div(pos(x, y, w, h) + ';background:' + fill + (extra ? ';' + extra : '')); }
 
 /** Гравюра (Мұра) не белгіше (басқалары): слайд мәтініне сай; табылмаса '' */
 function visualFor(text, sys, palette, used, seed, o = {}) {
+  if (V.noDecor) return null;
   if (sys && sys.decor) {
     const h = D.pickDecor(text, used, seed);
     if (h) return { kind: 'engraving', uri: D.decorUri(h.file), tag: h.tag };
@@ -150,4 +171,4 @@ const CSS = '.cx-part img.ph{width:100%;height:100%;object-fit:cover;display:blo
   // қараңғы/түсті жолақ үстіндегі мәтін: жүйенің кілт-сөз бояуы (градиент, түс) жолақпен араласып кетпесін
   '#stage .cx-on-dark .title,#stage .cx-on-dark .title .w,#stage .cx-on-dark .title .hl,#stage .cx-on-dark .lead,#stage .cx-on-dark .kicker,#stage .cx-on-dark .meta-k,#stage .cx-on-dark .meta-v,#stage .cx-on-dark .cover-org' +
   '{color:var(--cx-ink)!important;-webkit-text-fill-color:var(--cx-ink)!important;background:none!important}#stage .cx-on-dark .meta-k{opacity:.7}';
-module.exports = { CSS, visualsForAll, rng, torn, ticket, sunburst, arch, polaroid, tape, seal, ghost, horn, diamond, wave, grain, panel, visualFor, visualImg, div, pos, px, mix };
+module.exports = { setVariant, CSS, visualsForAll, rng, torn, ticket, sunburst, arch, polaroid, tape, seal, ghost, horn, diamond, wave, grain, panel, visualFor, visualImg, div, pos, px, mix };

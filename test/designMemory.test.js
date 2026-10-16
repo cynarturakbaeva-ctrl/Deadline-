@@ -82,3 +82,13 @@ test('builder avoids a student\'s recent compositions when an alternative fits',
   assert.ok(first.length === 2 && second.length === 2, first.join(',') + ' → ' + second.join(','));
   assert.notStrictEqual(second[1], first[1]);
 });
+
+test('composition variants: same content + different seed → different inner look; mirror keeps elements on the slide', () => {
+  const C = require('../products/presentation/design/compositions');
+  const vs = new Set();
+  for (let s = 0; s < 12; s++) { const v = C.variantFor({ seed: s }, { index: 2 }, 'concepts-arches', {}); vs.add(JSON.stringify(v)); }
+  assert.ok(vs.size >= 8, 'variants: ' + vs.size);
+  const m = C.mirrorHtml('<div style="position:absolute;left:100px;top:10px;width:300px">x</div><div style="position:absolute;right:0;width:5px"></div>');
+  assert.match(m, /left:1520px/);
+  assert.match(m, /right:0;width:5px/);
+});
