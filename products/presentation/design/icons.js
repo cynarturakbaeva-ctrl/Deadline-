@@ -177,9 +177,30 @@ const KEYWORDS = [
   [/start|бастау|старт|launch|іске қосу|запуск|future|болашақ|будущ/iu, 'rocket'],
 ];
 
+// Lucide-тің толық жиыны (2159 белгіше, ISC): модель кез келген Lucide атауын бере алады; бірінші қажет болғанда жүктеледі
+let FULL = null; let TAGS = null;
+function full() {
+  if (!FULL) {
+    try { FULL = require('../assets/icons/lucide.json'); } catch { FULL = {}; }
+    try { TAGS = require('../assets/icons/lucide-tags.json'); } catch { TAGS = {}; }
+  }
+  return FULL;
+}
+/** Ағылшын сөз → Lucide атауы: дәл атау, «-» нұсқасы, не тег бойынша (мыс. «manuscript» → scroll-text) */
+function lookup(word) {
+  const w = String(word || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  if (!w) return null;
+  if (ICONS[w]) return w;
+  const F = full();
+  if (F[w]) return w;
+  for (const k of Object.keys(TAGS)) if (TAGS[k].includes(w)) return k;
+  return null;
+}
+
 function pickIcon(hint, label) {
   const h = String(hint || '').trim().toLowerCase();
-  if (ICONS[h]) return h;
+  const hit = lookup(h);
+  if (hit) return hit;
   const text = h + ' ' + String(label || '');
   for (const [re, name] of KEYWORDS) if (re.test(text)) return name;
   return null;
@@ -187,7 +208,7 @@ function pickIcon(hint, label) {
 
 /** <svg> markup for an icon (stroke icon, inherits currentColor). */
 function iconSvg(name, size, stroke) {
-  const body = ICONS[name];
+  const body = ICONS[name] || full()[name];
   if (!body) return '';
   return '<svg class="ic" viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
 }
