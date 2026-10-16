@@ -674,7 +674,7 @@ async function generatePresentation(userInput, options = {}) {
   const buildAndRender = async (attempt) => {
     const pathHtml = path.join(os.tmpdir(), `presentation-${uniqueId()}.html`);
     restoreCover(slides);
-    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, badge: !!badge, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null }), 'utf8');
+    fs.writeFileSync(pathHtml, build3DPresentationHTML(slides, title, { style, badge: !!badge, skin: refAnalysis ? refAnalysis.skin : null, refRoles: refAnalysis && refAnalysis.outline ? refAnalysis.outline.roles : null, recentComps: options.recentComps || [] }), 'utf8');
     await onProgress('render', attempt > 1 ? 'Қайта рендер...' : 'Өңделетін PPTX жасалуда...');
     console.log(`[Pipeline] Rendering HTML → PNG → PPTX (attempt ${attempt})...`);
     cost.addRenderAttempt();
@@ -955,8 +955,15 @@ async function generatePresentation(userInput, options = {}) {
     visionScore: visionMeta.overallScore,
     visionSource: visionMeta.source,
     photoKeys,
+    // колодада қолданылған композициялар → студенттің дизайн жадына (келесі колодада алдымен басқалары)
+    compIds: compIdsOf(htmlPath),
     design,
   };
+}
+
+/** HTML-дағы құрастырылған композиция идентификаторлары (data-layout="cx-…") */
+function compIdsOf(file) {
+  try { return [...new Set([...fs.readFileSync(file, 'utf8').matchAll(/data-layout="cx-([a-z0-9-]+)"/g)].map((m) => m[1]))]; } catch { return []; }
 }
 
 module.exports = { generatePresentation };
