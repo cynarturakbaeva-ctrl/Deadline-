@@ -6,6 +6,7 @@ const os   = require('os');
 const { pathToFileURL } = require('url');
 const { extractTextLayer, hideText, textLeaks } = require('./textLayer');
 const { fitSvgLabels } = require('./svgFit');
+const { placeDecor } = require('./design/decor');
 
 const SLIDE_W = 1920;
 const SLIDE_H = 1080;
@@ -189,6 +190,9 @@ async function renderHtmlToPngs(htmlPath) {
           }
         });
       }, i);
+
+      // Мағыналы әшекей: мәтінге/фотоға тимейтін бос бұрышқа (жоқ болса — алынады)
+      await page.evaluate(placeDecor, i).catch(() => []);
 
       // ТЕКСЕРУ: мәтін блогы стейдж шегінен шықпағанын өлшейміз (бұзылған слайд үнсіз PPTX-ке кетпесін)
       const fit = await page.evaluate((idx) => {

@@ -172,13 +172,17 @@ function renderSlide(slide, index, plan, ctxDeck) {
     layoutName = 'statement';
     out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   }
-  // «Мұра»: бос бұрышқа ескі ботаникалық гравюра (фото/кесте/сызба жоқ слайдтарда, кезекпен)
-  if (ctxDeck.sys && ctxDeck.sys.botanic && out && !/^(split|imageFocus|fullImage|table|diagram|infographic|stackSplit)$/.test(layoutName)) {
-    const B = require('./design/botanic');
-    const isCover = index === 0;
-    if ((isCover && !plan.a.hasPhoto) || (!isCover && index % 2 === 1) || layoutName === 'closing') {
-      const uri = B.botanicUri(B.pickBotanic(deckTitle, index));
-      if (uri) out = { ...out, bg: (out.bg || '') + '<img class="botanic ' + (isCover ? 'bt-cover' : layoutName === 'closing' ? 'bt-close' : 'bt-corner') + '" alt="" aria-hidden="true" src="' + uri + '">' };
+  // Мағыналы әшекей (Мұра): слайд мазмұнына сай ескі гравюра; сай тақырып жоқ → әшекей жоқ. Орнын рендер өлшейді.
+  if (ctxDeck.sys && ctxDeck.sys.decor && out && !/^(fullImage|table|infographic)$/.test(layoutName) && !(ctxDeck.lastDecor === index - 1)) {
+    const D = require('./design/decor');
+    ctxDeck.decorUsed = ctxDeck.decorUsed || new Set();
+    const s = slide || {};
+    const text = (index === 0 ? deckTitle + ' ' : '') + [s.title, s.subtitle].concat(Array.isArray(s.bullets) ? s.bullets : []).map((x) => (typeof x === 'string' ? x : (x && (x.label || x.text)) || '')).join(' ');
+    const hit = index === 0 && plan.a.hasPhoto ? null : D.pickDecor(text, ctxDeck.decorUsed, index); // фотолы мұқабаға әшекей қоспаймыз
+    const uri = hit && D.decorUri(hit.file);
+    if (uri) {
+      ctxDeck.lastDecor = index;
+      out = { ...out, bg: (out.bg || '') + '<img class="decor decor-' + hit.tag + '" alt="" aria-hidden="true" src="' + uri + '">' };
     }
   }
   const cam = chooseCam(index);
