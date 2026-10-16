@@ -221,7 +221,7 @@ def('donut', {
     const hiTxt = d.items.every((x) => isPct(x, d)) ? showValue(d.items[hi], d) : pct(vals[hi]);
     let out = '<svg class="ig-svg" width="' + W + '" height="' + H + '"><circle cx="' + r1(cx) + '" cy="' + r1(cy) + '" r="' + r1(rr) + '" fill="none" class="ig-ring-track" stroke-width="' + r1(sw) + '"/>' + segs + '</svg>' +
       txt('ig-big center', esc(hiTxt), box(cx - R * 0.62, cy - 64, R * 1.24, 84, 'font-size:' + Math.round(clamp(R * 0.36, 48, 96)) + 'px'), 'numeral') +
-      txt('ig-lab center', esc(truncate(d.center || d.items[hi].label, 30)), box(cx - R * 0.6, cy + 26, R * 1.2, 60, 'font-size:22px'));
+      txt('ig-lab center', esc(truncate((d.center && !/\d/.test(d.center) ? d.center : '') || d.items[hi].label, 30)), box(cx - R * 0.6, cy + 26, R * 1.2, 60, 'font-size:22px'));
     const lx = D + 70; const lw = W - lx; const rowH = Math.min(96, (H - 40) / vals.length); const ly = cy - (rowH * vals.length) / 2;
     d.items.forEach((it, i) => {
       const y = ly + i * rowH;

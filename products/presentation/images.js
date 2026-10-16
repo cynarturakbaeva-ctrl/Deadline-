@@ -226,6 +226,9 @@ function queryVariants(query) {
     const base = named.join(' ');
     push(base + (extra && base.split(' ').length < 4 ? ' ' + extra : ''));
     push(base);
+    // «Chokan Valikhanov» ↔ «Shokan Ualikhanov» — транслитерация әр түрлі: архивтер тегі бойынша жақсы табады
+    const first = named[0].split(' ');
+    if (first.length >= 2 && first.length <= 3 && !first.some((w) => PLACE_OK.has(w.toLowerCase()) || /^(1[0-9]{3}|20[0-2][0-9])s?$/.test(w))) variants.splice(2, 0, first[first.length - 1]);
   }
   if (words.length >= 2) push(words.slice(0, 5).join(' '));
   if (words.length >= 1) push(words.slice(0, 3).join(' '));
@@ -587,7 +590,7 @@ async function findImageVision(query, opts = {}) {
   const order = keyed.concat(open);
   const budget = opts.budget || { left: 4 };
   const openBudget = { left: OPEN_SEARCHES_PER_PHOTO };
-  const variants = queryVariants(query).slice(0, opts.maxVariants || 2);
+  const variants = queryVariants(query).slice(0, (opts.maxVariants || 2) + (named ? 1 : 0)); // атаулыға +1 (тегі бойынша)
   const taken = (c) => used.has(c.url) || used.has(canonKey(c.url));
   let attempts = 0;
   for (const q of variants) {

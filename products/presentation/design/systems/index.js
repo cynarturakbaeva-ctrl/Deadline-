@@ -59,7 +59,7 @@ function typeStyleFor(sys, palette) {
 const FIELD_SYSTEMS = { humanities: 'heritage' };
 const FIELD_ONLY = new Set(Object.values(FIELD_SYSTEMS));
 const FIELD_RE = {
-  humanities: /тарих|әдебиет|философ|ойшыл|ақын|жазушы|абай|фараби|мәдениет|өнертану|этнограф|фольклор|истори|литератур|философ|культур|поэт|писател|history|historical|literature|philosoph|culture|poet|heritage/i,
+  humanities: /тарих|хандық|хандығ|соғыс|мұрағат|қолжазба|шежіре|ғасыр|история|хански|войн|архив|рукопис|war\b|khanate|archive|manuscript|әдебиет|философ|ойшыл|ақын|жазушы|абай|фараби|мәдениет|өнертану|этнограф|фольклор|истори|литератур|философ|культур|поэт|писател|history|historical|literature|philosoph|culture|poet|heritage/i,
 };
 function fieldOf(text) {
   const t = String(text || '');
@@ -72,7 +72,7 @@ function pickDesign(o = {}) {
   const avoidM = (o.avoidMoods || []).filter(Boolean);
   let pool = (STYLE_SYSTEMS[String(o.style || '').toLowerCase()] || Object.keys(SYSTEMS)).filter((id) => SYSTEMS[id] && !FIELD_ONLY.has(id));
   // салаға тән жүйе: тақырып гуманитарлық болса — «Мұра» (студенттің соңғы жүйесі болмаса)
-  const field = fieldOf(o.brief);
+  const field = (o.field && FIELD_SYSTEMS[o.field] ? o.field : null) || fieldOf(o.brief);
   if (field && FIELD_SYSTEMS[field] && !avoidS.slice(0, 1).includes(FIELD_SYSTEMS[field])) pool = [FIELD_SYSTEMS[field]];
   // соңғы 2 жүйе қайталанбайды (пул жетсе); пулдың басы — стильге ең лайықтысы, бірақ хэш араластырады
   const fresh = pool.filter((id) => !avoidS.slice(0, 2).includes(id));

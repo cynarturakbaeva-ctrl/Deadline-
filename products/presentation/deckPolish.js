@@ -154,7 +154,7 @@ function applyDeckTheme(slides, opts) {
     const av = o.avoid || {};
     const avoidSystems = Array.isArray(av.systems) && av.systems.length ? av.systems : (lastSystem ? [lastSystem] : []);
     const avoidMoods = Array.isArray(av.moods) && av.moods.length ? av.moods : (lastTheme ? [lastTheme] : []);
-    const d = SYS.pickDesign({ seed: o.seed, style: o.style, brief: o.brief, avoidSystems, avoidMoods });
+    const d = SYS.pickDesign({ seed: o.seed, style: o.style, brief: o.brief, field: o.field, avoidSystems, avoidMoods });
     mood = d.mood; system = d.system;
     lastTheme = mood; lastSystem = system;
   }

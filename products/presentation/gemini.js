@@ -507,7 +507,7 @@ const INFOGRAPHIC_RULES = `INFOGRAPHIC FIELD (our own designed chart/diagram lib
   • iconGrid — 3-6 key aspects/features/directions with an icon each; detail = 1 sentence.
 - label ≤ 4 words, value keeps its unit as text ("72%", "4,2 млн", "2019"). detail length depends on the kind (the drawing has little room): venn, funnel, pyramid, cycle, roadmap → detail ≤ 8 words; matrix, iconGrid → detail ≤ 12 words. A longer detail does not fit the drawing. Write labels in the presentation language.
 - icon (optional, English): one of users, user, graduation-cap, book-open, school, briefcase, building-2, landmark, factory, globe, map-pin, leaf, tree-pine, sun, droplets, flame, zap, cpu, monitor, smartphone, wifi, database, cloud, shield, lock, heart-pulse, stethoscope, microscope, flask-conical, atom, dna, brain, lightbulb, target, trophy, award, star, flag, rocket, trending-up, trending-down, coins, wallet, shopping-cart, truck, car, plane, house, wrench, settings, scale, file-text, calendar, clock, message-circle, megaphone, handshake, puzzle, layers, network, recycle, wheat, mountain, waves, music, palette, camera, history, crown, swords, castle, baby, apple, sprout, church, scroll, newspaper, vote, bot.
-- Numbers: use real, well-established figures you are confident about (statistics, dates, shares); add "source" (organisation + year) when you know it.
+- Numbers: ONLY figures given in the client brief or real, well-established facts you are certain of (dates, official statistics). NEVER invent percentages, shares, counts, sample sizes, model architectures or error breakdowns to fill a chart — if the real numbers are unknown, choose a kind without numbers (process, cycle, iconGrid, comparison, venn) instead. "source" only when you truly know it (organisation + year); never write a vague or made-up source like "Research results, 2024".
 - A slide with an infographic still has title + subtitle; the subtitle is a 1-2 sentence takeaway that reads the data aloud (what it shows and why it matters, e.g. "2015 жылдан бері индекс 28-ден 39 балға өсті: бұл реформалардың нәтижесі"); bullets may be null. Default for "infographic" is null.`;
 
 const CLIENT_FIRST_RULES = `CLIENT INTENT IS LAW (highest priority — overrides defaults when they conflict):
@@ -604,8 +604,10 @@ STEP 3 — Academic structure applies (style=academic):${academicStructureRule}`
 Return ONLY this JSON:
 {
   "title": "Overall presentation title",
+  "field": "humanities | it | engineering | business | education | law | science | other",
   "slideTopics": ["Slide 1 short topic", "Slide 2 short topic", ...]
 }
+"field" = the academic field of the TOPIC itself (not the student's major): history, literature, philosophy, culture, archives, historical figures → "humanities"; a topic mixing history with technology is "humanities" when its subject is the historical material.
 
 Each slideTopics entry must be specific enough to guide detailed content generation later:
 - For STRUCTURED MATERIAL, include the actual section identity AND its key points, e.g. "Апта 3: Нейрондық желілер — перцептрон, активация функциялары, backpropagation" (not just "Нейрондық желілер").
@@ -812,7 +814,7 @@ async function generateSlides(topic, options = {}) {
   // Force cover credits from client brief (never rely on model memory alone)
   if (options.coverMeta && allSlides.length) applyCoverCredits(allSlides[0], options.coverMeta, language);
 
-  return { title: presentationTitle, slides: allSlides };
+  return { title: presentationTitle, field: typeof outline.field === 'string' ? outline.field.trim().toLowerCase() : '', slides: allSlides };
 
 }
 
