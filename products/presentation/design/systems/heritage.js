@@ -99,6 +99,13 @@ function css(p) {
     // ── инфографика карточкалары: тегіс, жиексіз ──
     `${S} .ig-card,${S} .hn,${S} .st{background:none!important;box-shadow:none!important;border:0!important;border-top:1.5px solid ${hair}!important;border-radius:0!important}`,
 
+    // ── ботаникалық гравюралар: бос бұрышта, шеттен сәл шығып, қағазға «басылғандай» ──
+    `${S} .botanic{position:absolute;pointer-events:none;object-fit:contain;mix-blend-mode:multiply;filter:saturate(.85) sepia(.12);opacity:.95}`,
+    `${S} .bt-corner{right:-40px;bottom:-60px;width:360px;height:440px;object-position:right bottom;transform:rotate(-6deg)}`,
+    `${S} .bt-close{right:-30px;bottom:-50px;width:300px;height:380px;object-position:right bottom;transform:rotate(-4deg);opacity:.9}`,
+    `${S} .bt-cover{right:120px;top:50%;width:560px;height:820px;transform:translateY(-50%);object-position:center}`,
+    `${S} .no-arch .cover-arch .cover-block{left:var(--mx)!important;transform:translateY(-50%)!important;text-align:left!important;width:1050px!important}`,
+    `${S} .no-arch .meta-row{justify-content:flex-start}${S} .no-arch .orn-cover{left:var(--mx);margin-left:0}`,
     // ── бөлім ──
     `${S} .L-section .canvas{text-align:center}`,
 
@@ -116,6 +123,7 @@ module.exports = {
   num: 'pad',
   folio: { title: false, total: false, pad: true, cover: false },
   cover: 'arch',
+  botanic: true,
   closing: 'rows',
   css,
 };

@@ -172,6 +172,15 @@ function renderSlide(slide, index, plan, ctxDeck) {
     layoutName = 'statement';
     out = L.statement(makeCtx(a, plan, palette, ts, deckTitle, ctxDeck.sys));
   }
+  // «Мұра»: бос бұрышқа ескі ботаникалық гравюра (фото/кесте/сызба жоқ слайдтарда, кезекпен)
+  if (ctxDeck.sys && ctxDeck.sys.botanic && out && !/^(split|imageFocus|fullImage|table|diagram|infographic|stackSplit)$/.test(layoutName)) {
+    const B = require('./design/botanic');
+    const isCover = index === 0;
+    if ((isCover && !plan.a.hasPhoto) || (!isCover && index % 2 === 1) || layoutName === 'closing') {
+      const uri = B.botanicUri(B.pickBotanic(deckTitle, index));
+      if (uri) out = { ...out, bg: (out.bg || '') + '<img class="botanic ' + (isCover ? 'bt-cover' : layoutName === 'closing' ? 'bt-close' : 'bt-corner') + '" alt="" aria-hidden="true" src="' + uri + '">' };
+    }
+  }
   const cam = chooseCam(index);
   const accent = palette.accent;
   const sk = ctxDeck.skin;
